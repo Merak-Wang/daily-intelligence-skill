@@ -1,0 +1,747 @@
+timezone: Asia/Shanghai
+browser:
+  profile_dir_env: DAILY_INTEL_PROFILE_DIR
+  channel_env: DAILY_INTEL_BROWSER_CHANNEL
+  default_channel: ''
+  global_concurrency: 3
+  per_domain_concurrency: 1
+  navigation_timeout_ms: 45000
+  default_wait_ms: 3500
+budget:
+  max_runtime_seconds: 600
+  max_agent_tokens: 10000000
+  context_items_per_source: 25
+  report_items_per_source: 15
+  max_fulltext_per_run: 12
+sources:
+- id: weibo_hot
+  name: Weibo Hot Search
+  report_target: 15
+  report_max: 15
+  enabled: true
+  mode: weibo_api
+  url: https://m.weibo.cn/api/container/getIndex?containerid=106003type%3D25%26t%3D3%26disable_hot%3D1%26filter_type%3Drealtimehot
+  max_items: 50
+  role: discovery
+  module: information
+  category: domestic
+  language: zh
+  region: cn
+- id: yicai_economy
+  name: 第一财经
+  enabled: true
+  mode: browser_index
+  url: https://www.yicai.com/news/
+  include_domains:
+  - yicai.com
+  max_items: 80
+  report_target: 8
+  report_max: 15
+  role: evidence
+  article_patterns:
+  - ^https://www\.yicai\.com/news/\d+\.html$
+  exclude_patterns:
+  - /video/
+  - /brief/
+  - /image/
+  content_selectors:
+  - article
+  - main article
+  - main
+  module: information
+  category: market
+  language: zh
+  region: cn
+- id: nbs_china_releases
+  name: 国家统计局最新发布
+  enabled: true
+  mode: browser_index
+  url: https://www.stats.gov.cn/english/PressRelease/
+  include_domains:
+  - stats.gov.cn
+  max_items: 60
+  role: primary
+  article_patterns:
+  - ^https://www\.stats\.gov\.cn/english/PressRelease/\d{6}/t\d{8}_\d+\.html$
+  exclude_patterns:
+  - /ReleaseCalendar/
+  content_selectors:
+  - article
+  - main
+  module: information
+  category: market
+  language: en
+  region: cn
+- id: pboc_monetary_reports
+  name: 中国人民银行货币政策报告
+  enabled: true
+  mode: latest_year_index
+  url: https://www.pbc.gov.cn/en/3688229/3688353/3688356/index.html
+  include_domains:
+  - pbc.gov.cn
+  max_items: 40
+  role: primary
+  article_patterns:
+  - ^https://(?:[a-z]+\.)?pbc\.gov\.cn/en/(?:\d+/){4,}.+(?:index\.html|\.pdf)$
+  exclude_patterns:
+  - /3688356/index\.html$
+  content_selectors:
+  - article
+  - main
+  module: information
+  category: market
+  language: en
+  region: cn
+- id: sec_edgar_latest
+  name: SEC EDGAR Latest Filings
+  enabled: true
+  mode: browser_index
+  url: https://www.sec.gov/cgi-bin/browse-edgar?action=getcurrent&count=100
+  include_domains:
+  - sec.gov
+  max_items: 100
+  role: primary
+  article_patterns:
+  - ^https://www\.sec\.gov/Archives/edgar/data/\d+/\d+/.+-index\.html$
+  exclude_patterns:
+  - /ixviewer/
+  content_selectors:
+  - article
+  - main
+  - body
+  module: information
+  category: market
+  language: en
+  region: us
+- id: federal_reserve_releases
+  name: Federal Reserve Press Releases
+  enabled: true
+  mode: browser_index
+  url: https://www.federalreserve.gov/newsevents/pressreleases.htm
+  include_domains:
+  - federalreserve.gov
+  max_items: 60
+  role: primary
+  article_patterns:
+  - ^https://www\.federalreserve\.gov/newsevents/pressreleases/[a-z]+\d{8}[a-z]?\.htm$
+  exclude_patterns:
+  - /pressreleases\.htm$
+  - /pressreleases/\d{4}-press\.htm$
+  content_selectors:
+  - article
+  - main
+  module: information
+  category: market
+  language: en
+  region: us
+- id: hacker_news
+  name: Hacker News
+  enabled: true
+  mode: browser_index
+  url: https://news.ycombinator.com/
+  max_items: 60
+  report_target: 15
+  report_max: 15
+  role: discovery
+  article_patterns:
+  - ^https?://.+
+  exclude_patterns:
+  - ^https?://news\.ycombinator\.com/
+  content_selectors:
+  - article
+  - main
+  module: technology
+  category: news
+  language: en
+  region: global
+- id: lobsters
+  name: Lobsters
+  enabled: true
+  mode: browser_index
+  url: https://lobste.rs/
+  max_items: 60
+  report_target: 8
+  report_max: 15
+  role: discovery
+  article_patterns:
+  - ^https?://.+
+  exclude_patterns:
+  - ^https?://(?:www\.)?lobste\.rs/
+  content_selectors:
+  - article
+  - main
+  module: technology
+  category: news
+  language: en
+  region: global
+- id: infoq_ai
+  name: InfoQ AI, ML and Data Engineering
+  enabled: true
+  mode: browser_index
+  url: https://www.infoq.com/ai-ml-data-eng/
+  include_domains:
+  - infoq.com
+  max_items: 60
+  report_target: 8
+  report_max: 15
+  role: evidence
+  article_patterns:
+  - ^https://www\.infoq\.com/(?:news/\d{4}/\d{2}/|articles/)[^/?#]+/?$
+  exclude_patterns:
+  - /presentations/
+  - /podcasts/
+  content_selectors:
+  - article
+  - main article
+  - main
+  module: technology
+  category: news
+  language: en
+  region: global
+- id: anthropic_research
+  name: Anthropic Research
+  report_target: 4
+  report_max: 15
+  enabled: true
+  mode: browser_index
+  url: https://www.anthropic.com/research
+  include_domains:
+  - anthropic.com
+  max_items: 40
+  role: evidence
+  article_patterns:
+  - ^https://www\.anthropic\.com/research/.+
+  exclude_patterns:
+  - /authors?/
+  - /research/team/
+  content_selectors:
+  - article
+  - main article
+  - main
+  module: technology
+  category: papers
+  language: en
+  region: global
+- id: bytedance_seed_papers
+  name: ByteDance Seed Papers
+  enabled: true
+  mode: seed_papers
+  url: https://seed.bytedance.com/zh/public_papers?view_from=research&order_desc=true&offset=0
+  max_items: 20
+  role: primary
+  content_selectors:
+  - blockquote.abstract
+  - article
+  - main
+  module: technology
+  category: papers
+  language: multi
+  region: global
+- id: openai_publications
+  name: OpenAI Publications
+  report_target: 4
+  report_max: 15
+  enabled: true
+  mode: browser_index
+  url: https://openai.com/zh-Hans-CN/research/index/publication/
+  include_domains:
+  - openai.com
+  max_items: 50
+  role: primary
+  article_patterns:
+  - ^https://openai\.com/(zh-Hans-CN/)?research/.+
+  - ^https://openai\.com/(zh-Hans-CN/)?index/.+
+  exclude_patterns:
+  - /research/index/publication/?$
+  - /policies/
+  - /about/
+  content_selectors:
+  - article
+  - main article
+  - main
+  module: technology
+  category: papers
+  language: multi
+  region: global
+- id: deepmind_publications
+  name: Google DeepMind Publications
+  report_target: 4
+  report_max: 15
+  enabled: true
+  mode: browser_index
+  url: https://deepmind.google/research/publications/
+  include_domains:
+  - deepmind.google
+  max_items: 60
+  role: primary
+  article_patterns:
+  - ^https://deepmind\.google/research/publications/[^/#?]+/?$
+  exclude_patterns:
+  - /research/publications/?$
+  content_selectors:
+  - article
+  - main article
+  - main
+  module: technology
+  category: papers
+  language: en
+  region: global
+- id: huggingface_papers
+  name: Hugging Face Papers
+  report_target: 5
+  report_max: 15
+  enabled: true
+  mode: browser_index
+  url: https://huggingface.co/papers
+  include_domains:
+  - huggingface.co
+  max_items: 60
+  role: discovery
+  article_patterns:
+  - ^https://huggingface\.co/papers/\d{4}\.\d{4,6}/?$
+  exclude_patterns:
+  - /papers/month/?$
+  - /papers/trending/?$
+  content_selectors:
+  - article
+  - main
+  module: technology
+  category: papers
+  language: en
+  region: global
+- id: papers_with_code
+  name: Papers with Code / Hugging Face
+  enabled: true
+  mode: browser_index
+  url: https://paperswithcode.com/
+  include_domains:
+  - paperswithcode.com
+  - huggingface.co
+  max_items: 60
+  role: discovery
+  article_patterns:
+  - ^https://huggingface\.co/papers/\d{4}\.\d{4,6}/?$
+  exclude_patterns:
+  - /papers/month/?$
+  - /papers/trending/?$
+  content_selectors:
+  - article
+  - main
+  module: technology
+  category: papers
+  language: en
+  region: global
+- id: google_research_publications
+  name: Google Research Publications
+  enabled: true
+  mode: browser_index
+  url: https://research.google/pubs/
+  include_domains:
+  - research.google
+  max_items: 60
+  role: primary
+  article_patterns:
+  - ^https://research\.google/pubs/[^/?#]+/?$
+  exclude_patterns:
+  - ^https://research\.google/pubs/?$
+  content_selectors:
+  - article
+  - main article
+  - main
+  module: technology
+  category: papers
+  language: en
+  region: global
+- id: microsoft_research_publications
+  name: Microsoft Research Publications
+  enabled: true
+  mode: browser_index
+  url: https://www.microsoft.com/en-us/research/publications/
+  include_domains:
+  - microsoft.com
+  max_items: 60
+  role: primary
+  article_patterns:
+  - ^https://www\.microsoft\.com/(?:en-us/)?research/publication/[^/?#]+/?$
+  - ^https://www\.microsoft\.com/(?:en-us/)?research/\?p=\d+$
+  exclude_patterns:
+  - /research/publications/?$
+  content_selectors:
+  - article
+  - main article
+  - main
+  module: technology
+  category: papers
+  language: en
+  region: global
+- id: nvidia_research_publications
+  name: NVIDIA Research Publications
+  enabled: true
+  mode: browser_index
+  url: https://research.nvidia.com/publications
+  include_domains:
+  - research.nvidia.com
+  max_items: 60
+  role: primary
+  article_patterns:
+  - ^https://research\.nvidia\.com/publication/[^/?#]+/?$
+  exclude_patterns:
+  - /publications/?$
+  content_selectors:
+  - article
+  - main article
+  - main
+  module: technology
+  category: papers
+  language: en
+  region: global
+- id: arxiv_ai
+  name: arXiv AI Recent
+  report_target: 5
+  report_max: 15
+  enabled: true
+  mode: arxiv_index
+  url: https://arxiv.org/list/cs.AI/recent
+  include_domains:
+  - arxiv.org
+  max_items: 60
+  role: evidence
+  article_patterns:
+  - ^https://arxiv\.org/abs/.+
+  exclude_patterns:
+  - /list/
+  - /search/
+  content_selectors:
+  - blockquote.abstract
+  - main
+  module: technology
+  category: papers
+  language: en
+  region: global
+- id: github_trending
+  name: GitHub Trending
+  report_target: 8
+  report_max: 15
+  enabled: true
+  mode: browser_index
+  url: https://github.com/trending?since=daily
+  include_domains:
+  - github.com
+  max_items: 40
+  role: discovery
+  article_patterns:
+  - ^https://github\.com/[^/]+/[^/?#]+/?$
+  exclude_patterns:
+  - ^https://github\.com/(topics|collections|sponsors|marketplace|features|settings|login|signup)/
+  - ^https://github\.com/trending(?:/|\?|$)
+  content_selectors:
+  - article
+  - main
+  module: technology
+  category: open_source
+  language: en
+  region: global
+- id: cnbc_world
+  name: CNBC World
+  enabled: true
+  mode: browser_index
+  url: https://www.cnbc.com/world/?region=world
+  include_domains:
+  - cnbc.com
+  max_items: 80
+  article_patterns:
+  - ^https://www\.cnbc\.com/20\d{2}/\d{2}/\d{2}/.+\.html$
+  exclude_patterns:
+  - /quotes/
+  - /video/
+  - /investingclub/
+  - /subscribe
+  - /privacy
+  - /terms
+  content_selectors:
+  - article
+  - main article
+  - main
+  module: information
+  category: market
+  language: en
+  region: global
+- id: reuters
+  name: Reuters
+  enabled: true
+  mode: browser_index
+  url: https://www.reuters.com/
+  include_domains:
+  - reuters.com
+  max_items: 80
+  article_patterns:
+  - ^https://www\.reuters\.com/(world|business|markets|technology|legal|sustainability|sports)/.+/20\d{2}-\d{2}-\d{2}/?$
+  exclude_patterns:
+  - /pictures/
+  - /graphics/
+  - /video/
+  - /about/
+  content_selectors:
+  - article
+  - main article
+  - main
+  module: information
+  category: international
+  language: en
+  region: global
+- id: abc_news
+  name: ABC News
+  enabled: true
+  mode: browser_index
+  url: https://abcnews.com/
+  include_domains:
+  - abcnews.com
+  max_items: 80
+  article_patterns:
+  - ^https://abcnews\.com/.+/(story|wireStory|live-updates)(/|$)
+  exclude_patterns:
+  - /Video/
+  - /video/
+  - /alerts/
+  - /Live$
+  content_selectors:
+  - article
+  - main article
+  - main
+  module: information
+  category: international
+  language: en
+  region: us
+- id: guardian_uk
+  name: The Guardian UK
+  report_target: 8
+  report_max: 15
+  enabled: true
+  mode: browser_index
+  url: https://www.theguardian.com/world
+  explore_urls:
+  - https://www.theguardian.com/uk-news
+  - https://www.theguardian.com/business
+  - https://www.theguardian.com/technology
+  - https://www.theguardian.com/science
+  include_domains:
+  - theguardian.com
+  max_items: 80
+  report_target: 8
+  report_max: 15
+  article_patterns:
+  - ^https://www\.theguardian\.com/[^/]+/20\d{2}/[a-z]{3}/\d{2}/.+
+  exclude_patterns:
+  - /profile/
+  - /help/
+  - /info/
+  content_selectors:
+  - article
+  - main article
+  - main
+  module: information
+  category: international
+  language: en
+  region: uk
+- id: bbc_world
+  name: BBC
+  report_target: 10
+  report_max: 15
+  enabled: true
+  mode: browser_index
+  url: https://www.bbc.com/news
+  explore_urls:
+  - https://www.bbc.com/news/world
+  - https://www.bbc.com/news/uk
+  - https://www.bbc.com/news/business
+  - https://www.bbc.com/innovation/technology
+  - https://www.bbc.com/innovation/science
+  include_domains:
+  - bbc.co.uk
+  - bbc.com
+  max_items: 80
+  article_patterns:
+  - ^https://www\.bbc\.(?:co\.uk|com)/(?:news|innovation)/(?:articles|article)/.+
+  exclude_patterns:
+  - /news/videos/
+  - /sport/
+  - /iplayer/
+  - /usingthebbc/
+  - /accessibility/
+  content_selectors:
+  - article
+  - main article
+  - main
+  module: information
+  category: international
+  language: en
+  region: global
+- id: forbes
+  name: Forbes
+  enabled: true
+  mode: browser_index
+  url: https://www.forbes.com/
+  include_domains:
+  - forbes.com
+  max_items: 80
+  article_patterns:
+  - ^https?://www\.forbes\.com/sites/[^/]+/20\d{2}/\d{2}/\d{2}/.+
+  exclude_patterns:
+  - /subscribe
+  - /privacy
+  - /terms-and-conditions
+  - /newsletters/
+  content_selectors:
+  - article
+  - main article
+  - main
+  module: information
+  category: market
+  language: en
+  region: global
+- id: twz
+  name: TWZ
+  report_target: 4
+  report_max: 15
+  enabled: true
+  mode: twz_index
+  url: https://www.twz.com/latest
+  include_domains:
+  - twz.com
+  max_items: 60
+  article_patterns:
+  - ^https://www\.twz\.com/(air|land|sea|space|news-features)/.+
+  exclude_patterns:
+  - /authors/
+  - /category/
+  - /editorial-standards
+  content_selectors:
+  - article
+  - main article
+  - main
+  module: information
+  category: military
+  language: en
+  region: global
+- id: defence_blog_aviation
+  name: Defence Blog Aviation
+  report_target: 4
+  report_max: 15
+  enabled: true
+  mode: browser_index
+  url: https://defence-blog.com/category/news/aviation/
+  include_domains:
+  - defence-blog.com
+  max_items: 50
+  role: evidence
+  article_patterns:
+  - ^https://defence-blog\.com/[^/?#]+/?$
+  exclude_patterns:
+  - /category/
+  - /author/
+  - /tag/
+  - /about/
+  - /contact/
+  - /privacypolicy/
+  content_selectors:
+  - article
+  - main article
+  - main
+  module: information
+  category: military
+  language: en
+  region: global
+- id: the_aviationist
+  name: The Aviationist
+  report_target: 4
+  report_max: 15
+  enabled: true
+  mode: browser_index
+  url: https://theaviationist.com/articles/
+  include_domains:
+  - theaviationist.com
+  max_items: 60
+  role: evidence
+  article_patterns:
+  - ^https://theaviationist\.com/20\d{2}/\d{2}/\d{2}/.+/?$
+  exclude_patterns:
+  - /category/
+  - /author/
+  - /tag/
+  content_selectors:
+  - article
+  - main article
+  - main
+  module: information
+  category: military
+  language: en
+  region: global
+- id: usni_news
+  name: USNI News
+  enabled: true
+  mode: browser_index
+  url: https://news.usni.org/
+  include_domains:
+  - news.usni.org
+  max_items: 60
+  role: evidence
+  article_patterns:
+  - ^https://news\.usni\.org/20\d{2}/\d{2}/\d{2}/[^/?#]+/?$
+  exclude_patterns:
+  - /category/
+  - /author/
+  - /tag/
+  content_selectors:
+  - article
+  - main article
+  - main
+  module: information
+  category: military
+  language: en
+  region: us
+- id: rusi_publications
+  name: RUSI Publications
+  enabled: true
+  mode: browser_index
+  url: https://www.rusi.org/explore-our-research/publications
+  include_domains:
+  - rusi.org
+  max_items: 60
+  role: evidence
+  article_patterns:
+  - ^https://www\.rusi\.org/explore-our-research/publications/[^/]+/[^/?#]+/?$
+  exclude_patterns:
+  - /publications/?$
+  content_selectors:
+  - article
+  - main article
+  - main
+  module: information
+  category: military
+  language: en
+  region: global
+- id: yahoo_news
+  name: Yahoo News
+  enabled: true
+  mode: browser_index
+  url: https://www.yahoo.com/news/
+  include_domains:
+  - yahoo.com
+  max_items: 80
+  article_patterns:
+  - ^https://www\.yahoo\.com/(news|finance)/.+/articles/.+\.html$
+  exclude_patterns:
+  - /privacy/
+  - /all/
+  - /weather-news/$
+  - guce\.yahoo\.com
+  exclude_title_patterns:
+  - ^view all comments$
+  content_selectors:
+  - article
+  - main article
+  - main
+  module: information
+  category: market
+  language: en
+  region: global

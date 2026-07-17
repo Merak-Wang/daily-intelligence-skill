@@ -1,0 +1,29 @@
+api_version: "2026-03-11"
+schema_profiles:
+  hermes_notes:
+    properties:
+      title: "Name"
+      date: "Date"
+      status: "Status"
+      source: "Source"
+      tags: "Tags"
+    values:
+      morning_status: "New"
+      evening_status: "Reviewed"
+      source: "Daily Intelligence"
+      morning_tags: ["Daily Intelligence", "Morning"]
+      evening_tags: ["Daily Intelligence", "Evening"]
+  daily_intelligence:
+    properties:
+      title: "Title"
+      date: "Date"
+      version: "Version"
+      status: "Status"
+      source_count: "Source Count"
+      event_count: "Event Count"
+      pending_verification_count: "Pending Verification"
+    values:
+      morning_version: "Morning v0.5"
+      evening_version: "Final v1.0"
+      morning_status: "Published"
+      evening_status: "Final"

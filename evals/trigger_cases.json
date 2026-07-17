@@ -1,0 +1,16 @@
+{
+  "should_trigger": [
+    "Generate today's morning intelligence brief from the configured sources.",
+    "Update the evening edition and append it to Notion.",
+    "Reuters needs verification; continue the report and let me resume later.",
+    "Select which collected articles need full-text reading before analysis.",
+    "Use prior days' theses and watchlist to keep today's analysis continuous."
+  ],
+  "should_not_trigger": [
+    "Explain what Reuters is.",
+    "Translate this news headline into Chinese.",
+    "Write a generic Python requests tutorial.",
+    "Show me tomorrow's weather.",
+    "Draft a personal email to my manager."
+  ]
+}

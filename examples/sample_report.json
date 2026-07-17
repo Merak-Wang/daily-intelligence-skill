@@ -1,0 +1,207 @@
+{
+  "schema_version": "1.4",
+  "report_id": "daily-2026-07-12-morning-r1",
+  "date": "2026-07-12",
+  "edition": "morning",
+  "language": "zh-CN",
+  "revision": 1,
+  "generated_at": "2026-07-12T05:48:00+08:00",
+  "title": "2026年7月12日每日情报早报",
+  "executive_summary": [
+    "人工智能系统的竞争重点正从单纯扩大模型规模，转向效率、部署成本与系统工程能力。"
+  ],
+  "sections": [
+    {
+      "id": "information.international",
+      "title": "国际",
+      "items": [],
+      "coverage_note": "本时段没有达到证据与重要性门槛的国际局势条目。",
+      "module": "information",
+      "category": "international"
+    },
+    {
+      "id": "information.domestic",
+      "title": "国内新闻",
+      "items": [],
+      "coverage_note": "国内来源仍待恢复，本时段没有可可靠发布的条目。",
+      "module": "information",
+      "category": "domestic"
+    },
+    {
+      "id": "information.military",
+      "title": "军事",
+      "items": [],
+      "coverage_note": "本时段没有达到证据与重要性门槛的军事条目。",
+      "module": "information",
+      "category": "military"
+    },
+    {
+      "id": "information.market",
+      "title": "市场",
+      "items": [],
+      "coverage_note": "经济来源仍待验证，本时段不输出证据不足的市场结论。",
+      "module": "information",
+      "category": "market"
+    },
+    {
+      "id": "technology.news",
+      "title": "技术新闻",
+      "items": [
+        {
+          "event_id": "TECH-20260712-001",
+          "title": "人工智能竞争转向更低成本、更高效率的系统",
+          "tldr": "一份行业报道指出，模型竞争越来越取决于效率、推理成本和系统设计，而不再只取决于参数规模。",
+          "why_it_matters": "这会直接影响智能体、RAG、评测与推理优化等技术的学习和投入优先级。",
+          "importance": 82,
+          "confidence": 0.6,
+          "status": "NEW",
+          "primary_source": {
+            "id": "cnbc_world",
+            "name": "CNBC",
+            "url": "https://www.cnbc.com/world/"
+          },
+          "source_refs": [
+            {
+              "item_id": "cnbc_world-example",
+              "title": "The AI race is shifting from bigger models to cheaper, smarter systems",
+              "url": "https://www.cnbc.com/2026/07/10/the-ai-race-is-shifting-from-bigger-models-to-cheaper-smarter-systems.html",
+              "access": "metadata_only",
+              "role": "discovery"
+            }
+          ],
+          "evidence_notes": [
+            "该示例未读取正文，仅依据公开摘要展示报告结构；不得据此补充摘要未包含的事实。"
+          ],
+          "tags": [
+            "ai",
+            "inference",
+            "agents"
+          ],
+          "importance_breakdown": {
+            "impact": 25,
+            "freshness": 12,
+            "relevance": 14,
+            "source_quality": 11,
+            "corroboration": 5,
+            "novelty": 10,
+            "continuity": 5
+          },
+          "importance_reason": "该趋势对人工智能工程实践影响广泛且个人相关性较高，但当前证据质量仍属中等。"
+        }
+      ],
+      "module": "technology",
+      "category": "news"
+    },
+    {
+      "id": "technology.papers",
+      "title": "值得阅读的论文",
+      "items": [],
+      "coverage_note": "本时段没有筛选出证据充分且与用户方向高度相关的新论文。",
+      "module": "technology",
+      "category": "papers"
+    },
+    {
+      "id": "technology.open_source",
+      "title": "今日值得关注的开源项目",
+      "items": [],
+      "coverage_note": "本时段没有筛选出具备持续采用信号的高价值开源项目。",
+      "module": "technology",
+      "category": "open_source"
+    }
+  ],
+  "analyses": [
+    {
+      "analysis_id": "TH-AI-001",
+      "assessment_types": [
+        "trend",
+        "risk",
+        "learning_research"
+      ],
+      "perspectives": [
+        "geopolitics",
+        "ai_research_engineering",
+        "equity_analysis",
+        "china_standpoint",
+        "western_standpoint"
+      ],
+      "claim": "智能体工程的核心价值正转向评测、编排和推理经济性。",
+      "facts": [
+        "行业报道将推理成本、效率和系统设计列为模型竞争的重要变量。"
+      ],
+      "reasoning": "如果基础模型能力差距继续缩小，应用层的可靠评测、编排效率和单位任务成本就会成为更稳定的竞争优势。",
+      "narrative": "今日技术线索的共同点，不是某个模型参数再创新高，而是人工智能竞争开始进入成本、工程可靠性与产业组织能力共同决定胜负的阶段。从研发工程师角度看，评测、轨迹观测和推理成本将直接决定系统能否上线；从资本市场角度看，只有能够把模型能力转化为稳定现金流的公司才更可能获得持续估值；从地缘竞争角度看，中国更关注自主供应链和规模化部署，西方企业则更强调高端算力、平台生态与标准控制。以上判断仍需要更多公司财报和真实部署数据验证。",
+      "dialectical_analysis": "模型能力进步与部署成本下降相互促进，也相互制约；能力越强并不自动意味着商业价值越高，工程复杂度和能源成本可能抵消能力收益。",
+      "historical_context": "类似变化曾出现在云计算从基础设施竞赛转向平台效率和应用生态的阶段，产业价值随后由硬件扩散到软件、运维和行业解决方案。",
+      "stakeholder_positions": [
+        {
+          "stakeholder": "中国人工智能产业",
+          "position": "强调自主可控、成本效率和大规模行业落地。",
+          "interests": "降低对高端外部算力的依赖，并形成可持续的本土应用生态。"
+        },
+        {
+          "stakeholder": "西方模型与云平台企业",
+          "position": "强调前沿能力、平台接口和全球开发者生态。",
+          "interests": "维持技术标准、算力平台和开发者入口的定价权。"
+        }
+      ],
+      "confidence": 0.58,
+      "evidence_event_ids": [
+        "TECH-20260712-001"
+      ],
+      "counter_evidence": [
+        "前沿大模型的基础能力仍可能继续成为最主要的差异化因素。"
+      ],
+      "scenarios": [
+        "若主要实验室持续降低模型价格，企业会把更多预算转向评测、数据闭环和智能体编排。"
+      ],
+      "implications": [
+        "应优先学习轨迹评测和具备成本意识的系统设计。"
+      ],
+      "actions": [
+        "建立一个包含质量、延迟和成本指标的智能体评测基线。"
+      ],
+      "watch_signals": [
+        "关注主要实验室是否发布已部署智能体的成本与性能基准。"
+      ],
+      "invalidation_signals": [
+        "如果前沿模型能力差距重新快速扩大且成本不再是主要约束，该判断需要下调。"
+      ],
+      "state_change": "new",
+      "domain": "ai_technology"
+    }
+  ],
+  "changes": [],
+  "tomorrow_watch_items": [],
+  "pending_verifications": [
+    {
+      "source_id": "reuters",
+      "source_name": "Reuters",
+      "status": "verification_required",
+      "note": "检测到 HTTP 401，需要完成合法的人工验证后重试。",
+      "url": "https://www.reuters.com/"
+    }
+  ],
+  "source_count": 2,
+  "event_count": 1,
+  "quality_evaluation": {
+    "evaluator_role": "independent",
+    "evaluated_report_id": "daily-2026-07-12-morning-r1",
+    "dimensions": [
+      {"id": "coverage", "score": 3, "finding": "固定栏目完整，但示例事件数量有限。"},
+      {"id": "importance_ordering", "score": 4, "finding": "现有条目按重要性正确排序。"},
+      {"id": "factual_reliability", "score": 3, "finding": "主要证据仅为公开摘要，需要正文或独立来源增强。"},
+      {"id": "summary_accuracy", "score": 4, "finding": "摘要明确披露访问边界，没有补写未见事实。"},
+      {"id": "analysis_traceability", "score": 4, "finding": "研判明确引用报告内事件。"},
+      {"id": "historical_continuity", "score": 3, "finding": "示例提供历史类比，但没有更长时间序列。"},
+      {"id": "readability", "score": 4, "finding": "结构清晰，篇幅适中。"},
+      {"id": "timeliness", "score": 4, "finding": "示例遵守晨报时间窗口。"},
+      {"id": "compliance_boundaries", "score": 5, "finding": "全文、元数据和待验证来源区分明确。"}
+    ],
+    "total_score": 34,
+    "main_defects": ["事件覆盖数量不足，不能代表完整生产日报。"],
+    "insufficient_evidence": ["人工智能产业趋势缺少公司财报和独立来源交叉验证。"],
+    "improvements": ["补充正文和公司原始材料后重新校准置信度。"],
+    "continuity_decision": "selective",
+    "exclude_from_continuity": ["event_summaries"]
+  }
+}
