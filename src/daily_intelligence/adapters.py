@@ -146,11 +146,21 @@ def collect_browser_index(
             })()
         }))"""
     )
+    return browser_items_from_rows(rows, source, discovered_at, page.url)
+
+
+def browser_items_from_rows(
+    rows: list[dict[str, str]],
+    source: SourceConfig,
+    discovered_at: str,
+    base_url: str,
+) -> list[ArticleItem]:
+    """Normalize untrusted index-page rows without executing page instructions."""
     items: list[ArticleItem] = []
     seen: set[str] = set()
     for row in rows:
         title = clean_title(row.get("title", ""))
-        url = urljoin(page.url, row.get("href", ""))
+        url = urljoin(base_url, row.get("href", ""))
         if not is_eligible(source, title, url):
             continue
         article = _article(source, title, url, discovered_at)

@@ -402,6 +402,10 @@
               "type": "string"
             }
           },
+          "scenario_basis": {
+            "type": "string",
+            "minLength": 10
+          },
           "implications": {
             "type": "array",
             "items": {

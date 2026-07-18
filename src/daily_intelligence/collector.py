@@ -7,8 +7,8 @@ from typing import Any
 
 from playwright.sync_api import BrowserContext, Page, sync_playwright
 
-from .adapters import collect_candidates
-from .adapters import is_eligible as is_eligible
+from .access import CHALLENGE_TEXTS, classify_access_text
+from .adapters import collect_candidates, is_eligible
 from .config import (
     AppConfig,
     SourceConfig,
@@ -17,27 +17,11 @@ from .config import (
     source_urls,
 )
 from .models import SourceResult, SourceStatus
+from .prefetch import page_needs_browser, prefetch_browser_pages
 from .storage import next_revision, write_immutable_json
 from .utils import now_iso, read_json, timestamp_slug, today_str, write_json
 
-CHALLENGE_TEXTS = (
-    "verify you are human",
-    "checking your browser",
-    "are you a robot",
-    "unusual traffic",
-    "access denied",
-    "security check",
-    "enable javascript and cookies",
-    "captcha",
-    "robot check",
-)
-RATE_LIMIT_TEXTS = (
-    "temporarily limited",
-    "temporarily restricted",
-    "too many requests",
-    "rate limit exceeded",
-)
-
+__all__ = ["CHALLENGE_TEXTS", "is_eligible"]
 
 def detect_challenge(page: Page, http_status: int | None) -> dict[str, Any]:
     title = ""
@@ -46,25 +30,17 @@ def detect_challenge(page: Page, http_status: int | None) -> dict[str, Any]:
         title = page.title().lower()
     with contextlib.suppress(Exception):
         body = page.locator("body").inner_text(timeout=3000).lower()[:30000]
-    rate_limited_text = next(
-        (text for text in RATE_LIMIT_TEXTS if text in title or text in body), None
-    )
-    matched = rate_limited_text or next(
-        (text for text in CHALLENGE_TEXTS if text in title or text in body), None
-    )
     iframe_count = 0
     with contextlib.suppress(Exception):
         iframe_count = page.locator(
             'iframe[src*="captcha"], iframe[src*="challenge"], iframe[title*="challenge" i]'
         ).count()
-    rate_limited = http_status == 429 or rate_limited_text is not None
-    required = http_status in {401, 403, 429} or matched is not None or iframe_count > 0
-    return {
-        "required": required,
-        "rate_limited": rate_limited,
-        "matched_text": matched,
-        "iframe_detected": iframe_count > 0,
-    }
+    return classify_access_text(
+        http_status,
+        title,
+        body,
+        iframe_detected=iframe_count > 0,
+    )
 
 
 def classify_source_status(
@@ -154,15 +130,28 @@ def collect_loaded_page(
 
 
 def collect_source(
-    context: BrowserContext,
+    context: BrowserContext | None,
     source: SourceConfig,
     config: AppConfig,
     data_dir: Path,
+    prefetched_pages: dict[tuple[str, str], SourceResult] | None = None,
 ) -> SourceResult:
-    page_results = [
-        collect_one(context, replace(source, url=url), config, data_dir)
-        for url in source_urls(source, data_dir)
-    ]
+    prefetch_supplied = prefetched_pages is not None
+    prefetched_pages = prefetched_pages or {}
+    page_results: list[SourceResult] = []
+    for url in source_urls(source, data_dir):
+        prefetched = prefetched_pages.get((source.id, url))
+        if not page_needs_browser(prefetched):
+            page_results.append(prefetched)
+            continue
+        if context is None and prefetch_supplied:
+            raise RuntimeError(
+                f"Edge fallback required for source {source.id!r} page {url}, "
+                "but no browser context is available"
+            )
+        page_results.append(
+            collect_one(context, replace(source, url=url), config, data_dir)
+        )
     for result in page_results:
         if result.status == SourceStatus.NO_ITEMS and (
             result.error or (result.http_status is not None and result.http_status >= 400)
@@ -259,21 +248,44 @@ def collect_sources(
     profile = resolve_profile_dir(config, profile_dir)
     profile.mkdir(parents=True, exist_ok=True)
     channel = resolve_browser_channel(config, browser_channel)
-    with sync_playwright() as playwright:
-        kwargs: dict[str, Any] = {
-            "user_data_dir": str(profile),
-            "headless": not headed,
-            "locale": "en-US",
-            "timezone_id": config.timezone,
-            "viewport": {"width": 1440, "height": 1000},
-        }
-        if channel:
-            kwargs["channel"] = channel
-        context = playwright.chromium.launch_persistent_context(**kwargs)
-        try:
-            results = [collect_source(context, source, config, data_dir) for source in selected]
-        finally:
-            context.close()
+    prefetched_pages = (
+        {} if headed else prefetch_browser_pages(selected, config, data_dir)
+    )
+    requires_browser = any(
+        page_needs_browser(prefetched_pages.get((source.id, url)))
+        for source in selected
+        for url in source_urls(source, data_dir)
+    )
+    if requires_browser:
+        with sync_playwright() as playwright:
+            kwargs: dict[str, Any] = {
+                "user_data_dir": str(profile),
+                "headless": not headed,
+                "locale": "en-US",
+                "timezone_id": config.timezone,
+                "viewport": {"width": 1440, "height": 1000},
+            }
+            if channel:
+                kwargs["channel"] = channel
+            context = playwright.chromium.launch_persistent_context(**kwargs)
+            try:
+                results = [
+                    collect_source(
+                        context,
+                        source,
+                        config,
+                        data_dir,
+                        prefetched_pages,
+                    )
+                    for source in selected
+                ]
+            finally:
+                context.close()
+    else:
+        results = [
+            collect_source(None, source, config, data_dir, prefetched_pages)
+            for source in selected
+        ]
 
     return write_results_index(
         results,

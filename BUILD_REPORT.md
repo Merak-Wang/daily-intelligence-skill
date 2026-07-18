@@ -1,5 +1,34 @@
 # Build and Validation Report
 
+## v1.0.0 — 2026-07-18
+
+- Added `local_output.py` as a deterministic projection layer for responsive HTML, the local archive index, Edge print-to-PDF, ReportLab fallback, and post-evaluation refresh.
+- Local finalization now generates JSON/Markdown/HTML/PDF without Notion. `--publish` remains backward compatible as an explicit additional Notion action.
+- Independent evaluation is scheduled after local delivery rather than after Notion publication. Local-only evaluation omits `--publish`; Notion-backed evaluation retains the append flag.
+- HTML escapes report/source content, restricts links to HTTP(S), applies CSP, and downloads feedback locally without network submission. PDF printing blocks remote requests.
+- Added output configuration and regression tests for config validation, HTML injection boundaries, PDF readability, archive indexing, local-only evaluator scheduling, and evaluation-driven projection refresh.
+- Visual validation used the repository sample report: Edge produced a legible Chinese A4 document with source links, three analysis perspectives, assessment table, compact print feedback, and page numbering.
+- Full verification passed: 133 pytest cases, Ruff, compileall, CLI help, and `git diff --check`.
+- Desktop and 390-pixel mobile HTML views were exercised in a real browser; source search, responsive layout, article visibility, and the local feedback download UI were checked. The final Edge PDF sample contained six A4 pages without clipping.
+- Full v1.0.0 verification passed: 134 pytest cases, Ruff, compileall, README local-link checks, PowerShell parser validation, PortableGit Bash syntax validation, CLI help, and `git diff --check`.
+- Built `dist/daily_intelligence_skill-1.0.0-py3-none-any.whl` (108,064 bytes; SHA-256 `d205d7890311626be10a1d5a3394f67f8e8c60960ccdbf47fec11c3d1af5cc40`).
+- Codex's generic skill validator rejects Hermes-specific frontmatter fields, so it is not authoritative for this repository. Hermes' own skill discovery is the compatibility check; its existing installed skill was enabled before synchronization.
+- Synchronized the stable v1.0.0 skill to `%LOCALAPPDATA%\hermes\skills\research\daily-intelligence`; package and SKILL versions match, eight representative repository/installed hashes match, Hermes reports the local skill enabled, and repository/build/debug artifacts are absent from the installed directory.
+
+## v0.10.0 — 2026-07-17
+
+- Implemented the roadmap items for canonical runtime state, enrichment lineage, evidence gates, semantic reuse, bounded collection concurrency, interactive verification defaults, phase metrics, module separation, repository hygiene, and CI.
+- `daily-intel data-root status|adopt` records the one allowed root under Hermes Home; direct artifact commands and workflow transitions now reject paths or manifests from another root.
+- Public generic index pages use inert HTTP/HTML parsing in bounded parallel workers. Edge remains the single persistent-profile fallback for specialized adapters and pages that need JavaScript or user verification; 429/temporary restriction stops the fallback loop.
+- Semantic cache entries are pending until the independent evaluation accepts continuity and gives at least 3/5 for factual reliability, summary accuracy, and compliance. Fingerprint changes invalidate reuse.
+- CLI verification code was moved to `verification.py` (992 to about 520 CLI lines), tracked Playwright debug output was removed, and a Windows/Linux Python 3.11/3.12 GitHub Actions matrix was added.
+- Full verification passed: 130 pytest cases, Ruff, compileall, CLI help, and `git diff --check`. Tests also passed after switching from editable development import to the stable site-packages install.
+- Built `dist/daily_intelligence_skill-0.10.0-py3-none-any.whl` (95,163 bytes; SHA-256 `49540faf441ca2425f6c9db32424b1e9431a655d650401056e6c499a232755ed`).
+- Synchronized the stable skill to `%LOCALAPPDATA%\hermes\skills\research\daily-intelligence`; eight representative repository/installed hashes matched, package version is 0.10.0, and Hermes reports the local skill enabled.
+- Hardened the Windows installer to remove explicitly named legacy runtime/secret/debug entries only after resolving and verifying that each target remains inside the installed skill directory; ordinary source files are still mirrored non-destructively.
+- Bound the live runtime to `%LOCALAPPDATA%\hermes\daily-intelligence`. The old `daily-intel-data` directory was left untouched for manual archival; it can no longer be mixed into normal runs accidentally.
+- Updated the existing 06:00 and 18:00 Hermes jobs to require `run-edition --unattended`; Gateway is running. No live report publication was triggered merely for development validation.
+
 ## v0.9.8 — 2026-07-17
 
 - Added an explicit interactive `run-edition --open-verification` path that opens the connected Edge verification frontend immediately after collection only when failed, challenged, or rate-limited pages exist; the default 180-second wait keeps it bounded.

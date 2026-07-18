@@ -6,6 +6,7 @@ from pathlib import Path
 
 import pytest
 import yaml
+from pypdf import PdfReader
 
 from daily_intelligence.cli import (
     build_parser,
@@ -18,13 +19,14 @@ from daily_intelligence.cli import (
     write_verification_queue,
 )
 from daily_intelligence.collector import collect_source, detect_challenge, merge_verified_results
-from daily_intelligence.config import load_config
+from daily_intelligence.config import OutputConfig, load_config
 from daily_intelligence.content import (
     _ordered_targets,
     _run_parallel_extraction,
     synchronize_nested_items,
 )
 from daily_intelligence.context import _continuity_entry, build_context
+from daily_intelligence.local_output import render_report_html
 from daily_intelligence.models import ArticleItem, SourceResult
 from daily_intelligence.notion import (
     NotionPublisher,
@@ -50,6 +52,25 @@ from daily_intelligence.workflow import (
 
 def _sample_report(root: Path) -> dict:
     return json.loads((root / "examples" / "sample_report.json").read_text(encoding="utf-8"))
+
+
+def test_installers_sync_into_platform_hermes_skill_roots_and_exclude_repo_state():
+    root = Path(__file__).resolve().parents[1]
+    powershell = (root / "scripts" / "install.ps1").read_text(encoding="utf-8")
+    shell = (root / "scripts" / "install.sh").read_text(encoding="utf-8")
+
+    assert 'Join-Path $env:LOCALAPPDATA "hermes"' in powershell
+    assert '"skills"' in powershell
+    assert '".git"' in powershell
+    assert '"build"' in powershell
+    assert "if (-not $sameDirectory)" in powershell
+    assert "post-install artifact" in powershell
+    assert '${HOME}/.hermes' in shell
+    assert 'skills_root="${hermes_home}/skills"' in shell
+    assert 'target_dir="${skills_root}/research/daily-intelligence"' in shell
+    assert "if source != target:" in shell
+    assert "shutil.copytree(source, target, ignore=ignore)" in shell
+    assert "post-install artifact" in shell
 
 
 def _first_report_item(report: dict) -> dict:
@@ -118,7 +139,12 @@ def test_save_report_writes_markdown_and_continuity_state(tmp_path: Path):
     draft = write_json(tmp_path / "draft.json", report)
     index = _index_for(report, tmp_path / "index.json")
 
-    artifacts = save_report(draft, index, tmp_path / "data")
+    artifacts = save_report(
+        draft,
+        index,
+        tmp_path / "data",
+        output_config=OutputConfig(formats=["html", "pdf"], pdf_engine="reportlab"),
+    )
 
     saved = read_json(Path(artifacts["json_path"]))
     markdown = Path(artifacts["markdown_path"]).read_text(encoding="utf-8")
@@ -138,6 +164,17 @@ def test_save_report_writes_markdown_and_continuity_state(tmp_path: Path):
     ]
     assert "反证与不确定性" in markdown
     assert "发布于 2026-07-12" in markdown
+    html = Path(artifacts["html_path"]).read_text(encoding="utf-8")
+    assert "日报中心" in html
+    assert "download-feedback" in html
+    assert "从 AI 研究/开发工程师的角度" in html
+    assert Path(artifacts["pdf_path"]).exists()
+    assert len(PdfReader(artifacts["pdf_path"]).pages) >= 1
+    assert Path(artifacts["local_index_path"]).exists()
+    assert artifacts["pdf_engine"] == "reportlab"
+    archive = Path(artifacts["local_index_path"]).read_text(encoding="utf-8")
+    assert report["title"] in archive
+    assert "阅读 HTML" in archive
 
     events = read_json(tmp_path / "data" / "state" / "events.json")
     theses = read_json(tmp_path / "data" / "state" / "theses.json")
@@ -156,6 +193,23 @@ def test_report_must_match_index_edition(tmp_path: Path):
 
     with pytest.raises(ValueError, match="must match"):
         save_report(draft, index, tmp_path / "data")
+
+
+def test_local_html_escapes_untrusted_report_text_and_urls():
+    root = Path(__file__).resolve().parents[1]
+    report = _sample_report(root)
+    report["title"] = "日报 </title><script>alert(1)</script>"
+    item = _first_report_item(report)
+    item["title"] = "标题 <img src=x onerror=alert(1)>"
+    item["source_refs"][0]["url"] = "javascript:alert(1)"
+
+    rendered = render_report_html(report)
+
+    assert "<script>alert(1)</script>" not in rendered
+    assert "&lt;script&gt;alert(1)&lt;/script&gt;" in rendered
+    assert "<img src=x onerror=alert(1)>" not in rendered
+    assert 'href="javascript:' not in rendered
+    assert "Content-Security-Policy" in rendered
 
 
 def test_two_stage_run_reaches_completed(monkeypatch, tmp_path: Path):
@@ -196,6 +250,10 @@ def test_two_stage_run_reaches_completed(monkeypatch, tmp_path: Path):
     monkeypatch.setattr("daily_intelligence.workflow.collect_sources", fake_collect_sources)
     monkeypatch.setattr("daily_intelligence.workflow.build_context", fake_build_context)
     monkeypatch.setattr("daily_intelligence.workflow.extract_content", fake_extract_content)
+    monkeypatch.setattr(
+        "daily_intelligence.workflow.schedule_independent_evaluation",
+        lambda *_args, **_kwargs: {"status": "scheduled", "detail": "local-eval"},
+    )
 
     run_path = prepare_edition(config, tmp_path / "data", "morning")
     assert read_json(run_path)["status"] == RunStatus.AWAITING_SELECTION
@@ -225,10 +283,20 @@ def test_two_stage_run_reaches_completed(monkeypatch, tmp_path: Path):
     ]
     assert extraction_calls == [["cnbc_world-example"], ["second-item"]]
 
-    finalize_edition(run_path, draft, tmp_path / "data")
+    finalize_edition(
+        run_path,
+        draft,
+        tmp_path / "data",
+        output_config=OutputConfig(formats=["html"]),
+    )
     completed = read_json(run_path)
     assert completed["status"] == RunStatus.COMPLETED
     assert Path(completed["artifacts"]["markdown_path"]).exists()
+    assert completed["artifacts"]["collection_metrics"]["candidate_count"] == 1
+    assert "phase_durations_seconds" in completed["metrics"]
+    assert completed["metrics"]["phase_durations_seconds"]["collection"] >= 0
+    assert completed["evaluation"]["scheduler"]["status"] == "scheduled"
+    assert completed["publication"] is None
 
 
 def test_enrich_edition_records_only_ids_accepted_under_hard_cap(monkeypatch, tmp_path: Path):
@@ -267,12 +335,17 @@ def test_enrich_edition_records_only_ids_accepted_under_hard_cap(monkeypatch, tm
     run = read_json(run_path)
     assert extraction_calls == [requested[:12]]
     assert run["artifacts"]["selected_item_ids"] == requested[:12]
-    assert run["artifacts"]["enrichment"] == {
+    enrichment = run["artifacts"]["enrichment"]
+    assert enrichment == {
         "requested": 20,
         "accepted": 12,
         "hard_cap": 12,
         "global_concurrency": 3,
         "per_domain_concurrency": 1,
+        "successful_item_ids": [],
+        "full_text_item_ids": [],
+        "partial_item_ids": [],
+        "unsuccessful_item_ids": requested[:12],
     }
 
 
@@ -294,6 +367,10 @@ def test_cli_exposes_two_stage_workflow():
     )
     assert verification.command == "verify-pending"
     assert evaluation.command == "finalize-evaluation"
+    assert prepared.open_verification is True
+    assert parser.parse_args(
+        ["run-edition", "--edition", "morning", "--unattended"]
+    ).open_verification is False
 
 
 def test_run_edition_can_open_interactive_verification_after_collection(
@@ -351,7 +428,6 @@ def test_run_edition_can_open_interactive_verification_after_collection(
             "run-edition",
             "--edition",
             "morning",
-            "--open-verification",
             "--verification-timeout-seconds",
             "17",
             "--profile-dir",
@@ -364,6 +440,7 @@ def test_run_edition_can_open_interactive_verification_after_collection(
     output = json.loads(capsys.readouterr().out)
     assert exit_code == 0
     assert output["automatic_verification"]["status"] == "completed_without_capture"
+    assert read_json(run_path)["automatic_verification"]["captured_pages"] == 0
     assert calls == [
         {
             "index": index_path,
@@ -435,7 +512,12 @@ def test_v15_report_publishes_before_evaluation_and_state_waits(tmp_path: Path):
     index["items"][0]["metadata"] = {"role": "discovery"}
     write_json(index_path, index)
 
-    artifacts = save_report(draft, index_path, tmp_path / "data")
+    artifacts = save_report(
+        draft,
+        index_path,
+        tmp_path / "data",
+        output_config=OutputConfig(formats=["html"]),
+    )
 
     assert artifacts["evaluation_status"] == "pending"
     assert not (tmp_path / "data" / "state" / "theses.json").exists()
@@ -481,11 +563,15 @@ def test_v15_report_publishes_before_evaluation_and_state_waits(tmp_path: Path):
         evaluation_input,
         Path(artifacts["json_path"]),
         tmp_path / "data",
+        output_config=OutputConfig(formats=["html"]),
     )
 
     assert Path(evaluated["evaluation_path"]).exists()
     assert (tmp_path / "data" / "state" / "theses.json").exists()
     assert read_json(run_path)["evaluation"]["status"] == "completed"
+    refreshed_html = Path(artifacts["html_path"]).read_text(encoding="utf-8")
+    assert '<strong>36</strong><span>/ 45</span>' in refreshed_html
+    assert evaluated["local_outputs"]["html_path"] == artifacts["html_path"]
     assert "独立评估结果" in json.dumps(
         evaluation_to_blocks(read_json(Path(evaluated["evaluation_path"]))),
         ensure_ascii=False,
@@ -538,7 +624,7 @@ def test_visible_verification_wait_handles_success_and_timeout(monkeypatch):
 
     page = FakePage()
     monkeypatch.setattr(
-        "daily_intelligence.cli.detect_challenge",
+        "daily_intelligence.verification.detect_challenge",
         lambda _page, _status: {"required": False},
     )
     captured = []
@@ -552,7 +638,7 @@ def test_visible_verification_wait_handles_success_and_timeout(monkeypatch):
     assert captured == ["source"]
 
     monkeypatch.setattr(
-        "daily_intelligence.cli.detect_challenge",
+        "daily_intelligence.verification.detect_challenge",
         lambda _page, _status: {"required": True},
     )
     timeout = wait_for_visible_verification([("source", page, 200)], 0)
@@ -577,7 +663,7 @@ def test_visible_verification_stops_immediately_when_rate_limited(monkeypatch):
             return False
 
     monkeypatch.setattr(
-        "daily_intelligence.cli.detect_challenge",
+        "daily_intelligence.verification.detect_challenge",
         lambda _page, _status: {"required": True, "rate_limited": True},
     )
 
@@ -646,7 +732,7 @@ def test_verified_page_is_extracted_without_second_navigation(monkeypatch):
     )
     calls = []
     monkeypatch.setattr(
-        "daily_intelligence.cli.collect_loaded_page",
+        "daily_intelligence.verification.collect_loaded_page",
         lambda current, current_source, current_config, status: (
             calls.append((current, current_source, current_config, status)) or expected
         ),
@@ -853,6 +939,7 @@ def test_verified_index_reopens_published_run_as_a_report_revision(monkeypatch, 
         {"date": "2026-07-15", "edition": "morning", "items": [], "sources": []},
     )
     old_report = data_dir / "reports" / "2026-07-15" / "morning-r1.json"
+    old_index = data_dir / "indexes" / "2026-07-15" / "morning-r1.json"
     run_path = write_json(
         data_dir / "runs" / "2026-07-15" / "morning.json",
         {
@@ -860,7 +947,7 @@ def test_verified_index_reopens_published_run_as_a_report_revision(monkeypatch, 
             "edition": "morning",
             "status": RunStatus.COMPLETED_PARTIAL,
             "artifacts": {
-                "index_path": "old-index.json",
+                "index_path": str(old_index),
                 "report_id": "daily-2026-07-15-morning-r1",
                 "json_path": str(old_report),
                 "markdown_path": str(old_report.with_suffix(".md")),
@@ -953,8 +1040,19 @@ def test_post_publication_evaluation_uses_bounded_retries(monkeypatch, tmp_path:
     assert command[:4] == ["hermes", "cron", "create", "2m"]
     assert command[command.index("--repeat") + 1] == "3"
     assert "不得要求用户点击" in command[4]
+    assert "--publish" not in command[4]
     assert result["job_id"] == "eval-1"
     assert result["attempts"] == 3
+
+    schedule_independent_evaluation(
+        tmp_path / "report.json",
+        tmp_path / "index.json",
+        tmp_path / "data",
+        "daily-2026-07-15-morning-r1",
+        "abc123",
+        publish_notion=True,
+    )
+    assert "--publish" in calls[1][0][4]
 
 
 def test_finalize_publish_records_automatic_evaluator_schedule(monkeypatch, tmp_path: Path):
@@ -1185,9 +1283,11 @@ def test_context_caps_candidates_and_rejects_contaminated_history(tmp_path: Path
             "section_id": "information.international",
             "batch_id": "brief-batch-1",
             "target_count": 10,
-            "default_item_ids": [f"item-{position}" for position in range(10)],
-        }
-    ]
+                "default_item_ids": [f"item-{position}" for position in range(10)],
+                "reuse_item_ids": [],
+                "author_item_ids": [f"item-{position}" for position in range(10)],
+            }
+        ]
     prior = context["continuity_reports"][0]
     assert prior["reuse_status"] == "reject"
     assert prior["events"] == []
@@ -1379,6 +1479,44 @@ def test_finalize_validation_failure_returns_to_awaiting_authoring(monkeypatch, 
     run = read_json(run_path)
     assert run["status"] == RunStatus.AWAITING_AUTHORING
     assert "bad access" in run["error"]
+
+
+def test_finalize_rejects_an_index_that_lost_successful_enrichment(tmp_path):
+    data_dir = tmp_path / "data"
+    run_path = data_dir / "runs" / "2026-07-17" / "morning.json"
+    index_path = write_json(
+        data_dir / "indexes" / "2026-07-17" / "morning-r2.json",
+        {
+            "date": "2026-07-17",
+            "edition": "morning",
+            "items": [
+                {
+                    "item_id": "bbc-lost",
+                    "content_status": "metadata_only",
+                    "content_path": None,
+                }
+            ],
+        },
+    )
+    draft = write_json(
+        tmp_path / "draft.json", {"date": "2026-07-17", "edition": "morning"}
+    )
+    write_json(
+        run_path,
+        {
+            "data_root": str(data_dir.resolve()),
+            "date": "2026-07-17",
+            "edition": "morning",
+            "status": RunStatus.AWAITING_AUTHORING,
+            "artifacts": {
+                "index_path": str(index_path),
+                "enrichment": {"successful_item_ids": ["bbc-lost"]},
+            },
+        },
+    )
+
+    with pytest.raises(ValueError, match="lost previously successful full-text enrichment"):
+        finalize_edition(run_path, draft, data_dir)
 
 
 def _hermes_notes_publisher(root: Path) -> NotionPublisher:

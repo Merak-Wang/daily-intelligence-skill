@@ -6,6 +6,7 @@ from typing import Any
 
 from .config import AppConfig
 from .reporting import evaluation_continuity_floor
+from .semantics import load_semantic_cache, reusable_semantic_brief, semantic_fingerprint
 from .storage import next_revision, write_immutable_json
 from .utils import now_iso, read_json, write_json
 
@@ -223,6 +224,7 @@ def _compact_candidates(
                     "source_candidate_rank": rank,
                     "source_rank": source_rank,
                     "previously_reported": item.get("item_id") in reported_item_ids,
+                    "semantic_fingerprint": semantic_fingerprint(item),
                 }
             )
     return compact
@@ -267,7 +269,9 @@ def _build_brief_plan(
     candidates: list[dict[str, Any]],
     source_configs: dict[str, Any],
     batches: list[dict[str, Any]],
+    reusable_briefs: dict[str, dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
+    reusable_briefs = reusable_briefs or {}
     grouped: dict[str, list[dict[str, Any]]] = {}
     for item in candidates:
         source_id = str(item.get("source_id") or "")
@@ -289,6 +293,10 @@ def _build_brief_plan(
         )
         if target <= 0:
             continue
+        default_item_ids = [str(item["item_id"]) for item in items[:target]]
+        reuse_item_ids = [
+            item_id for item_id in default_item_ids if item_id in reusable_briefs
+        ]
         first = items[0]
         module = first.get("module") or getattr(source, "module", None) or "unknown"
         category = first.get("category") or getattr(source, "category", None) or "unknown"
@@ -298,7 +306,11 @@ def _build_brief_plan(
                 "section_id": f"{module}.{category}",
                 "batch_id": batch_by_source.get(source_id),
                 "target_count": target,
-                "default_item_ids": [str(item["item_id"]) for item in items[:target]],
+                "default_item_ids": default_item_ids,
+                "reuse_item_ids": reuse_item_ids,
+                "author_item_ids": [
+                    item_id for item_id in default_item_ids if item_id not in reusable_briefs
+                ],
             }
         )
     return sorted(plan, key=lambda row: (str(row["batch_id"]), str(row["source_id"])))
@@ -344,7 +356,16 @@ def build_context(
         {source.id: source.report_target for source in config.sources},
         reported_item_ids,
     )
-    brief_batches = _balanced_source_batches(candidates)
+    semantic_cache = load_semantic_cache(data_dir)
+    reusable_briefs = {
+        str(item["item_id"]): reusable
+        for item in candidates
+        if (reusable := reusable_semantic_brief(item, semantic_cache)) is not None
+    }
+    authoring_candidates = [
+        item for item in candidates if str(item.get("item_id")) not in reusable_briefs
+    ]
+    brief_batches = _balanced_source_batches(authoring_candidates)
 
     bundle = {
         "schema_version": "1.5",
@@ -375,8 +396,11 @@ def build_context(
             for source in index.get("sources", [])
         ],
         "candidate_items": candidates,
+        "reusable_briefs": list(reusable_briefs.values()),
         "brief_authoring_batches": brief_batches,
-        "brief_plan": _build_brief_plan(candidates, source_configs, brief_batches),
+        "brief_plan": _build_brief_plan(
+            candidates, source_configs, brief_batches, reusable_briefs
+        ),
         "continuity_reports": recent_reports,
         "active_theses": theses,
         "active_watchlist": watchlist,
@@ -391,7 +415,9 @@ def build_context(
         "brief_authoring_rule": (
             "Call Hermes delegate_task once in batch mode with one model worker per "
             "brief_authoring_batch, so all batches run concurrently. Each worker must satisfy its "
-            "brief_plan targets; default_item_ids are the deterministic baseline and may be "
+            "brief_plan targets; merge reusable_briefs without rewriting them, and send only "
+            "author_item_ids to workers. default_item_ids are the deterministic baseline and "
+            "may be "
             "replaced only by candidates from the same source. The model itself authors every "
             "semantic field: preserve the indexed headline, naturally translate each non-Chinese "
             "headline into title_zh, and write a Chinese TL;DR from content_path when fetched, "

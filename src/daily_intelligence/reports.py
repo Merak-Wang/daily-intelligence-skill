@@ -5,12 +5,19 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
+from .config import OutputConfig
+from .local_output import write_local_outputs
 from .reporting import (
     compile_report_data,
     normalize_report_data,
     report_content_hash,
     validate_evaluation_data,
     validate_report_data,
+)
+from .semantics import (
+    finalize_semantic_cache_evaluation,
+    load_semantic_cache,
+    update_semantic_cache_from_report,
 )
 from .state import update_continuity_state
 from .storage import next_revision, write_immutable_json, write_text_atomic
@@ -363,6 +370,7 @@ def save_report(
     input_path: Path,
     index_path: Path,
     data_dir: Path,
+    output_config: OutputConfig | None = None,
 ) -> dict[str, Any]:
     raw = read_json(input_path)
     index = read_json(index_path)
@@ -387,7 +395,7 @@ def save_report(
     report["revision"] = revision
     report["report_id"] = f"daily-{date}-{edition}-r{revision}"
 
-    compile_warnings = compile_report_data(report, index)
+    compile_warnings = compile_report_data(report, index, load_semantic_cache(data_dir))
     normalize_report_data(report, index)
     evaluation = report.get("quality_evaluation")
     if isinstance(evaluation, dict):
@@ -412,6 +420,9 @@ def save_report(
     write_immutable_json(json_path, report)
     write_text_atomic(markdown_path, render_report_markdown(report))
     write_json(data_dir / "reports" / f"latest-{edition}.json", report)
+    local_outputs = write_local_outputs(report, data_dir, output_config or OutputConfig())
+    warnings.extend(local_outputs.pop("warnings", []))
+    semantic_cache_path = update_semantic_cache_from_report(report, index, data_dir)
     state_paths = (
         update_continuity_state(report, data_dir)
         if report.get("quality_evaluation") or report.get("schema_version") != "1.5"
@@ -422,10 +433,12 @@ def save_report(
         "report_id": report["report_id"],
         "json_path": str(json_path),
         "markdown_path": str(markdown_path),
+        **local_outputs,
         "warnings": warnings,
         "state_paths": state_paths,
         "content_hash": report_content_hash(report),
         "evaluation_status": report.get("evaluation_status", "completed"),
+        "semantic_cache_path": str(semantic_cache_path),
     }
 
 
@@ -433,6 +446,7 @@ def save_evaluation(
     input_path: Path,
     report_path: Path,
     data_dir: Path,
+    output_config: OutputConfig | None = None,
 ) -> dict[str, Any]:
     raw = read_json(input_path)
     report = read_json(report_path)
@@ -451,9 +465,17 @@ def save_evaluation(
     output = evaluation_dir / f"{edition}-r{revision}.json"
     write_immutable_json(output, evaluation)
     write_json(data_dir / "evaluations" / f"latest-{edition}.json", evaluation)
+    semantic_cache_path = finalize_semantic_cache_evaluation(evaluation, data_dir)
     assessed_report = dict(report)
     assessed_report["quality_evaluation"] = evaluation
     state_paths = update_continuity_state(assessed_report, data_dir)
+    local_outputs = write_local_outputs(
+        report,
+        data_dir,
+        output_config or OutputConfig(),
+        evaluation=evaluation,
+        open_after_finalize=False,
+    )
     run_path = data_dir / "runs" / date / f"{edition}.json"
     if run_path.exists():
         run = read_json(run_path)
@@ -466,10 +488,15 @@ def save_evaluation(
                 "evaluation_path": str(output),
                 "content_hash": report_content_hash(report),
             }
+            run.setdefault("artifacts", {}).update(
+                {key: value for key, value in local_outputs.items() if key.endswith("_path")}
+            )
             write_json(run_path, run)
     return {
         "evaluation_id": evaluation["evaluation_id"],
         "evaluation_path": str(output),
         "content_hash": report_content_hash(report),
         "state_paths": state_paths,
+        "local_outputs": local_outputs,
+        **({"semantic_cache_path": str(semantic_cache_path)} if semantic_cache_path else {}),
     }

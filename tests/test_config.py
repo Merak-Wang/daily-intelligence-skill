@@ -15,6 +15,11 @@ from daily_intelligence.config import (
     resolve_profile_dir,
     source_urls,
 )
+from daily_intelligence.runtime import (
+    bind_data_root,
+    require_data_root_path,
+    validate_run_data_root,
+)
 
 
 def test_windows_defaults_to_edge_without_overrides(monkeypatch):
@@ -23,6 +28,34 @@ def test_windows_defaults_to_edge_without_overrides(monkeypatch):
 
     assert resolve_browser_channel(config, platform="nt") == "msedge"
     assert resolve_browser_channel(config, platform="posix") is None
+
+
+def test_local_html_and_pdf_are_default_reading_outputs():
+    config = load_config()
+
+    assert config.output.formats == ["html", "pdf"]
+    assert config.output.pdf_engine == "edge"
+    assert config.output.open_after_finalize is False
+
+
+def test_pdf_output_requires_html_and_known_engine(tmp_path):
+    config_path = tmp_path / "sources.yaml"
+    config_path.write_text(
+        "timezone: Asia/Shanghai\noutput:\n  formats: [pdf]\nsources: []\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="PDF output requires HTML"):
+        load_config(config_path)
+
+    config_path.write_text(
+        "timezone: Asia/Shanghai\n"
+        "output:\n  formats: [html, pdf]\n  pdf_engine: unknown\n"
+        "sources: []\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="pdf_engine"):
+        load_config(config_path)
 
 
 def test_project_root_uses_explicit_stable_skill_directory(monkeypatch, tmp_path):
@@ -57,11 +90,50 @@ def test_hermes_home_override_controls_runtime_defaults(monkeypatch, tmp_path):
     monkeypatch.delenv("DAILY_INTEL_PROFILE_DIR", raising=False)
     config = AppConfig(timezone="Asia/Shanghai", browser=BrowserConfig(), sources=[])
 
-    assert resolve_data_dir() == (hermes_home / "data" / "daily-intelligence").resolve()
+    assert resolve_data_dir() == (hermes_home / "daily-intelligence").resolve()
     assert (
         resolve_profile_dir(config)
         == (hermes_home / "browser-profiles" / "daily-intelligence").resolve()
     )
+
+
+def test_explicit_data_root_cannot_override_environment(monkeypatch, tmp_path):
+    configured = tmp_path / "configured"
+    monkeypatch.setenv("DAILY_INTEL_DATA_DIR", str(configured))
+
+    with pytest.raises(ValueError, match="conflicts with DAILY_INTEL_DATA_DIR"):
+        resolve_data_dir(tmp_path / "other")
+
+    assert resolve_data_dir(configured) == configured.resolve()
+
+
+def test_live_hermes_data_root_is_bound_once(tmp_path):
+    hermes_home = tmp_path / "hermes"
+    first = hermes_home / "daily-intelligence"
+    second = hermes_home / "daily-intel-data"
+
+    result = bind_data_root(first, hermes_home)
+
+    assert result["status"] == "bound"
+    with pytest.raises(ValueError, match="already bound"):
+        bind_data_root(second, hermes_home)
+    adopted = bind_data_root(second, hermes_home, adopt=True)
+    assert adopted["status"] == "adopted"
+    assert adopted["previous_data_root"] == str(first.resolve())
+
+
+def test_run_artifacts_must_remain_under_active_data_root(tmp_path):
+    data_dir = tmp_path / "canonical"
+    run_path = data_dir / "runs" / "2026-07-17" / "morning.json"
+    run = {
+        "data_root": str(data_dir.resolve()),
+        "artifacts": {"index_path": str(tmp_path / "other" / "index.json")},
+    }
+
+    with pytest.raises(ValueError, match="outside the active DAILY_INTEL_DATA_DIR"):
+        validate_run_data_root(run, run_path, data_dir)
+    with pytest.raises(ValueError, match="outside the active DAILY_INTEL_DATA_DIR"):
+        require_data_root_path(tmp_path / "draft.json", data_dir, "test artifact")
 
 
 def test_cli_loads_active_hermes_env_without_overriding(monkeypatch, tmp_path):

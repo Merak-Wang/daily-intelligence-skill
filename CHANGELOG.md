@@ -1,5 +1,24 @@
 # Changelog
 
+## 1.0.0 - 2026-07-18
+
+- First stable release of the twice-daily Hermes intelligence workflow, with local-first delivery, resumable state, evidence boundaries, independent evaluation, and backward-compatible legacy index/schema reads.
+- Reworked the GitHub README around a concise value proposition, quick start, output contract, architecture, operational boundaries, and links into the detailed Chinese Wiki.
+- Added responsive, safely escaped local HTML reports and a chronological `reports/index.html` archive that work without Notion.
+- Added A4 PDF projection from the same HTML through Microsoft Edge, with blocked network requests, page numbering, clickable links, and a ReportLab fallback.
+- Made local JSON/Markdown/HTML/PDF delivery the default and kept `--publish` as the explicit opt-in for Notion only.
+- Decoupled the independent evaluator from Notion: every successfully saved local report schedules evaluation, which refreshes the HTML/PDF assessment section without mutating the report JSON, Markdown, or content hash.
+- Added a local feedback form that downloads JSON without uploading data, output configuration validation, PDF/HTML security and rendering tests, and updated the Chinese Wiki.
+
+## 0.10.0 - 2026-07-17
+
+- Locked every Hermes run to one canonical data root and rejected cross-root run, index, content, report, and evaluation artifacts with an explicit adoption command for migrations.
+- Preserved successful enrichment IDs through finalization and added evidence binding checks for source mentions plus an explicit basis requirement for numeric scenarios.
+- Added post-evaluation semantic brief reuse keyed by a content fingerprint; changed or poorly evaluated material is re-authored rather than silently reused.
+- Added bounded, no-script HTTP index prefetch with global/per-domain limits and sequential Edge fallback for login, challenge, JavaScript, and specialized adapters; rate-limited sources are not hammered again.
+- Made the Edge verification frontend automatic for interactive runs and added `--unattended` for Cron/Gateway use. Publication still returns before the isolated evaluator runs.
+- Added real phase durations and collection counts to run manifests, split verification out of the CLI, removed browser debug artifacts, and added cross-platform GitHub CI.
+
 ## 0.9.8 - 2026-07-17
 
 - Added `run-edition --open-verification` so interactive Hermes Desktop runs automatically open the connected Edge verification frontend after collection when failed, challenged, or rate-limited pages exist.

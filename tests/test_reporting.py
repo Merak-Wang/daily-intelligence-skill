@@ -945,3 +945,36 @@ def test_low_quality_evaluation_cannot_accept_continuity():
     evaluation["continuity_decision"] = "reject"
     evaluation["exclude_from_continuity"] = ["all"]
     assert validate_evaluation_data(evaluation, report) == []
+
+
+def test_v15_rejects_named_sources_that_are_not_bound_to_event_evidence():
+    report = _v15_report()
+    index = _v15_index(report)
+    index["sources"].append(
+        {
+            "source_id": "bbc_world",
+            "source_name": "BBC",
+            "source_url": "https://www.bbc.com/news",
+            "status": "success",
+        }
+    )
+    _first_report_item(report)["evidence_notes"].append("BBC也独立确认了这一判断。")
+    report["analyses"][0]["facts"].append("BBC报道称该趋势已经得到确认。")
+
+    errors, _warnings = validate_report_data(report, index)
+
+    assert any("evidence_notes names sources not bound" in error for error in errors)
+    assert any("facts names sources not represented" in error for error in errors)
+
+
+def test_v15_numeric_scenarios_require_an_explicit_basis():
+    report = _v15_report()
+    index = _v15_index(report)
+    report["analyses"][0]["scenarios"] = ["上涨情景概率为55%，价格区间为90至110美元。"]
+
+    errors, _warnings = validate_report_data(report, index)
+
+    assert any("scenario_basis" in error for error in errors)
+    report["analyses"][0]["scenario_basis"] = "以上数字仅用于情景推演，并非确定性预测。"
+    errors, _warnings = validate_report_data(report, index)
+    assert not any("scenario_basis" in error for error in errors)

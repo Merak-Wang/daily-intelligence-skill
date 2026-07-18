@@ -5,6 +5,9 @@ browser:
   default_channel: ''
   global_concurrency: 3
   per_domain_concurrency: 1
+  collection_global_concurrency: 8
+  collection_per_domain_concurrency: 2
+  http_prefetch_timeout_ms: 15000
   navigation_timeout_ms: 45000
   default_wait_ms: 3500
 budget:
@@ -13,6 +16,12 @@ budget:
   context_items_per_source: 25
   report_items_per_source: 15
   max_fulltext_per_run: 12
+output:
+  formats:
+  - html
+  - pdf
+  pdf_engine: edge
+  open_after_finalize: false
 sources:
 - id: weibo_hot
   name: Weibo Hot Search

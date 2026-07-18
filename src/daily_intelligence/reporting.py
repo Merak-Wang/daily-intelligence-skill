@@ -14,6 +14,7 @@ from zoneinfo import ZoneInfo
 from jsonschema import Draft202012Validator, FormatChecker
 
 from .config import canonical_source_page_url, project_root
+from .semantics import reusable_semantic_brief, semantic_fingerprint
 from .taxonomy import (
     SECTION_ID_ALIASES_V15,
     SECTION_ORDER_V13,
@@ -59,6 +60,10 @@ CONTENT_STATUS_TO_ACCESS = {
 }
 
 _CJK_PATTERN = re.compile(r"[\u3400-\u9fff]")
+_NUMERIC_SCENARIO_PATTERN = re.compile(
+    r"(?:\d+(?:\.\d+)?\s*%|[$¥￥]\s*\d|\d+(?:\.\d+)?\s*(?:美元|元|亿|万亿)|"
+    r"\d+(?:\.\d+)?\s*[-—–至]\s*\d+(?:\.\d+)?)"
+)
 _LANGUAGE_MARKER_PATTERN = re.compile(r"^\s*\[(?:英|英文|EN)\]\s*", re.I)
 _TRANSLATION_PREFIX_PATTERN = re.compile(
     r"^\s*(?:\[[^\]\r\n]{1,40}\]|【[^】\r\n]{1,40}】)\s*[:：-]?\s*"
@@ -492,7 +497,11 @@ def _normalize_draft_analyses(value: object) -> tuple[list[dict[str, Any]], list
     return [dict(analysis) for analysis in rows], warnings
 
 
-def compile_report_data(report: dict, index: dict) -> list[str]:
+def compile_report_data(
+    report: dict,
+    index: dict,
+    semantic_cache: dict[str, dict[str, Any]] | None = None,
+) -> list[str]:
     """Compile model-authored semantics into the deterministic schema 1.5 envelope."""
     warnings: list[str] = []
     report.setdefault("schema_version", "1.5")
@@ -535,6 +544,43 @@ def compile_report_data(report: dict, index: dict) -> list[str]:
         for row in index.get("items", [])
         if isinstance(row, dict) and row.get("item_id")
     }
+    if semantic_cache:
+        existing_ids = {
+            str(brief.get("item_id"))
+            for section in provided_sections.values()
+            for brief in section.get("briefs", [])
+            if isinstance(brief, dict) and brief.get("item_id")
+        }
+        source_counts = Counter(
+            str(indexed_items[item_id].get("source_id"))
+            for item_id in existing_ids
+            if item_id in indexed_items
+        )
+        source_policies = index.get("source_policies", {})
+        for indexed in index.get("items", []):
+            if not isinstance(indexed, dict) or not indexed.get("item_id"):
+                continue
+            item_id = str(indexed["item_id"])
+            source_id = str(indexed.get("source_id") or "")
+            policy = source_policies.get(source_id, {}) if isinstance(source_policies, dict) else {}
+            target = int(policy.get("report_target", 0)) if isinstance(policy, dict) else 0
+            if item_id in existing_ids or source_counts[source_id] >= target:
+                continue
+            cached = reusable_semantic_brief(indexed, semantic_cache)
+            if not cached:
+                continue
+            section_id = canonical_section_id(
+                f"{indexed.get('module', '')}.{indexed.get('category', '')}"
+            )
+            if section_id not in SECTION_ORDER_V13:
+                continue
+            target_section = provided_sections.setdefault(
+                section_id, {"id": section_id, "briefs": [], "items": []}
+            )
+            target_section.setdefault("briefs", []).append(cached)
+            existing_ids.add(item_id)
+            source_counts[source_id] += 1
+            warnings.append(f"reused approved semantic cache for brief {item_id!r}")
     fallback_ranks: dict[str, int] = {}
     item_ranks: dict[str, int] = {}
     for item in index.get("items", []):
@@ -689,6 +735,7 @@ def compile_report_data(report: dict, index: dict) -> list[str]:
             source_id = str(indexed.get("source_id", ""))
             source = sources.get(source_id, {})
             brief["source_ref"] = ref
+            brief["semantic_fingerprint"] = semantic_fingerprint(indexed)
             brief["primary_source"] = {
                 "id": source_id,
                 "name": indexed.get("source_name") or source.get("source_name") or source_id,
@@ -957,6 +1004,7 @@ def validate_report_data(
     for summary_index, summary in enumerate(report.get("executive_summary", [])):
         require_chinese(summary, f"executive_summary[{summary_index}]")
     known_items: dict[str, dict] = {}
+    source_aliases: dict[str, set[str]] = {}
     if isinstance(index, dict):
         index_items = index.get("items", [])
         if isinstance(index_items, list):
@@ -965,6 +1013,26 @@ def validate_report_data(
                 for item in index_items
                 if isinstance(item, dict) and item.get("item_id")
             }
+        for source in index.get("sources", []):
+            if not isinstance(source, dict) or not source.get("source_id"):
+                continue
+            source_id = str(source["source_id"])
+            name = str(source.get("source_name") or "").strip()
+            if len(name) >= 3:
+                source_aliases.setdefault(source_id, set()).add(name.casefold())
+        for item in known_items.values():
+            source_id = str(item.get("source_id") or "")
+            name = str(item.get("source_name") or "").strip()
+            if source_id and len(name) >= 3:
+                source_aliases.setdefault(source_id, set()).add(name.casefold())
+
+    def mentioned_source_ids(values: list[object]) -> set[str]:
+        text = " ".join(str(value) for value in values).casefold()
+        return {
+            source_id
+            for source_id, aliases in source_aliases.items()
+            if any(alias in text for alias in aliases)
+        }
     previous_events = {
         event.get("event_id"): event
         for event in (existing_events or [])
@@ -984,6 +1052,7 @@ def validate_report_data(
     )
 
     event_ids: set[str] = set()
+    event_source_ids: dict[str, set[str]] = {}
     featured_brief_event_ids: set[str] = set()
     brief_item_ids: set[str] = set()
     source_counts: Counter[str] = Counter()
@@ -1195,6 +1264,15 @@ def validate_report_data(
                 for source_id, count in Counter(referenced_source_ids).items()
                 if count > 1
             )
+            event_source_ids[event_id] = set(referenced_source_ids)
+            note_mentions = mentioned_source_ids(list(item.get("evidence_notes", [])))
+            unbound_note_sources = sorted(note_mentions - event_source_ids[event_id])
+            if unbound_note_sources:
+                errors.append(
+                    f"{item_prefix}.evidence_notes names sources not bound in source_refs: "
+                    f"{unbound_note_sources}. Add separate featured events and cite them from "
+                    "analysis instead of claiming unbound corroboration."
+                )
             if brief_contract and len(item["source_refs"]) > 1:
                 errors.append(
                     f"{item_prefix}.source_refs: schema 1.5 featured events require exactly one "
@@ -1402,6 +1480,32 @@ def validate_report_data(
             errors.append(
                 f"analyses[{analysis_index}] references unknown event IDs: {missing_events}"
             )
+        bound_analysis_sources = {
+            source_id
+            for event_id in analysis.get("evidence_event_ids", [])
+            for source_id in event_source_ids.get(str(event_id), set())
+        }
+        fact_mentions = mentioned_source_ids(list(analysis.get("facts", [])))
+        unbound_fact_sources = sorted(fact_mentions - bound_analysis_sources)
+        if unbound_fact_sources:
+            errors.append(
+                f"{analysis_prefix}.facts names sources not represented by evidence_event_ids: "
+                f"{unbound_fact_sources}"
+            )
+        numeric_scenarios = [
+            value
+            for value in analysis.get("scenarios", [])
+            if _NUMERIC_SCENARIO_PATTERN.search(str(value))
+        ]
+        if numeric_scenarios:
+            scenario_basis = str(analysis.get("scenario_basis") or "").strip()
+            if not scenario_basis:
+                errors.append(
+                    f"{analysis_prefix}.scenario_basis: numeric probabilities, prices, or ranges "
+                    "must state their source or explicitly identify them as scenario assumptions"
+                )
+            else:
+                require_chinese(scenario_basis, f"{analysis_prefix}.scenario_basis")
         analyzed_event_ids.update(analysis["evidence_event_ids"])
         if not analysis["watch_signals"]:
             warnings.append(f"analyses[{analysis_index}] has no watch_signals")

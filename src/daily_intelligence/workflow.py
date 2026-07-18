@@ -10,11 +10,12 @@ from typing import Any
 from zoneinfo import ZoneInfo
 
 from .collector import collect_sources
-from .config import AppConfig, project_root
+from .config import AppConfig, OutputConfig, project_root
 from .content import extract_content
 from .context import build_context
 from .notion import publish_report, sync_user_feedback
 from .reports import save_report
+from .runtime import require_data_root_path, validate_run_data_root
 from .storage import exclusive_lock
 from .utils import now_iso, read_json, today_str, write_json
 
@@ -46,18 +47,20 @@ def schedule_independent_evaluation(
     data_dir: Path,
     report_id: str,
     content_hash: str,
+    publish_notion: bool = False,
 ) -> dict[str, Any]:
-    """Create a bounded retrying Hermes job; scheduling failure never rolls back publication."""
+    """Create a bounded evaluator job after local delivery; remote publishing is optional."""
     draft_path = data_dir / "evaluations" / "drafts" / f"{report_id}.json"
+    notion_flag = " --publish" if publish_notion else ""
     prompt = (
         "你是发布后独立评估 Agent，不参与日报生成，也不得修改主报告。"
         f"只读不可变报告 {report_path}、索引 {index_path} 和技能中的 "
-        "templates/report-contract.md；按九个固定维度各给 1—5 分，简洁指出主要缺陷、"
-        "证据不足和改进建议。"
+        "templates/report-contract.md；按九个固定维度各给 1—5 分，总分必须等于"
+        "九项之和，简洁指出主要缺陷、证据不足和改进建议。"
         f"被评报告 ID 是 {report_id}，内容 SHA-256 是 {content_hash}。"
         f"把评估 JSON 写到 {draft_path}，然后执行：daily-intel --data-dir \"{data_dir}\" "
         f"finalize-evaluation --report \"{report_path}\" --evaluation \"{draft_path}\" "
-        "--publish。若该 report_id 已有 completed 评估则直接退出；不得要求用户点击。"
+        f"{notion_flag}。若该 report_id 已有 completed 评估则直接退出；不得要求用户点击。"
         "该任务最多由调度器尝试三次，以容忍临时模型/API 连接失败。"
     )
     command = [
@@ -123,6 +126,9 @@ def _update_run(path: Path, run: dict[str, Any], status: RunStatus, **fields: An
     run["status"] = status
     run["updated_at"] = timestamp
     run.setdefault("stage_timestamps", {})[status.value] = timestamp
+    run.setdefault("stage_history", []).append(
+        {"status": status.value, "timestamp": timestamp}
+    )
     write_json(path, run)
 
 
@@ -145,15 +151,114 @@ def _deadline_exceeded(run: dict[str, Any], timestamp: str | None = None) -> boo
 def _runtime_metrics(run: dict[str, Any], completed_at: str) -> dict[str, Any]:
     completed = datetime.fromisoformat(completed_at)
     started = datetime.fromisoformat(str(run.get("created_at", completed_at)))
+    history = [
+        entry
+        for entry in run.get("stage_history", [])
+        if isinstance(entry, dict) and entry.get("status") and entry.get("timestamp")
+    ]
+    if not history:
+        history = [
+            {"status": status, "timestamp": timestamp}
+            for status, timestamp in run.get("stage_timestamps", {}).items()
+        ]
+    if not history or history[0].get("timestamp") != run.get("created_at"):
+        history.insert(
+            0,
+            {
+                "status": RunStatus.CREATED.value,
+                "timestamp": str(run.get("created_at", completed_at)),
+            },
+        )
+    history.append({"status": str(run.get("status", "completed")), "timestamp": completed_at})
+    stage_durations: dict[str, int] = {}
+    for current, following in zip(history, history[1:], strict=False):
+        try:
+            duration = max(
+                0,
+                int(
+                    (
+                        datetime.fromisoformat(str(following["timestamp"]))
+                        - datetime.fromisoformat(str(current["timestamp"]))
+                    ).total_seconds()
+                ),
+            )
+        except (KeyError, TypeError, ValueError):
+            continue
+        status = str(current["status"])
+        stage_durations[status] = stage_durations.get(status, 0) + duration
+    grouped = {
+        "collection": stage_durations.get(RunStatus.COLLECTING.value, 0),
+        "context_building": stage_durations.get(RunStatus.BUILDING_CONTEXT.value, 0),
+        "content_enrichment": stage_durations.get(RunStatus.EXTRACTING_CONTENT.value, 0),
+        "agent_authoring_wait": (
+            stage_durations.get(RunStatus.AWAITING_SELECTION.value, 0)
+            + stage_durations.get(RunStatus.AWAITING_AUTHORING.value, 0)
+        ),
+        "validation_and_finalization": stage_durations.get(
+            RunStatus.FINALIZING.value, 0
+        ),
+        "publication": stage_durations.get(RunStatus.PUBLISHING.value, 0),
+    }
     return {
         "elapsed_seconds": max(0, int((completed - started).total_seconds())),
         "deadline_exceeded": _deadline_exceeded(run, completed_at),
-        "selected_fulltext_items": len(run.get("artifacts", {}).get("selected_item_ids", [])),
+        "selected_fulltext_items": len(
+            run.get("artifacts", {}).get("enrichment", {}).get("successful_item_ids", [])
+        ),
         "attempt": int(run.get("attempt", 1)),
+        "stage_durations_seconds": stage_durations,
+        "phase_durations_seconds": grouped,
     }
 
 
+def _enrichment_evidence(index_path: Path, selected_ids: list[str]) -> dict[str, Any]:
+    index = read_json(index_path)
+    if not isinstance(index, dict):
+        raise ValueError("Enriched index must be a JSON object")
+    items = {
+        str(item.get("item_id")): item
+        for item in index.get("items", [])
+        if isinstance(item, dict) and item.get("item_id")
+    }
+    successful = [
+        item_id
+        for item_id in selected_ids
+        if items.get(item_id, {}).get("content_status") in {"full_text", "partial"}
+        and items.get(item_id, {}).get("content_path")
+    ]
+    full_text = [
+        item_id
+        for item_id in successful
+        if items[item_id].get("content_status") == "full_text"
+    ]
+    partial = [item_id for item_id in successful if item_id not in set(full_text)]
+    return {
+        "successful_item_ids": successful,
+        "full_text_item_ids": full_text,
+        "partial_item_ids": partial,
+        "unsuccessful_item_ids": [item_id for item_id in selected_ids if item_id not in successful],
+    }
+
+
+def _validate_enrichment_lineage(run: dict[str, Any], index_path: Path) -> None:
+    enrichment = run.get("artifacts", {}).get("enrichment", {})
+    if not isinstance(enrichment, dict):
+        return
+    expected = [str(item_id) for item_id in enrichment.get("successful_item_ids", [])]
+    if not expected:
+        return
+    actual = _enrichment_evidence(index_path, expected)["successful_item_ids"]
+    lost = sorted(set(expected) - set(actual))
+    if lost:
+        raise ValueError(
+            "The final index lost previously successful full-text enrichment for item IDs: "
+            f"{lost}. Finalize from the enriched run/index instead of restarting in another "
+            "data directory."
+        )
+
+
 def adopt_index_for_run(config: AppConfig, data_dir: Path, index_path: Path) -> Path | None:
+    index_path = require_data_root_path(index_path, data_dir, "Verified index")
     index = read_json(index_path)
     if not isinstance(index, dict):
         raise ValueError("Index must be a JSON object")
@@ -163,6 +268,7 @@ def adopt_index_for_run(config: AppConfig, data_dir: Path, index_path: Path) -> 
     run = read_json(run_path)
     if not isinstance(run, dict):
         raise ValueError("Run manifest must be a JSON object")
+    validate_run_data_root(run, run_path, data_dir)
     context_path = build_context(
         index_path,
         config,
@@ -241,16 +347,22 @@ def prepare_edition(
                 return run_path
 
         attempt = int(existing.get("attempt", 0)) + 1 if isinstance(existing, dict) else 1
+        created_at = now_iso(config.timezone)
         run: dict[str, Any] = {
             "schema_version": "1.0",
             "run_id": f"run-{date}-{edition}",
             "date": date,
             "edition": edition,
             "timezone": config.timezone,
+            "data_root": str(data_dir.resolve()),
             "attempt": attempt,
             "status": RunStatus.CREATED,
-            "created_at": now_iso(config.timezone),
-            "updated_at": now_iso(config.timezone),
+            "created_at": created_at,
+            "updated_at": created_at,
+            "stage_timestamps": {RunStatus.CREATED.value: created_at},
+            "stage_history": [
+                {"status": RunStatus.CREATED.value, "timestamp": created_at}
+            ],
             "collection_window": edition_window(date, edition, config.timezone),
             "budget": {
                 "max_runtime_seconds": config.budget.max_runtime_seconds,
@@ -289,6 +401,25 @@ def prepare_edition(
                 browser_channel=browser_channel,
             )
             index = read_json(index_path)
+            source_rows = [
+                row for row in index.get("sources", []) if isinstance(row, dict)
+            ]
+            status_breakdown: dict[str, int] = {}
+            for row in source_rows:
+                status = str(row.get("status", "unknown"))
+                status_breakdown[status] = status_breakdown.get(status, 0) + 1
+            collection_metrics = {
+                "source_count": len(source_rows),
+                "candidate_count": len(index.get("items", [])),
+                "status_breakdown": status_breakdown,
+                "http_prefetch": True,
+                "collection_global_concurrency": (
+                    config.browser.collection_global_concurrency
+                ),
+                "collection_per_domain_concurrency": (
+                    config.browser.collection_per_domain_concurrency
+                ),
+            }
             pending = [
                 row["source_id"]
                 for row in index.get("sources", [])
@@ -307,6 +438,7 @@ def prepare_edition(
                 updated_at=now_iso(config.timezone),
                 artifacts={
                     "index_path": str(index_path),
+                    "collection_metrics": collection_metrics,
                     **({"user_feedback_path": str(feedback_path)} if feedback_path else {}),
                 },
                 pending_sources=pending,
@@ -355,9 +487,11 @@ def enrich_edition(
     profile_dir: Path | None = None,
     browser_channel: str | None = None,
 ) -> Path:
+    run_path = require_data_root_path(run_path, data_dir, "Run manifest")
     run = read_json(run_path)
     if not isinstance(run, dict):
         raise ValueError("Run manifest must be a JSON object")
+    validate_run_data_root(run, run_path, data_dir)
     if run.get("status") not in {
         RunStatus.AWAITING_SELECTION,
         RunStatus.AWAITING_AUTHORING,
@@ -373,7 +507,9 @@ def enrich_edition(
         lock_path,
         _lock_payload(edition, now_iso(config.timezone)),
     ):
-        index_path = Path(run["artifacts"]["index_path"])
+        index_path = require_data_root_path(
+            Path(run["artifacts"]["index_path"]), data_dir, "Run index"
+        )
         previous_ids = list(run.get("artifacts", {}).get("selected_item_ids", []))
         requested_ids = [
             item_id
@@ -417,6 +553,7 @@ def enrich_edition(
             edition,
             collection_window=run["collection_window"],
         )
+        evidence = _enrichment_evidence(index_path, cumulative_ids)
         run["artifacts"].update(
             {
                 "index_path": str(index_path),
@@ -428,6 +565,7 @@ def enrich_edition(
                     "hard_cap": config.budget.max_fulltext_per_run,
                     "global_concurrency": config.browser.global_concurrency,
                     "per_domain_concurrency": config.browser.per_domain_concurrency,
+                    **evidence,
                 },
             }
         )
@@ -452,10 +590,13 @@ def finalize_edition(
     publish: bool = False,
     force_publish: bool = False,
     notion_config: Path | None = None,
+    output_config: OutputConfig | None = None,
 ) -> Path:
+    run_path = require_data_root_path(run_path, data_dir, "Run manifest")
     run = read_json(run_path)
     if not isinstance(run, dict):
         raise ValueError("Run manifest must be a JSON object")
+    validate_run_data_root(run, run_path, data_dir)
     date = str(run["date"])
     edition = str(run["edition"])
     lock_path = data_dir / "locks" / f"{date}-{edition}.lock"
@@ -468,9 +609,7 @@ def finalize_edition(
             evaluation = run.get("evaluation", {})
             scheduler = evaluation.get("scheduler", {}) if isinstance(evaluation, dict) else {}
             if (
-                publish
-                and run.get("publication")
-                and isinstance(evaluation, dict)
+                isinstance(evaluation, dict)
                 and evaluation.get("status") != "completed"
                 and scheduler.get("status") != "scheduled"
             ):
@@ -480,6 +619,7 @@ def finalize_edition(
                     data_dir,
                     str(run["artifacts"]["report_id"]),
                     str(run["artifacts"]["content_hash"]),
+                    publish_notion=bool(run.get("publication")),
                 )
                 _update_run(
                     run_path,
@@ -510,13 +650,18 @@ def finalize_edition(
             raise ValueError("Report draft date and edition must match the run manifest")
 
         artifacts = run["artifacts"]
+        index_path = require_data_root_path(
+            Path(artifacts["index_path"]), data_dir, "Final report index"
+        )
+        _validate_enrichment_lineage(run, index_path)
         if not artifacts.get("json_path"):
             _update_run(run_path, run, RunStatus.FINALIZING)
             try:
                 saved = save_report(
                     report_path,
-                    Path(run["artifacts"]["index_path"]),
+                    index_path,
                     data_dir,
+                    output_config=output_config,
                 )
             except Exception as exc:
                 _update_run(
@@ -530,6 +675,18 @@ def finalize_edition(
                 raise
             run["artifacts"].update(saved)
             artifacts = run["artifacts"]
+            saved_report = read_json(Path(artifacts["json_path"]))
+            if isinstance(saved_report, dict):
+                successful = artifacts.get("enrichment", {}).get(
+                    "successful_item_ids", []
+                )
+                artifacts["evidence_metrics"] = {
+                    "featured_events": int(saved_report.get("event_count", 0)),
+                    "successful_fulltext_items": len(successful),
+                    "analysis_without_fulltext": bool(
+                        saved_report.get("analyses") and not successful
+                    ),
+                }
             _update_run(
                 run_path,
                 run,
@@ -585,25 +742,25 @@ def finalize_edition(
             error=None,
             next_action="Independent evaluation is pending and will run asynchronously.",
         )
-        if publish and publication:
-            evaluation_state["scheduler"] = schedule_independent_evaluation(
-                Path(run["artifacts"]["json_path"]),
-                Path(run["artifacts"]["index_path"]),
-                data_dir,
-                str(run["artifacts"]["report_id"]),
-                str(run["artifacts"]["content_hash"]),
+        evaluation_state["scheduler"] = schedule_independent_evaluation(
+            Path(run["artifacts"]["json_path"]),
+            Path(run["artifacts"]["index_path"]),
+            data_dir,
+            str(run["artifacts"]["report_id"]),
+            str(run["artifacts"]["content_hash"]),
+            publish_notion=bool(publication),
+        )
+        if evaluation_state["scheduler"]["status"] != "scheduled":
+            evaluation_state["next_action"] = (
+                "Automatic evaluator scheduling failed; keep the local report and retry "
+                "evaluation separately."
             )
-            if evaluation_state["scheduler"]["status"] != "scheduled":
-                evaluation_state["next_action"] = (
-                    "Automatic evaluator scheduling failed; keep the published report and retry "
-                    "evaluation separately."
-                )
-            _update_run(
-                run_path,
-                run,
-                final_status,
-                updated_at=now_iso(str(run.get("timezone", "Asia/Shanghai"))),
-                evaluation=evaluation_state,
-                next_action=evaluation_state["next_action"],
-            )
+        _update_run(
+            run_path,
+            run,
+            final_status,
+            updated_at=now_iso(str(run.get("timezone", "Asia/Shanghai"))),
+            evaluation=evaluation_state,
+            next_action=evaluation_state["next_action"],
+        )
         return run_path

@@ -54,6 +54,9 @@ class BrowserConfig:
     default_channel: str = ""
     global_concurrency: int = 3
     per_domain_concurrency: int = 1
+    collection_global_concurrency: int = 8
+    collection_per_domain_concurrency: int = 2
+    http_prefetch_timeout_ms: int = 15000
     navigation_timeout_ms: int = 45000
     default_wait_ms: int = 3500
 
@@ -68,11 +71,34 @@ class BudgetConfig:
 
 
 @dataclass(slots=True)
+class OutputConfig:
+    formats: list[str] = field(default_factory=lambda: ["html", "pdf"])
+    pdf_engine: str = "edge"
+    open_after_finalize: bool = False
+
+
+def validate_output_config(output: OutputConfig) -> OutputConfig:
+    allowed_formats = {"html", "pdf"}
+    unknown_formats = set(output.formats) - allowed_formats
+    if unknown_formats:
+        raise ValueError(
+            "Unsupported local output formats: " + ", ".join(sorted(unknown_formats))
+        )
+    output.formats = list(dict.fromkeys(output.formats))
+    if "pdf" in output.formats and "html" not in output.formats:
+        raise ValueError("PDF output requires HTML because PDF is rendered from the local HTML")
+    if output.pdf_engine not in {"edge", "reportlab", "auto"}:
+        raise ValueError("output.pdf_engine must be one of: edge, reportlab, auto")
+    return output
+
+
+@dataclass(slots=True)
 class AppConfig:
     timezone: str
     browser: BrowserConfig
     sources: list[SourceConfig]
     budget: BudgetConfig = field(default_factory=BudgetConfig)
+    output: OutputConfig = field(default_factory=OutputConfig)
 
     def source_by_id(self, source_id: str) -> SourceConfig:
         for source in self.sources:
@@ -125,6 +151,7 @@ def load_config(path: Path | None = None, timezone: str | None = None) -> AppCon
     raw: dict[str, Any] = yaml.safe_load(config_path.read_text(encoding="utf-8"))
     browser = BrowserConfig(**raw.get("browser", {}))
     budget = BudgetConfig(**raw.get("budget", {}))
+    output = validate_output_config(OutputConfig(**raw.get("output", {})))
     sources = [SourceConfig(**item) for item in raw.get("sources", [])]
     for source in sources:
         validate_content_taxonomy(source.module, source.category)
@@ -139,6 +166,7 @@ def load_config(path: Path | None = None, timezone: str | None = None) -> AppCon
         browser=browser,
         sources=sources,
         budget=budget,
+        output=output,
     )
 
 
@@ -153,13 +181,22 @@ def resolve_hermes_home(platform: str | None = None) -> Path:
     return (Path.home() / ".hermes").resolve()
 
 
-def resolve_data_dir(explicit: Path | None = None) -> Path:
+def resolve_data_dir(explicit: Path | None = None, *, allow_conflict: bool = False) -> Path:
+    value = os.getenv("DAILY_INTEL_DATA_DIR")
+    if explicit and value:
+        resolved_explicit = explicit.expanduser().resolve()
+        resolved_environment = Path(value).expanduser().resolve()
+        if resolved_explicit != resolved_environment and not allow_conflict:
+            raise ValueError(
+                "--data-dir conflicts with DAILY_INTEL_DATA_DIR: "
+                f"explicit={resolved_explicit}, environment={resolved_environment}. "
+                "Use one canonical data root."
+            )
     if explicit:
         return explicit.expanduser().resolve()
-    value = os.getenv("DAILY_INTEL_DATA_DIR")
     if value:
         return Path(value).expanduser().resolve()
-    return (resolve_hermes_home() / "data" / "daily-intelligence").resolve()
+    return (resolve_hermes_home() / "daily-intelligence").resolve()
 
 
 def resolve_profile_dir(config: AppConfig, explicit: Path | None = None) -> Path:

@@ -17,3 +17,4 @@ edge-profile/
 *.har
 screenshots/
 raw_html/
+.playwright-cli/

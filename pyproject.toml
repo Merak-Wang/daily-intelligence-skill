@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "daily-intelligence-skill"
-version = "0.9.8"
-description = "Deterministic collection and Notion publishing CLI for a twice-daily Agent Skill intelligence brief."
+version = "1.0.0"
+description = "Deterministic collection and multi-format publishing CLI for a twice-daily Agent Skill intelligence brief."
 readme = "README.md"
 requires-python = ">=3.11"
 license = {text = "MIT"}
@@ -17,10 +17,11 @@ dependencies = [
   "playwright>=1.50,<2",
   "python-dotenv>=1.0,<2",
   "PyYAML>=6.0,<7",
+  "reportlab>=4.2,<5",
 ]
 
 [project.optional-dependencies]
-dev = ["pytest>=8.3,<9", "ruff>=0.9,<1"]
+dev = ["pypdf>=5,<7", "pytest>=8.3,<9", "ruff>=0.9,<1"]
 
 [project.scripts]
 daily-intel = "daily_intelligence.cli:main"
