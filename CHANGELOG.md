@@ -3,6 +3,7 @@
 ## Unreleased
 
 - Made manual Edge verification opt-in so `run-edition` no longer opens or waits for the verification queue unless `--open-verification` is passed explicitly; `verify-pending` remains the recommended manual entry point.
+- Declared `tzdata` as a runtime dependency so `ZoneInfo` works on Windows and minimal CI images without a system IANA time-zone database.
 
 ## 1.0.0 - 2026-07-18
 

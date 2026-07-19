@@ -7,9 +7,9 @@
 面向 [Hermes Agent](https://hermes-agent.nousresearch.com/) 的双时段 Agent Skill。<br>
 06:00 建立晨间基线，18:00 补充新增事实、判断修正与次日观察。
 
-[![CI](https://img.shields.io/github/actions/workflow/status/Merak-Wang/daily-intelligence-skill/ci.yml?branch=main&style=flat-square&label=CI)](https://github.com/Merak-Wang/daily-intelligence-skill/actions/workflows/ci.yml)
-[![Release](https://img.shields.io/github/v/release/Merak-Wang/daily-intelligence-skill?style=flat-square&label=release)](https://github.com/Merak-Wang/daily-intelligence-skill/releases)
-[![Python](https://img.shields.io/badge/Python-3.11%2B-3776AB?style=flat-square&logo=python&logoColor=white)](https://www.python.org/)
+<!-- [![CI](https://img.shields.io/github/actions/workflow/status/Merak-Wang/daily-intelligence-skill/ci.yml?branch=main&style=flat-square&label=CI)](https://github.com/Merak-Wang/daily-intelligence-skill/actions/workflows/ci.yml) -->
+<!-- [![Release](https://img.shields.io/github/v/release/Merak-Wang/daily-intelligence-skill?style=flat-square&label=release)](https://github.com/Merak-Wang/daily-intelligence-skill/releases)
+[![Python](https://img.shields.io/badge/Python-3.11%2B-3776AB?style=flat-square&logo=python&logoColor=white)](https://www.python.org/) -->
 [![Hermes Agent](https://img.shields.io/badge/Hermes-Agent-6C5CE7?style=flat-square)](https://hermes-agent.nousresearch.com/)
 [![License](https://img.shields.io/github/license/Merak-Wang/daily-intelligence-skill?style=flat-square)](LICENSE)
 
@@ -251,7 +251,6 @@ wiki/                        中文设计与代码说明
 - 10 分钟是正常运行目标，不是网络异常、首次登录或大面积验证挑战下的硬实时保证。
 - 受限来源可能只保留公开元数据与原文链接；系统不会绕过站点限制。
 - 研判是研究辅助，不构成投资、法律或其他专业决策的替代意见。
-- 新报告使用 schema 1.5；旧版 schema 1.1—1.4 与旧 source-index 双层结构仍可读取。
 
 ## 参与贡献
 
