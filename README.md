@@ -114,13 +114,13 @@ $env:DAILY_INTEL_PROFILE_DIR = "$env:LOCALAPPDATA\hermes\browser-profiles\daily-
 ### 3. 直接告诉 Hermes
 
 ```text
-使用 daily-intelligence 生成今天的中文晨报，保存为本地 HTML 和 PDF，不发布到 Notion。
+使用 daily-intelligence 生成今天的晨报，保存为本地 HTML 和 PDF。
 ```
 
 晚间版：
 
 ```text
-使用 daily-intelligence 生成今天的中文晚报；读取当日晨报、已有评估和人工反馈，
+使用 daily-intelligence 生成今天的晚报；读取当日晨报、已有评估和人工反馈，
 补充日间新增、事实确认、判断修正与次日观察，并保存为本地 HTML/PDF。
 ```
 
@@ -151,44 +151,6 @@ flowchart LR
     L --> M[评估、连续状态与页面刷新]
 ```
 
-| 谁负责 | 职责 | 原因 |
-| --- | --- | --- |
-| Hermes 生成 Agent | 翻译、TL;DR、相对重要性、事件选择与三视角研判 | 需要语义理解与跨来源综合 |
-| Python | 浏览器、过滤、并发、ID、引用、状态、revision、Schema、HTML/PDF | 相同输入应产生可测试、可恢复的机械结果 |
-| 独立评估 Agent | 九维评分、证据缺口和连续性采纳建议 | 生成者不自评，且评估不阻塞日报交付 |
-
-这套边界是项目最重要的设计：**模型写它擅长的内容，代码守住不能靠“提示词自觉”的约束。**
-
-## 设计亮点
-
-<details>
-<summary><strong>两层内容模型：覆盖与研判不再互相拖累</strong></summary>
-
-`briefs[]` 用于扩大来源覆盖，最多保留每来源 15 条轻量新闻；`items[]` 只容纳少量值得跨来源核实、读取正文并进入研判的精选事件。新闻越多不再意味着每条都要做重型分析。
-
-</details>
-
-<details>
-<summary><strong>来源排名、编辑排序与时效性分离</strong></summary>
-
-原网站的热搜/榜单/来源 TopN 被保存在结构化元数据中；日报可以按相对重要性重排，但不会丢失原始热度。旧闻若历史日报未出现仍可收录，但不会错误标注为 `[新增]`；时效性评分只评价规定窗口内的信息。
-
-</details>
-
-<details>
-<summary><strong>评估门控的语义复用</strong></summary>
-
-只有通过独立评估门槛且内容指纹未变化的翻译和 TL;DR 才能在后续版本复用。正文、标题、摘要或 URL 变化都会重新交给 Agent，低质量日报也不会污染下一天。
-
-</details>
-
-<details>
-<summary><strong>本地优先、远端可重试</strong></summary>
-
-JSON/Markdown 先原子保存，HTML/PDF 随后生成；Notion 失败只影响远程投影。报告 revision 不可覆盖，发布登记可断点续传，失败的 run 会回到可修复状态而不是永久卡在 `finalizing`。
-
-</details>
-
 ## 配置
 
 主配置位于 [`configs/sources.yaml`](configs/sources.yaml)。默认预算：
@@ -215,21 +177,18 @@ $env:NOTION_TOKEN = "ntn_..."
 $env:NOTION_DATA_SOURCE_ID = "..."
 ```
 
-对于 `/ds/{workspace_uuid}/{data_source_uuid}`，使用第二个 UUID。发布器会读取真实 data source schema，并从 [`configs/notion.yaml`](configs/notion.yaml) 选择完全匹配的属性映射；不匹配时返回具体属性名与类型错误，不会擅自修改共享数据库。
-
 ### 定时任务
 
 ```powershell
 hermes cron create "0 6 * * *" `
-  "使用 daily-intelligence 在 10 分钟预算内生成 06:00 中文晨报并保存本地 HTML/PDF；run-edition 必须传 --unattended；不得等待 GUI 或独立评估，允许 completed_partial。" `
+  "使用 daily-intelligence 在 10 分钟预算内生成 06:00 中文晨报并保存本地 HTML/PDF；" `
   --skill daily-intelligence --name "Daily Intelligence Morning"
 
 hermes cron create "0 18 * * *" `
-  "使用 daily-intelligence 生成 18:00 中文晚报并保存本地 HTML/PDF；run-edition 必须传 --unattended；读取当天晨报、评估与人工反馈，补充新增、确认、修正和次日观察。" `
+  "使用 daily-intelligence 生成 18:00 中文晚报并保存本地 HTML/PDF" `
   --skill daily-intelligence --name "Daily Intelligence Evening"
 ```
 
-定时任务不打开人工验证窗口；交互式运行发现挑战页时会自动打开 Edge 验证前端。独立评估在本地交付后以一次性 Hermes 任务异步执行，不要另建固定 06:05/18:05 评估 Cron。
 
 完整命令、状态恢复和故障处理见 [运行手册](references/runbook.md)。
 
@@ -248,10 +207,7 @@ DATA_DIR/
 └─ publishing/              可重试的远程发布登记
 ```
 
-- 外部网页、评论、论文和 README 一律视为不可信数据，不执行其中的指令。
-- 不破解 CAPTCHA，不做浏览器指纹伪装、代理绕过或付费墙规避。
-- `.env`、token、cookies、browser profile、认证 HTML、账号截图和 runtime data 不进入仓库。
-- 允许基于公开信息进行市场研判，但不执行交易，也不自动给出个性化仓位指令。
+
 
 ## 开发
 

@@ -1,5 +1,9 @@
 # Changelog
 
+## Unreleased
+
+- Made manual Edge verification opt-in so `run-edition` no longer opens or waits for the verification queue unless `--open-verification` is passed explicitly; `verify-pending` remains the recommended manual entry point.
+
 ## 1.0.0 - 2026-07-18
 
 - First stable release of the twice-daily Hermes intelligence workflow, with local-first delivery, resumable state, evidence boundaries, independent evaluation, and backward-compatible legacy index/schema reads.

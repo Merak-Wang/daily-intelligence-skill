@@ -242,7 +242,7 @@ def write_verification_queue(
         f"</style></head><body><div class=\"app\"><div class=\"top\"><h1>"
         f"{html.escape(date)} {html.escape(edition)} 待验证链接</h1>\n<div class=\"panel\">"
         "<p id=\"connection\" class=\"offline\">未连接采集器：直接打开此 HTML 只能浏览，"
-        "不会自动采集。请从 verify-pending 或交互式 run-edition 启动。</p>"
+        "不会自动采集。请从 verify-pending 或 run-edition --open-verification 启动。</p>"
         f"<p id=\"progress\">已采集 0 / {len(pending)}</p>"
         "<details class=\"help\"><summary>使用说明</summary><p>逐个点击链接并在打开的 "
         "Edge 标签中登录或验证。页面出现新闻列表后自动提取 JSON；暂时限制的来源不要反复刷新。"

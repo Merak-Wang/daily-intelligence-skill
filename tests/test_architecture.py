@@ -367,7 +367,10 @@ def test_cli_exposes_two_stage_workflow():
     )
     assert verification.command == "verify-pending"
     assert evaluation.command == "finalize-evaluation"
-    assert prepared.open_verification is True
+    assert prepared.open_verification is False
+    assert parser.parse_args(
+        ["run-edition", "--edition", "morning", "--open-verification"]
+    ).open_verification is True
     assert parser.parse_args(
         ["run-edition", "--edition", "morning", "--unattended"]
     ).open_verification is False
@@ -428,6 +431,7 @@ def test_run_edition_can_open_interactive_verification_after_collection(
             "run-edition",
             "--edition",
             "morning",
+            "--open-verification",
             "--verification-timeout-seconds",
             "17",
             "--profile-dir",
@@ -450,6 +454,52 @@ def test_run_edition_can_open_interactive_verification_after_collection(
             "timeout_seconds": 17,
         }
     ]
+
+
+def test_run_edition_does_not_open_verification_by_default(
+    monkeypatch, tmp_path: Path, capsys
+):
+    data_dir = tmp_path / "data"
+    index_path = write_json(
+        data_dir / "indexes" / "2026-07-17" / "morning-r1.json",
+        {"date": "2026-07-17", "edition": "morning", "items": [], "sources": []},
+    )
+    run_path = write_json(
+        data_dir / "runs" / "2026-07-17" / "morning.json",
+        {
+            "date": "2026-07-17",
+            "edition": "morning",
+            "status": RunStatus.AWAITING_SELECTION,
+            "artifacts": {"index_path": str(index_path)},
+        },
+    )
+    monkeypatch.setattr(
+        "daily_intelligence.cli.prepare_edition",
+        lambda **_kwargs: run_path,
+    )
+
+    def fail_if_opened(*_args, **_kwargs):
+        raise AssertionError("verification must remain opt-in")
+
+    monkeypatch.setattr(
+        "daily_intelligence.cli.run_pending_verification",
+        fail_if_opened,
+    )
+
+    exit_code = main(
+        [
+            "--data-dir",
+            str(data_dir),
+            "run-edition",
+            "--edition",
+            "morning",
+        ]
+    )
+
+    output = json.loads(capsys.readouterr().out)
+    assert exit_code == 0
+    assert "automatic_verification" not in output
+    assert "automatic_verification" not in read_json(run_path)
 
 
 def test_pending_verification_noops_without_pending_pages(tmp_path: Path):

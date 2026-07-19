@@ -69,15 +69,15 @@ This does not require Notion credentials. Windows uses installed Edge to print t
 
 ## Manual source verification
 
-Interactive `run-edition` opens the verification queue by default only when pending pages exist. In a desktop PowerShell or interactive Hermes session, run:
+`run-edition` never opens the verification queue by default. Run collection first, then start manual verification only when ready:
 
 ```powershell
-daily-intel run-edition --edition morning --profile-dir "$env:LOCALAPPDATA\hermes\browser-profiles\daily-intelligence" --verification-timeout-seconds 180
+daily-intel run-edition --edition morning --profile-dir "$env:LOCALAPPDATA\hermes\browser-profiles\daily-intelligence"
 daily-intel verify-source reuters --browser-channel msedge
 daily-intel verify-pending --index "C:\path\to\index.json" --browser-channel msedge --timeout-seconds 300
 ```
 
-After collection the connected queue opens only when failed, challenged, or rate-limited pages exist. Every scheduled or unattended run must pass `--unattended`. `verify-pending` remains the manual reopen path, while `--open-verification` remains a compatibility alias.
+After collection, failed, challenged, or rate-limited pages remain pending without opening Edge. `verify-pending` is the recommended manual path. Explicit `--open-verification` remains compatible but blocks until completion or timeout; `--unattended` remains a no-window compatibility flag and is already the default behavior.
 
 Windows defaults to installed Microsoft Edge when no channel override is present. Complete the
 legitimate publisher login or verification in the visible dedicated Edge profile. Cookies and login
@@ -85,5 +85,5 @@ state persist in that profile for later runs. The CLI does not require terminal 
 cleared challenge, immediately extracts the current authenticated page, and atomically adopts a new
 index. A closed tab, HTTP 403, extraction failure, or timeout is skipped and remains pending with
 its original link. Do not run `resume` after `verify-pending`; use it only for a later diagnostic
-retry. Scheduled cron/gateway jobs must pass `--unattended`, keep challenges pending, and publish a partial report instead
+retry. Scheduled cron/gateway jobs must not pass `--open-verification`; they keep challenges pending and publish a partial report instead
 of waiting for a GUI.

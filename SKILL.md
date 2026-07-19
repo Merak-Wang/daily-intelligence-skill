@@ -60,24 +60,22 @@ daily-intel --data-dir DATA_DIR --timezone Asia/Shanghai SUBCOMMAND
 ### 1. 采集与上下文
 
 ```text
-# 交互式 Hermes Desktop：默认在需要时打开已连接的验证队列
-daily-intel run-edition --edition morning --profile-dir PROFILE_DIR --verification-timeout-seconds 180
-daily-intel run-edition --edition evening --profile-dir PROFILE_DIR --verification-timeout-seconds 180
-
-# Cron/Gateway 无人值守：必须显式禁止 GUI
-daily-intel run-edition --edition morning --profile-dir PROFILE_DIR --unattended
-daily-intel run-edition --edition evening --profile-dir PROFILE_DIR --unattended
+# 默认不启动手工验证窗口，交互式与无人值守运行都不会等待 GUI
+daily-intel run-edition --edition morning --profile-dir PROFILE_DIR
+daily-intel run-edition --edition evening --profile-dir PROFILE_DIR
 ```
 
 读取 `DATA_DIR/runs/YYYY-MM-DD/<edition>.json` 及 `artifacts.context_path`。正常生成阶段目标不超过 600 秒、总 token 不超过 10,000,000；单源失败不阻塞日报。
 
 ### 2. 可选 Edge 验证与同域探索
 
-交互式运行在采集结束发现失败、验证或限流页面后自动打开小前端；没有待处理页面时不打开 Edge。无人值守运行必须传 `--unattended`，不得等待 GUI。需要稍后重新打开可运行：
+`run-edition` 只记录失败、验证或限流页面，不自动打开 Edge。用户准备好交互时再运行：
 
 ```text
 daily-intel verify-pending --index INDEX.json --profile-dir PROFILE_DIR --browser-channel msedge --timeout-seconds 90
 ```
+
+`run-edition --open-verification` 仍是显式兼容入口，但会等待完成或超时；自动化流程不得传该参数。`--unattended` 保留为不打开窗口的兼容参数。
 
 命令只打开一个 Edge 待验证队列页，汇总 `failed`、`verification_required` 与 `rate_limited` 链接。页面必须显示“采集器已连接”，并实时标记待打开、等待验证、已采集、未提取或暂时限制；来源列表使用独立滚动区域，直接打开静态 HTML 只供浏览。用户点击任一链接后，页面一旦出现可提取条目就自动采集 JSON 并合并为新索引；检测到临时访问限制时停止本轮重试并保留链接，不得绕过限流。若已有日报，继续当前 Hermes 任务生成并发布补充修订。不得把访问失败改写为 `no_items`。
 

@@ -156,23 +156,26 @@ def build_parser() -> argparse.ArgumentParser:
         "--open-verification",
         dest="open_verification",
         action="store_true",
-        default=True,
+        default=False,
         help=(
-            "Open the connected Edge verification queue after collection when needed "
-            "(default for interactive runs)"
+            "Explicitly open the connected Edge verification queue after collection; "
+            "this waits until the queue completes or times out"
         ),
     )
     verification_mode.add_argument(
         "--unattended",
         dest="open_verification",
         action="store_false",
-        help="Never wait for a verification window; required for cron and gateway runs",
+        help=(
+            "Compatibility flag that keeps verification windows disabled "
+            "(already the default)"
+        ),
     )
     run.add_argument(
         "--verification-timeout-seconds",
         type=int,
         default=180,
-        help="How long the automatic interactive verification queue remains active",
+        help="How long an explicitly requested verification queue remains active",
     )
 
     enrich = sub.add_parser(
