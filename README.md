@@ -177,6 +177,51 @@ $env:NOTION_TOKEN = "ntn_..."
 $env:NOTION_DATA_SOURCE_ID = "..."
 ```
 
+**1）Notion API 的 Token（Integration Secret）怎么拿**
+
+在 Notion 中依次进入：
+
+**Settings** → **Connections** → **Develop or manage Connections** → **New Connection**
+
+创建后，页面中会显示 **Access token**。这就是你的 Notion API Token，一般形如 `ntn_...`。
+
+**2）数据库 URL 怎么拿（以及它对应的 `database_id`）**
+
+**A. 获取数据库 URL（最简单）**
+
+1. 打开目标数据库页面。
+2. 点击右上角 **•••** → **Copy link**。
+3. 复制出的链接就是数据库 URL。
+
+常见形式如下：
+
+```text
+https://www.notion.so/WorkspaceName/DatabaseName-<32位id>?v=...
+https://www.notion.so/<32位id>?v=...
+```
+
+**B. 从 URL 获取 `database_id`**
+
+Notion 的 `database_id` 本质上是 URL 中的 **32 位十六进制字符串**。它可能带连字符；Notion API 通常两种格式都能接受，如果带连字符的格式不可用，可以去掉连字符，改用纯 32 位字符串。
+
+例如，URL 中包含：
+
+```text
+.../DatabaseName-12345678abcd1234abcd1234abcd1234
+```
+
+那么对应的 `database_id` 为：
+
+```text
+12345678-abcd-1234-abcd-1234abcd1234
+```
+
+也可以使用去掉连字符后的 32 位格式：
+
+```text
+12345678abcd1234abcd1234abcd1234
+```
+
 ### 定时任务
 
 ```powershell
