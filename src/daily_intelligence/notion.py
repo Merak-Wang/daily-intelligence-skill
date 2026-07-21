@@ -11,7 +11,7 @@ import httpx
 import yaml
 
 from .config import project_root
-from .reporting import validate_evaluation_data, validate_report
+from .reporting import reference_time_label, validate_evaluation_data, validate_report
 from .reports import (
     ACCESS_LABELS,
     ANALYSIS_SECTION_LABELS,
@@ -297,8 +297,11 @@ def _event_block(item: dict[str, Any]) -> dict[str, Any]:
     link = item["source_refs"][0]["url"]
     evidence_children: list[dict[str, Any]] = []
     for ref in item.get("source_refs", []):
-        published = f"，发布于 {ref['published_at']}" if ref.get("published_at") else ""
-        label = f"{ACCESS_LABELS.get(ref['access'], ref['access'])}{published}"
+        time_text = ""
+        if time_info := reference_time_label(ref):
+            time_label, time_value = time_info
+            time_text = f"，{time_label}：{time_value}"
+        label = f"{ACCESS_LABELS.get(ref['access'], ref['access'])}{time_text}"
         evidence_children.append(
             {
                 "object": "block",
@@ -361,6 +364,9 @@ def _brief_block(item: dict[str, Any]) -> dict[str, Any]:
     children: list[dict[str, Any]] = []
     if item.get("title_zh"):
         children.append(_block("paragraph", f"中文标题｜{item['title_zh']}"))
+    if time_info := reference_time_label(ref):
+        label, value = time_info
+        children.append(_block("paragraph", f"{label}｜{value}"))
     children.append(_block("paragraph", f"TL;DR｜{item['tldr']}"))
     return {
         "object": "block",

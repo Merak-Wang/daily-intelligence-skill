@@ -1,6 +1,8 @@
 import json
 from pathlib import Path
 
+from daily_intelligence.local_output import render_report_html
+from daily_intelligence.notion import report_to_blocks
 from daily_intelligence.reporting import (
     compile_report_data,
     report_content_hash,
@@ -356,6 +358,64 @@ def test_v15_uses_briefs_for_coverage_and_deterministic_counts():
         "pending": 0,
     }
     assert report["evaluation_status"] == "pending"
+
+
+def test_v15_prefers_publication_time_in_every_report_projection():
+    report = _v15_report()
+    index = _v15_index(report)
+    index.update(
+        {
+            "date": report["date"],
+            "edition": report["edition"],
+            "generated_at": "2026-07-12T05:40:00+08:00",
+        }
+    )
+    index["items"][0]["discovered_at"] = "2026-07-12T05:35:00+08:00"
+
+    compile_report_data(report, index)
+    errors, _warnings = validate_report_data(report, index)
+
+    assert errors == []
+    brief = next(brief for section in report["sections"] for brief in section["briefs"])
+    assert brief["source_ref"]["published_at"] == "2026-07-12T01:00:00+08:00"
+    assert "collected_at" not in brief["source_ref"]
+    assert "**发布时间：** 2026-07-12T01:00:00+08:00" in render_report_markdown(report)
+    assert "发布时间：2026-07-12T01:00:00+08:00" in render_report_html(report)
+    notion = json.dumps(report_to_blocks(report), ensure_ascii=False)
+    assert "发布时间｜2026-07-12T01:00:00+08:00" in notion
+
+
+def test_v15_falls_back_to_legacy_source_collection_time_without_marking_new():
+    report = _v15_report()
+    index = _v15_index(report)
+    index.update(
+        {
+            "date": report["date"],
+            "edition": report["edition"],
+            "generated_at": "2026-07-12T05:40:00+08:00",
+        }
+    )
+    index["sources"][0]["collected_at"] = "2026-07-12T05:30:00+08:00"
+    index["items"][0].pop("published_at")
+    # Legacy source-index items may not carry discovered_at; keep that shape readable.
+    index["items"][0].pop("discovered_at", None)
+
+    compile_report_data(report, index)
+    errors, _warnings = validate_report_data(report, index)
+
+    assert errors == []
+    brief = next(brief for section in report["sections"] for brief in section["briefs"])
+    assert brief["source_ref"]["collected_at"] == "2026-07-12T05:30:00+08:00"
+    assert "published_at" not in brief["source_ref"]
+    assert brief["status"] == "WATCH"
+    assert "**采集时间：** 2026-07-12T05:30:00+08:00" in render_report_markdown(report)
+    assert "采集时间：2026-07-12T05:30:00+08:00" in render_report_html(report)
+    notion = json.dumps(report_to_blocks(report), ensure_ascii=False)
+    assert "采集时间｜2026-07-12T05:30:00+08:00" in notion
+
+    brief["source_ref"].pop("collected_at")
+    errors, _warnings = validate_report_data(report)
+    assert any("requires published_at or collected_at" in error for error in errors)
 
 
 def test_v15_compiler_owns_ids_refs_scores_status_and_legacy_evaluation():

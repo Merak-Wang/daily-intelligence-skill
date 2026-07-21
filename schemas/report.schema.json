@@ -166,6 +166,9 @@
                       },
                       "published_at": {
                         "type": "string"
+                      },
+                      "collected_at": {
+                        "type": "string"
                       }
                     },
                     "additionalProperties": true
@@ -309,7 +312,8 @@
                       ]
                     },
                     "role": {"type": "string", "minLength": 1},
-                    "published_at": {"type": "string"}
+                    "published_at": {"type": "string"},
+                    "collected_at": {"type": "string"}
                   },
                   "additionalProperties": true
                 },

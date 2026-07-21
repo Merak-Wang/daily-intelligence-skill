@@ -10,6 +10,7 @@ from .local_output import write_local_outputs
 from .reporting import (
     compile_report_data,
     normalize_report_data,
+    reference_time_label,
     report_content_hash,
     validate_evaluation_data,
     validate_report_data,
@@ -126,6 +127,9 @@ def _brief_markdown(item: dict[str, Any], rank: int) -> list[str]:
     ]
     if item.get("title_zh"):
         lines.extend(["", f"**中文标题：** {item['title_zh']}"])
+    if time_info := reference_time_label(ref):
+        label, value = time_info
+        lines.extend(["", f"**{label}：** {value}"])
     lines.extend(["", f"**TL;DR：** {item['tldr']}"])
     lines.append("")
     return lines
@@ -151,8 +155,13 @@ def _event_markdown(item: dict[str, Any], title: str) -> list[str]:
     ]
     for ref in item["source_refs"]:
         access = ACCESS_LABELS.get(ref["access"], ref["access"])
-        published = f"，发布于 {ref['published_at']}" if ref.get("published_at") else ""
-        lines.append(f"- [{ref['title']}]({ref['url']}) — {access}，{ref['role']}{published}")
+        time_text = ""
+        if time_info := reference_time_label(ref):
+            label, value = time_info
+            time_text = f"，{label}：{value}"
+        lines.append(
+            f"- [{ref['title']}]({ref['url']}) — {access}，{ref['role']}{time_text}"
+        )
     if item["evidence_notes"]:
         lines.extend(["", "**证据说明：**", ""])
         lines.extend(f"- {note}" for note in item["evidence_notes"])

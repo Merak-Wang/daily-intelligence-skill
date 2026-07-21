@@ -174,6 +174,36 @@ def content_status_to_access(status: str | None) -> str | None:
     return CONTENT_STATUS_TO_ACCESS.get(str(status))
 
 
+def reference_time_fields(
+    indexed: dict[str, Any],
+    source: dict[str, Any] | None = None,
+    fallback_collected_at: object | None = None,
+) -> dict[str, str]:
+    """Return one authoritative display timestamp without changing freshness semantics."""
+    published_at = str(indexed.get("published_at") or "").strip()
+    if published_at:
+        return {"published_at": published_at}
+    source = source or {}
+    collected_at = str(
+        indexed.get("discovered_at")
+        or source.get("collected_at")
+        or fallback_collected_at
+        or ""
+    ).strip()
+    return {"collected_at": collected_at} if collected_at else {}
+
+
+def reference_time_label(ref: dict[str, Any]) -> tuple[str, str] | None:
+    """Select the user-facing timestamp label, preferring actual publication time."""
+    published_at = str(ref.get("published_at") or "").strip()
+    if published_at:
+        return "发布时间", published_at
+    collected_at = str(ref.get("collected_at") or "").strip()
+    if collected_at:
+        return "采集时间", collected_at
+    return None
+
+
 def _require_chinese(value: object, location: str, errors: list[str]) -> None:
     if isinstance(value, str) and value.strip() and not _CJK_PATTERN.search(value):
         errors.append(f"{location}: published user-facing text must contain Chinese")
@@ -287,10 +317,18 @@ def hydrate_report_evidence(report: dict, index: dict | None) -> None:
                 ("url", indexed.get("url")),
                 ("access", content_status_to_access(indexed.get("content_status"))),
                 ("role", indexed.get("metadata", {}).get("role", "discovery")),
-                ("published_at", indexed.get("published_at")),
             ):
                 if value is not None:
                     ref.setdefault(key, value)
+            ref.pop("published_at", None)
+            ref.pop("collected_at", None)
+            ref.update(
+                reference_time_fields(
+                    indexed,
+                    source,
+                    index.get("generated_at") or report.get("generated_at"),
+                )
+            )
             brief.setdefault(
                 "primary_source",
                 {
@@ -303,9 +341,18 @@ def hydrate_report_evidence(report: dict, index: dict | None) -> None:
             for ref in event.get("source_refs", []):
                 indexed = items.get(ref.get("item_id"), {})
                 source = sources.get(indexed.get("source_id"), {})
-                for key in ("published_at", "source_id", "source_name"):
+                for key in ("source_id", "source_name"):
                     if indexed.get(key):
                         ref[key] = indexed[key]
+                ref.pop("published_at", None)
+                ref.pop("collected_at", None)
+                ref.update(
+                    reference_time_fields(
+                        indexed,
+                        source,
+                        index.get("generated_at") or report.get("generated_at"),
+                    )
+                )
                 if source.get("source_url"):
                     ref["source_url"] = source["source_url"]
             if not event.get("primary_source") and event.get("source_refs"):
@@ -601,6 +648,7 @@ def compile_report_data(
         if not indexed:
             return None
         metadata = indexed.get("metadata", {})
+        source = sources.get(str(indexed.get("source_id") or ""), {})
         return {
             "item_id": item_id,
             "title": indexed.get("title", ""),
@@ -608,10 +656,10 @@ def compile_report_data(
             "access": content_status_to_access(indexed.get("content_status"))
             or "metadata_only",
             "role": metadata.get("role", "discovery"),
-            **(
-                {"published_at": indexed["published_at"]}
-                if indexed.get("published_at")
-                else {}
+            **reference_time_fields(
+                indexed,
+                source,
+                index.get("generated_at") or report.get("generated_at"),
             ),
         }
 
@@ -998,6 +1046,20 @@ def validate_report_data(
         if strict_contract:
             _require_chinese(value, location, errors)
 
+    def require_reference_time(ref: dict[str, Any], location: str) -> None:
+        if not brief_contract:
+            return
+        published_at = str(ref.get("published_at") or "").strip()
+        collected_at = str(ref.get("collected_at") or "").strip()
+        if not published_at and not collected_at:
+            errors.append(
+                f"{location}: requires published_at or collected_at for report display"
+            )
+        elif published_at and collected_at:
+            errors.append(
+                f"{location}: keep published_at only when available; collected_at is fallback-only"
+            )
+
     if strict_contract and report.get("language") != "zh-CN":
         errors.append(f"language: schema_version {schema_version} requires 'zh-CN'")
     require_chinese(report.get("title"), "title")
@@ -1111,6 +1173,7 @@ def validate_report_data(
             if urlsplit(str(primary.get("url", ""))).scheme not in {"http", "https"}:
                 errors.append(f"{brief_prefix}.primary_source.url: invalid URL")
             ref = brief.get("source_ref", {})
+            require_reference_time(ref, f"{brief_prefix}.source_ref")
             if ref.get("item_id") != item_id:
                 errors.append(f"{brief_prefix}.source_ref.item_id must equal brief item_id")
             if known_items and item_id not in known_items:
@@ -1215,6 +1278,7 @@ def validate_report_data(
             access_levels: list[str] = []
             for ref_index, ref in enumerate(item["source_refs"]):
                 ref_prefix = f"{item_prefix}.source_refs[{ref_index}]"
+                require_reference_time(ref, ref_prefix)
                 if urlsplit(ref["url"]).scheme not in {"http", "https"}:
                     errors.append(f"{ref_prefix}: invalid URL")
                 item_id = ref["item_id"]

@@ -163,7 +163,7 @@ def test_save_report_writes_markdown_and_continuity_state(tmp_path: Path):
         "## 质量评估与用户反馈",
     ]
     assert "反证与不确定性" in markdown
-    assert "发布于 2026-07-12" in markdown
+    assert "发布时间：2026-07-12" in markdown
     html = Path(artifacts["html_path"]).read_text(encoding="utf-8")
     assert "日报中心" in html
     assert "download-feedback" in html
@@ -1206,7 +1206,7 @@ def test_notion_blocks_include_complete_analysis():
     assert "反证" in rendered
     assert "影响" in rendered
     assert "证据事件" in rendered
-    assert "发布于 2026-07-12" in rendered
+    assert "发布时间：2026-07-12" in rendered
     blocks = report_to_blocks(report)
     block_types = {block["type"] for block in blocks}
     assert {"callout", "table_of_contents", "table", "numbered_list_item"} <= block_types
