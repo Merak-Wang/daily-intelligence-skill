@@ -79,7 +79,9 @@ def _first_report_item(report: dict) -> dict:
 
 def _index_for(report: dict, path: Path) -> Path:
     section = next(section for section in report["sections"] if section["items"])
-    ref = section["items"][0]["source_refs"][0]
+    event = section["items"][0]
+    ref = event["source_refs"][0]
+    source = event["primary_source"]
     payload = {
         "schema_version": "1.1",
         "index_id": "index-test",
@@ -92,8 +94,8 @@ def _index_for(report: dict, path: Path) -> Path:
         "items": [
             {
                 "item_id": ref["item_id"],
-                "source_id": "cnbc_world",
-                "source_name": "CNBC World",
+                "source_id": source["id"],
+                "source_name": source["name"],
                 "title": ref["title"],
                 "url": ref["url"],
                 "canonical_url": ref["url"],
@@ -154,7 +156,7 @@ def test_save_report_writes_markdown_and_continuity_state(tmp_path: Path):
     assert "## 研判" in markdown
     assert "### 国内新闻" in markdown
     assert "### 今日值得关注的开源项目" in markdown
-    assert "#### [CNBC](https://www.cnbc.com/world/)" in markdown
+    assert "#### [Example News](https://news.example/)" in markdown
     assert "**1. [人工智能竞争转向更低成本、更高效率的系统]" in markdown
     assert [line for line in markdown.splitlines() if line.startswith("## ")] == [
         "## 资讯",
@@ -262,7 +264,7 @@ def test_two_stage_run_reaches_completed(monkeypatch, tmp_path: Path):
         run_path,
         config,
         tmp_path / "data",
-        selected_ids=["cnbc_world-example"],
+        selected_ids=["example_news-001"],
         max_items=40,
     )
     enriched = read_json(run_path)
@@ -278,10 +280,10 @@ def test_two_stage_run_reaches_completed(monkeypatch, tmp_path: Path):
     )
     enriched = read_json(run_path)
     assert enriched["artifacts"]["selected_item_ids"] == [
-        "cnbc_world-example",
+        "example_news-001",
         "second-item",
     ]
-    assert extraction_calls == [["cnbc_world-example"], ["second-item"]]
+    assert extraction_calls == [["example_news-001"], ["second-item"]]
 
     finalize_edition(
         run_path,
@@ -552,9 +554,9 @@ def test_v15_report_publishes_before_evaluation_and_state_waits(tmp_path: Path):
     index = read_json(index_path)
     index["sources"] = [
         {
-            "source_id": "cnbc_world",
-            "source_name": "CNBC",
-            "source_url": "https://www.cnbc.com/world/",
+            "source_id": event["primary_source"]["id"],
+            "source_name": event["primary_source"]["name"],
+            "source_url": event["primary_source"]["url"],
             "status": "success",
         }
     ]

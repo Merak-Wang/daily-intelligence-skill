@@ -317,21 +317,22 @@ def _v15_report() -> dict:
 def _v15_index(report: dict) -> dict:
     event = _first_report_item(report)
     ref = event["source_refs"][0]
+    source = event["primary_source"]
     return {
         "timezone": "Asia/Shanghai",
         "sources": [
             {
-                "source_id": "cnbc_world",
-                "source_name": "CNBC",
-                "source_url": "https://www.cnbc.com/world/",
+                "source_id": source["id"],
+                "source_name": source["name"],
+                "source_url": source["url"],
                 "status": "success",
             }
         ],
         "items": [
             {
                 "item_id": ref["item_id"],
-                "source_id": "cnbc_world",
-                "source_name": "CNBC",
+                "source_id": source["id"],
+                "source_name": source["name"],
                 "title": ref["title"],
                 "url": ref["url"],
                 "content_status": "not_fetched",
@@ -530,7 +531,7 @@ def test_v15_featured_event_keeps_cross_source_articles_as_separate_events():
 
     compiled = _first_report_item(report)
     assert any("require exactly one source item" in error for error in errors)
-    assert compiled["primary_source"]["id"] == "cnbc_world"
+    assert compiled["primary_source"]["id"] == "example_news"
     assert [ref["item_id"] for ref in compiled["source_refs"]] == [
         first_item_id,
         second_item["item_id"],
@@ -547,9 +548,9 @@ def test_v15_featured_event_rejects_multiple_articles_from_same_publisher():
     second_item = json.loads(json.dumps(index["items"][0]))
     second_item.update(
         {
-            "item_id": "cnbc_world-unrelated-article",
+            "item_id": "example_news-unrelated-article",
             "title": "An unrelated article from the same publisher",
-            "url": "https://www.cnbc.com/2026/07/12/unrelated.html",
+            "url": "https://news.example/articles/unrelated",
         }
     )
     index["items"].append(second_item)
@@ -676,8 +677,9 @@ def test_v15_compiler_never_creates_missing_semantic_briefs():
     index = _v15_index(report)
     index["date"] = report["date"]
     index["edition"] = report["edition"]
+    source_id = index["items"][0]["source_id"]
     index["source_policies"] = {
-        "cnbc_world": {"report_target": 3, "report_max": 15}
+        source_id: {"report_target": 3, "report_max": 15}
     }
     base = index["items"][0]
     source_section = next(section for section in report["sections"] if section["briefs"])
@@ -685,9 +687,9 @@ def test_v15_compiler_never_creates_missing_semantic_briefs():
     base["category"] = source_section["category"]
     for position in (2, 3):
         item = json.loads(json.dumps(base))
-        item["item_id"] = f"cnbc-{position}"
+        item["item_id"] = f"example-news-{position}"
         item["title"] = f"Source metadata headline {position}"
-        item["url"] = f"https://www.cnbc.com/example-{position}/"
+        item["url"] = f"https://news.example/articles/example-{position}"
         item["published_at"] = None
         item["metadata"]["source_rank"] = position
         index["items"].append(item)
@@ -699,7 +701,7 @@ def test_v15_compiler_never_creates_missing_semantic_briefs():
     assert len(section["briefs"]) == 1
     assert {brief["item_id"] for brief in section["briefs"]} == {base["item_id"]}
     assert any(
-        "coverage source 'cnbc_world': selected 1 of required 3" in error
+        f"coverage source '{source_id}': selected 1 of required 3" in error
         for error in errors
     )
 
@@ -709,8 +711,9 @@ def test_v15_flat_importance_uses_source_rank_as_non_blocking_tie_breaker():
     index = _v15_index(report)
     index["date"] = report["date"]
     index["edition"] = report["edition"]
+    source_id = index["items"][0]["source_id"]
     index["source_policies"] = {
-        "cnbc_world": {"report_target": 3, "report_max": 15}
+        source_id: {"report_target": 3, "report_max": 15}
     }
     section = next(section for section in report["sections"] if section["briefs"])
     base_brief = section["briefs"][0]
@@ -721,9 +724,9 @@ def test_v15_flat_importance_uses_source_rank_as_non_blocking_tie_breaker():
         item = json.loads(json.dumps(base_item))
         item.update(
             {
-                "item_id": f"cnbc-{position}",
+                "item_id": f"example-news-{position}",
                 "title": f"Source headline {position}",
-                "url": f"https://www.cnbc.com/example-{position}/",
+                "url": f"https://news.example/articles/example-{position}",
             }
         )
         item["metadata"]["source_rank"] = position

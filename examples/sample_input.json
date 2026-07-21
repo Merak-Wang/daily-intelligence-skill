@@ -1,29 +1,29 @@
 [
   {
-    "source": "CNBC World",
-    "source_url": "https://www.cnbc.com/world/?region=world",
-    "page_title": "International Business, World News & Global Stock Market Analysis",
-    "final_url": "https://www.cnbc.com/world/?region=world",
+    "source": "Example News",
+    "source_url": "https://news.example/",
+    "page_title": "Example News",
+    "final_url": "https://news.example/",
     "http_status": 200,
     "status": "success",
     "items": [
       {
-        "source": "CNBC World",
+        "source": "Example News",
         "title": "The AI race is shifting from bigger models to cheaper, smarter systems",
-        "url": "https://www.cnbc.com/2026/07/10/the-ai-race-is-shifting-from-bigger-models-to-cheaper-smarter-systems.html"
+        "url": "https://news.example/articles/efficient-ai-systems"
       },
       {
-        "source": "CNBC World",
-        "title": "META 669.21 Meta Platforms Inc +37.73(+5.97%)",
-        "url": "https://www.cnbc.com/quotes/META"
+        "source": "Example News",
+        "title": "EXAMPLE 100.00 Example Corp +1.00(+1.00%)",
+        "url": "https://news.example/quotes/EXAMPLE"
       }
     ]
   },
   {
-    "source": "Reuters",
-    "source_url": "https://www.reuters.com/",
-    "page_title": "reuters.com",
-    "final_url": "https://www.reuters.com/",
+    "source": "Example Wire",
+    "source_url": "https://wire.example/",
+    "page_title": "Example Wire",
+    "final_url": "https://wire.example/",
     "http_status": 401,
     "status": "no_items",
     "items": []

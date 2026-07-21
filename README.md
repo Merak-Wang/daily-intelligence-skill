@@ -1,93 +1,50 @@
-<div align="center">
-
 # Daily Intelligence
 
-**把分散在新闻、论文与开源社区里的信息，变成一份可追溯、可连续、可直接阅读的中文情报日报。**
+Daily Intelligence 是面向 [Hermes Agent](https://hermes-agent.nousresearch.com/) 的中文情报日报 Skill。它按晨报和晚报两个时段整理新闻、论文与开源项目，并保留来源链接和历史上下文。
 
-面向 [Hermes Agent](https://hermes-agent.nousresearch.com/) 的双时段 Agent Skill。<br>
-06:00 建立晨间基线，18:00 补充新增事实、判断修正与次日观察。
-
-<!-- [![CI](https://img.shields.io/github/actions/workflow/status/Merak-Wang/daily-intelligence-skill/ci.yml?branch=main&style=flat-square&label=CI)](https://github.com/Merak-Wang/daily-intelligence-skill/actions/workflows/ci.yml) -->
-<!-- [![Release](https://img.shields.io/github/v/release/Merak-Wang/daily-intelligence-skill?style=flat-square&label=release)](https://github.com/Merak-Wang/daily-intelligence-skill/releases)
-[![Python](https://img.shields.io/badge/Python-3.11%2B-3776AB?style=flat-square&logo=python&logoColor=white)](https://www.python.org/) -->
 [![Hermes Agent](https://img.shields.io/badge/Hermes-Agent-6C5CE7?style=flat-square)](https://hermes-agent.nousresearch.com/)
 [![License](https://img.shields.io/github/license/Merak-Wang/daily-intelligence-skill?style=flat-square)](LICENSE)
 
-[快速开始](#快速开始) · [它能做什么](#它能做什么) · [工作方式](#工作方式) · [配置](#配置) · [中文 Wiki](wiki/Home.md)
+## 能做什么
 
-</div>
+- 从配置的新闻、研究机构、论文和开源社区来源收集候选内容。
+- 生成包含资讯、技术和研判的固定结构中文日报。
+- 为每条内容保留原文标题、中文摘要、来源和证据边界。
+- 生成晨报与晚报；晚报补充日间变化、判断修正和次日观察。
+- 在来源失败或需要人工验证时保留状态，继续完成可用部分。
+- 保存 JSON、Markdown、HTML 和 PDF；可选同步到 Notion。
+- 在交付后生成独立质量评估，并将合格内容用于后续连续跟踪。
 
----
-
-## 为什么需要它
-
-普通新闻聚合器解决的是“把链接放到一起”；Daily Intelligence 关注的是更难的后半程：
-
-- **覆盖够广**：普通新闻以轻量 brief 展示，不因低重要性被静默丢弃；每个来源最多保留 15 条，并保留原始 TopN。
-- **证据有边界**：TL;DR 只能来自已读正文、公开摘要或标题明确表达的事实；拿不到正文时不编造内容。
-- **分析能追溯**：研判分别从地缘政治、AI 研究/工程、股票分析三个视角展开，并引用前文事件。
-- **前后有连续性**：晚报修订晨报，次日继续跟踪历史事件、既有判断、风险信号与人工反馈。
-- **失败可恢复**：采集、正文、写作、交付都有 checkpoint；单个来源失败不会伪装成“今日无内容”，也不会拖垮整份日报。
-- **没有 Notion 也能用**：本地 JSON/Markdown 是事实源，响应式 HTML 与 A4 PDF 是默认成品；Notion 只是可选同步目标。
-
-## 它能做什么
-
-### 一份结构稳定的中文日报
+日报包含以下栏目：
 
 ```text
-资讯
-├─ 国际
-├─ 国内新闻
-├─ 军事
-└─ 市场
-
-技术
-├─ 技术新闻
-├─ 值得阅读的论文
-└─ 今日值得关注的开源项目
-
-研判
-├─ 地缘政治专家视角
-├─ AI 研究/开发工程师视角
-└─ 股票分析师视角
-
-质量评估与用户反馈（交付后异步追加）
+资讯：国际、国内新闻、军事、市场
+技术：技术新闻、论文、开源项目
+研判：地缘政治、AI 研究与工程、市场分析
 ```
 
-七个内容栏目始终保留。栏目内按来源建立三级标题；每条信息包含标题、中文 TL;DR、相对排序与原文链接。英文标题保留原文，下一行给出自然中文翻译。数字重要性分数、内部访问状态和调试字段不会挤占读者版页面。
+## 输出
 
-### 四种本地成果，一种可选远端
+| 格式 | 用途 |
+| --- | --- |
+| JSON | 结构化报告和后续处理 |
+| Markdown | 审阅与归档 |
+| HTML | 本地阅读和日报索引 |
+| PDF | 打印与分享 |
+| Notion | 可选的远程同步 |
 
-| 成果 | 用途 | 是否依赖云服务 |
-| --- | --- | --- |
-| JSON | 不可变结构化事实源、校验与后续连续性 | 否 |
-| Markdown | 可审阅、可版本控制的文本事实源 | 否 |
-| HTML | 响应式阅读、搜索、证据跳转、反馈下载与本地归档 | 否 |
-| PDF | A4 阅读、打印、分享，保留页码与可点击原文链接 | 否 |
-| Notion | 美观的远程同步与团队阅读 | **可选** |
-
-每次交付都会更新 `reports/index.html` 本地日报中心。独立评估完成后只刷新 HTML/PDF 的质量区，不篡改原始报告和内容哈希。
-
-### 面向真实网页环境的采集
-
-- 通用公开索引页先走无脚本 HTTP 并发预取，降低浏览器开销。
-- 登录、JavaScript、专用 adapter 或人工验证页面回退到同一个 Microsoft Edge profile。
-- 失败、403、验证码与限流页面进入一个本地验证队列；成功页立即提取，失败页保留链接后继续。
-- 正文只按重要性精选并行读取，每版默认最多 12 篇；普通信息仍可凭公开摘要进入 brief。
-- Agent 可提出新的同域栏目页，人工确认后纳入后续采集，无需再增加抓取脚本。
+本地文件是事实源；不配置 Notion 也能完成日报生成、评估和归档。
 
 ## 快速开始
 
-### 1. 安装
+要求 Python 3.11+、Hermes Agent 和 Hermes Gateway。Windows 使用 Microsoft Edge；macOS 和 Linux 使用 Playwright Chromium。
 
-Windows 是主测试平台。Hermes 的技能目录为 `%LOCALAPPDATA%\hermes\skills\`。
+Windows：
 
 ```powershell
 git clone https://github.com/Merak-Wang/daily-intelligence-skill.git
 cd daily-intelligence-skill
 powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\install.ps1
-hermes skills list
-daily-intel --help
 ```
 
 macOS / Linux：
@@ -96,163 +53,29 @@ macOS / Linux：
 git clone https://github.com/Merak-Wang/daily-intelligence-skill.git
 cd daily-intelligence-skill
 ./scripts/install.sh
-daily-intel --help
 ```
 
-要求：Python 3.11+、Hermes Agent 与 Hermes Gateway。Windows 使用系统 Microsoft Edge；macOS/Linux 使用 Playwright Chromium。
-
-### 2. 固定运行数据目录
-
-```powershell
-$env:DAILY_INTEL_DATA_DIR = "$env:LOCALAPPDATA\hermes\daily-intelligence"
-$env:DAILY_INTEL_BROWSER_CHANNEL = "msedge"
-$env:DAILY_INTEL_PROFILE_DIR = "$env:LOCALAPPDATA\hermes\browser-profiles\daily-intelligence"
-```
-
-第一次运行会把唯一数据根记录到 Hermes Home，防止手动任务、Cron 与评估任务各自产生一套历史。迁移数据时使用显式的 `data-root status|adopt`，不会隐式删除旧目录。
-
-### 3. 直接告诉 Hermes
+安装后可直接向 Hermes 发出任务：
 
 ```text
 使用 daily-intelligence 生成今天的晨报，保存为本地 HTML 和 PDF。
 ```
 
-晚间版：
-
 ```text
-使用 daily-intelligence 生成今天的晚报；读取当日晨报、已有评估和人工反馈，
-补充日间新增、事实确认、判断修正与次日观察，并保存为本地 HTML/PDF。
+使用 daily-intelligence 生成今天的晚报，补充日间变化和次日观察。
 ```
 
-完成后打开本地日报中心：
+只有明确要求发布到 Notion 时才会访问 Notion。
 
-```powershell
-Start-Process "$env:LOCALAPPDATA\hermes\daily-intelligence\reports\index.html"
-```
+## 配置与文档
 
-> 只有明确要求“并发布到 Notion”时才需要 Notion 凭证，也只有显式传入 `--publish` 才会访问 Notion。
-
-## 工作方式
-
-```mermaid
-flowchart LR
-    A[来源配置与已批准栏目页] --> B[并发 HTTP 预取]
-    B --> C[按需 Edge 回退与人工验证]
-    C --> D[不可变候选 Index]
-    D --> E[压缩 Context 与 brief 计划]
-    E --> F[Hermes 并行翻译和摘要]
-    F --> G[精选正文并行 Enrich]
-    G --> H[三视角研判]
-    H --> I[Python 编译与 Schema 校验]
-    I --> J[JSON / Markdown]
-    J --> K[本地 HTML / PDF]
-    J -. 可选 .-> N[Notion]
-    K --> L[隔离的评估 Agent]
-    L --> M[评估、连续状态与页面刷新]
-```
-
-## 配置
-
-主配置位于 [`configs/sources.yaml`](configs/sources.yaml)。默认预算：
-
-```yaml
-budget:
-  max_runtime_seconds: 600
-  max_agent_tokens: 10000000
-  report_items_per_source: 15
-  max_fulltext_per_run: 12
-
-output:
-  formats: [html, pdf]
-  pdf_engine: edge
-  open_after_finalize: false
-```
-
-`pdf_engine: edge` 会用系统 Edge 从同一份 HTML 打印 A4 PDF；失败时自动降级到 ReportLab。HTML 内的反馈表单只下载本地 JSON，不会自行上传。
-
-### 可选 Notion
-
-```powershell
-$env:NOTION_TOKEN = "ntn_..."
-$env:NOTION_DATA_SOURCE_ID = "..."
-```
-
-**1）Notion API 的 Token（Integration Secret）怎么拿**
-
-在 Notion 中依次进入：
-
-**Settings** → **Connections** → **Develop or manage Connections** → **New Connection**
-
-创建后，页面中会显示 **Access token**。这就是你的 Notion API Token，一般形如 `ntn_...`。
-
-**2）数据库 URL 怎么拿（以及它对应的 `database_id`）**
-
-**A. 获取数据库 URL（最简单）**
-
-1. 打开目标数据库页面。
-2. 点击右上角 **•••** → **Copy link**。
-3. 复制出的链接就是数据库 URL。
-
-常见形式如下：
-
-```text
-https://www.notion.so/WorkspaceName/DatabaseName-<32位id>?v=...
-https://www.notion.so/<32位id>?v=...
-```
-
-**B. 从 URL 获取 `database_id`**
-
-Notion 的 `database_id` 本质上是 URL 中的 **32 位十六进制字符串**。它可能带连字符；Notion API 通常两种格式都能接受，如果带连字符的格式不可用，可以去掉连字符，改用纯 32 位字符串。
-
-例如，URL 中包含：
-
-```text
-.../DatabaseName-12345678abcd1234abcd1234abcd1234
-```
-
-那么对应的 `database_id` 为：
-
-```text
-12345678-abcd-1234-abcd-1234abcd1234
-```
-
-也可以使用去掉连字符后的 32 位格式：
-
-```text
-12345678abcd1234abcd1234abcd1234
-```
-
-### 定时任务
-
-```powershell
-hermes cron create "0 6 * * *" `
-  "使用 daily-intelligence 在 10 分钟预算内生成 06:00 中文晨报并保存本地 HTML/PDF；" `
-  --skill daily-intelligence --name "Daily Intelligence Morning"
-
-hermes cron create "0 18 * * *" `
-  "使用 daily-intelligence 生成 18:00 中文晚报并保存本地 HTML/PDF" `
-  --skill daily-intelligence --name "Daily Intelligence Evening"
-```
-
-
-完整命令、状态恢复和故障处理见 [运行手册](references/runbook.md)。
-
-## 数据与隐私
-
-```text
-DATA_DIR/
-├─ runs/                    可恢复控制状态
-├─ indexes/                 不可变候选索引
-├─ context/                 Agent 压缩上下文与写作计划
-├─ content/                 按需正文
-├─ reports/index.html       本地日报中心
-├─ reports/YYYY-MM-DD/      JSON / Markdown / HTML / PDF
-├─ evaluations/             独立评估 artifact
-├─ state/                   连续性与语义缓存
-└─ publishing/              可重试的远程发布登记
-```
-
-
+- 来源和输出配置：[configs/sources.yaml](configs/sources.yaml)
+- 日常运行与故障恢复：[references/runbook.md](references/runbook.md)
+- Windows 安装：[references/windows-setup.md](references/windows-setup.md)
+- Notion 配置：[references/notion-setup.md](references/notion-setup.md)
+- 编辑与证据规则：[references/editorial-policy.md](references/editorial-policy.md)
+- 开发文档：[wiki/Home.md](wiki/Home.md)
+- 版本记录：[CHANGELOG.md](CHANGELOG.md)
 
 ## 开发
 
@@ -263,43 +86,13 @@ python -m pytest
 python -m compileall -q src tests
 ```
 
-CI 覆盖 Windows / Ubuntu 与 Python 3.11 / 3.12。来源过滤、状态模型、校验、发布或旧索引兼容性发生变化时，必须同步补测试。
+修改来源过滤、状态、校验、发布或旧格式兼容逻辑时，需要同步更新测试。开发约定和模块索引见 [Wiki](wiki/Home.md)。
 
-仓库布局：
+## 使用边界
 
-```text
-SKILL.md                     Hermes 简洁执行入口
-configs/                     来源、预算、浏览器与输出配置
-references/                  编辑、证据、运行和部署细则
-schemas/report.schema.json   机器可验证报告契约
-templates/report-contract.md Agent 写作契约
-src/daily_intelligence/      采集、编译、状态与多格式渲染
-tests/                       单元、架构、兼容与发布测试
-wiki/                        中文设计与代码说明
-```
-
-## 文档
-
-| 从这里开始 | 你会看到什么 |
-| --- | --- |
-| [Wiki 首页](wiki/Home.md) | 设计原则、推荐阅读路线与系统全景 |
-| [产品目标与边界](wiki/01-产品目标与边界.md) | 为什么这样设计，以及明确不做什么 |
-| [总体架构](wiki/02-总体架构.md) | Agent、Python、状态和投影之间的责任边界 |
-| [端到端流程](wiki/04-端到端流程.md) | 每阶段输入、输出、状态与恢复路径 |
-| [依赖、配置与注入](wiki/09-依赖配置与注入.md) | 参数优先级、环境变量、adapter 与 context 注入 |
-| [核心算法与跨模块调用](wiki/10-核心算法与跨模块调用.md) | 过滤、排名、并发、编译、校验和完整调用链 |
-| [运行手册](references/runbook.md) | 常用命令、Edge 验证和故障恢复 |
-| [Changelog](CHANGELOG.md) | 版本变化与兼容说明 |
-
-## 当前边界
-
-- 10 分钟是正常运行目标，不是网络异常、首次登录或大面积验证挑战下的硬实时保证。
-- 受限来源可能只保留公开元数据与原文链接；系统不会绕过站点限制。
-- 研判是研究辅助，不构成投资、法律或其他专业决策的替代意见。
-
-## 参与贡献
-
-欢迎通过 Issue 提交来源建议、失败样例和日报质量反馈。贡献代码前请先阅读 Wiki 的扩展设计；新增来源优先使用配置或 adapter 扩展，避免复制新的独立抓取脚本。
+- 项目不会绕过登录、验证码、限流、付费墙或站点访问控制。
+- 访问失败的来源会保留为失败或待验证状态，不会被记为“无内容”。
+- 研判仅用于研究辅助，不构成投资、法律或其他专业建议。
 
 ## License
 

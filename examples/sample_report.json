@@ -56,21 +56,21 @@
           "confidence": 0.6,
           "status": "NEW",
           "primary_source": {
-            "id": "cnbc_world",
-            "name": "CNBC",
-            "url": "https://www.cnbc.com/world/"
+            "id": "example_news",
+            "name": "Example News",
+            "url": "https://news.example/"
           },
           "source_refs": [
             {
-              "item_id": "cnbc_world-example",
+              "item_id": "example_news-001",
               "title": "The AI race is shifting from bigger models to cheaper, smarter systems",
-              "url": "https://www.cnbc.com/2026/07/10/the-ai-race-is-shifting-from-bigger-models-to-cheaper-smarter-systems.html",
+              "url": "https://news.example/articles/efficient-ai-systems",
               "access": "metadata_only",
               "role": "discovery"
             }
           ],
           "evidence_notes": [
-            "该示例未读取正文，仅依据公开摘要展示报告结构；不得据此补充摘要未包含的事实。"
+            "这是合成样例，未读取正文，仅用于展示报告结构和证据边界。"
           ],
           "tags": [
             "ai",
@@ -174,11 +174,11 @@
   "tomorrow_watch_items": [],
   "pending_verifications": [
     {
-      "source_id": "reuters",
-      "source_name": "Reuters",
+      "source_id": "example_wire",
+      "source_name": "Example Wire",
       "status": "verification_required",
       "note": "检测到 HTTP 401，需要完成合法的人工验证后重试。",
-      "url": "https://www.reuters.com/"
+      "url": "https://wire.example/"
     }
   ],
   "source_count": 2,

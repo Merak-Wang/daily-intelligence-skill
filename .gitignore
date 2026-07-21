@@ -1,20 +1,78 @@
+# Python bytecode and caches
 __pycache__/
 *.py[cod]
+*$py.class
 .pytest_cache/
 .ruff_cache/
+.mypy_cache/
+.pyre/
+.pytype/
+
+# Coverage and test output
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+playwright-report/
+test-results/
+blob-report/
+
+# Virtual environments and packaging
 .venv/
-.env
+venv/
+env/
 build/
 dist/
 *.egg-info/
+pip-wheel-metadata/
 
-# Runtime data and secrets
-data/
+# Local environment and credentials
+.env
+.env.*
+!.env.example
+*.cookies.json
+*.storage-state.json
+*.har
+
+# Browser and authenticated page data
 browser-profile/
 edge-profile/
-*.storage-state.json
-*.cookies.json
-*.har
 screenshots/
 raw_html/
 .playwright-cli/
+
+# Runtime data if DATA_DIR is pointed at the repository
+/data/
+/runs/
+/indexes/
+/context/
+/content/
+/reports/
+/evaluations/
+/publishing/
+/state/
+/challenges/
+/locks/
+/retrospectives/
+
+# Local agent and editor state
+/.agents/
+/.codex/
+.idea/
+.vscode/
+*.swp
+*.swo
+
+# Logs and temporary files
+*.log
+*.tmp
+*.bak
+*.orig
+
+# Operating system files
+.DS_Store
+Thumbs.db
+Desktop.ini
+
+# Local build audit; release history belongs in CHANGELOG.md
+/BUILD_REPORT.md

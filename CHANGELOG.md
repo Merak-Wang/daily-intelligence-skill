@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Reworked the README as a concise capability overview and rewrote the Wiki as developer documentation tied to current modules, states, commands, and tests.
+- Expanded repository ignores for runtime artifacts, browser data, coverage output, editor state, and local build audits; removed the machine-specific build report from the public tree.
+- Replaced real-looking media URLs in synthetic fixtures with reserved `.example` domains and documented the fixture boundary.
+- Removed the unused `DAILY_INTEL_TIMEZONE` entry from `.env.example`; timezone remains configured through `sources.yaml` or `--timezone`.
 - Displayed a timestamp for every report story: source publication time when available, otherwise an explicitly labeled collection time that does not affect `NEW` or freshness scoring.
 - Made manual Edge verification opt-in so `run-edition` no longer opens or waits for the verification queue unless `--open-verification` is passed explicitly; `verify-pending` remains the recommended manual entry point.
 - Declared `tzdata` as a runtime dependency so `ZoneInfo` works on Windows and minimal CI images without a system IANA time-zone database.
