@@ -65,7 +65,7 @@ Every successful `finalize-edition` creates a local reading page, A4 PDF, and ar
 
 This does not require Notion credentials. Windows uses installed Edge to print the same HTML to PDF without the authenticated browser profile or external network requests. If headless Edge is unavailable, the installed ReportLab dependency produces a simpler Chinese PDF instead. Set `output.pdf_engine: reportlab` in `configs/sources.yaml` to force that fallback, or remove `pdf` from `output.formats` to generate HTML only.
 
-`open_after_finalize` defaults to false so 06:00/18:00 tasks do not open a window. Set it true only for interactive use. HTML/PDF may be refreshed after independent evaluation; JSON/Markdown remain the immutable facts.
+`open_after_finalize` defaults to false so 06:00/18:00 tasks do not open a window. Set it true only for interactive use. `copy_html_to_desktop` defaults to true in the bundled configuration, so every finalized edition also writes `daily-intelligence-YYYY-MM-DD-EDITION-rN.html` to the current user's Desktop. The desktop projection uses absolute local links for cached images, the archive, and the eventual PDF. Set an absolute `output.desktop_dir` to override the detected Desktop. A failed desktop write is reported as `desktop_html_error` without rolling back the local JSON/Markdown/HTML truth. HTML/PDF may be refreshed after independent evaluation; JSON/Markdown remain the immutable facts.
 
 ## Manual source verification
 

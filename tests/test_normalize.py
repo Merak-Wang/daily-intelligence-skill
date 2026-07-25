@@ -9,12 +9,27 @@ from daily_intelligence.adapters import (
 from daily_intelligence.collector import classify_source_status, is_eligible
 from daily_intelligence.config import load_config
 from daily_intelligence.models import SourceStatus
-from daily_intelligence.utils import canonicalize_url
+from daily_intelligence.utils import canonicalize_url, url_for_source_filter
 
 
 def test_tracking_parameters_are_removed():
     url = "https://www.yahoo.com/news/a.html?guccounter=1&utm_source=x&keep=yes#fragment"
     assert canonicalize_url(url) == "https://yahoo.com/news/a.html?keep=yes"
+    assert (
+        url_for_source_filter(url)
+        == "https://www.yahoo.com/news/a.html?keep=yes"
+    )
+
+
+def test_source_filter_ignores_tracking_parameters_without_changing_host_shape():
+    source = load_config().source_by_id("infoq_ai")
+
+    assert is_eligible(
+        source,
+        "Cloudflare details a new AI architecture",
+        "https://www.infoq.com/news/2026/07/cloudflare-ai-architecture/"
+        "?utm_source=rss&utm_medium=feed",
+    )
 
 
 def test_cnbc_article_filter_accepts_article_and_rejects_quote():

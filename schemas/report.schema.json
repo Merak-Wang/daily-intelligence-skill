@@ -20,7 +20,7 @@
   ],
   "properties": {
     "schema_version": {
-      "enum": ["1.1", "1.2", "1.3", "1.4", "1.5"]
+      "enum": ["1.1", "1.2", "1.3", "1.4", "1.5", "2.0"]
     },
     "report_id": {
       "type": "string",
@@ -317,6 +317,42 @@
                   },
                   "additionalProperties": true
                 },
+                "image": {
+                  "type": "object",
+                  "required": [
+                    "source_url",
+                    "resolved_url",
+                    "local_path",
+                    "content_type",
+                    "sha256",
+                    "byte_size",
+                    "width",
+                    "height",
+                    "caption",
+                    "credit"
+                  ],
+                  "properties": {
+                    "source_url": {"type": "string", "format": "uri"},
+                    "resolved_url": {"type": "string", "format": "uri"},
+                    "local_path": {
+                      "type": "string",
+                      "pattern": "^media/images/[0-9a-f]{2}/[0-9a-f]{64}\\.(jpg|png|gif|webp)$"
+                    },
+                    "content_type": {
+                      "enum": ["image/jpeg", "image/png", "image/gif", "image/webp"]
+                    },
+                    "sha256": {
+                      "type": "string",
+                      "pattern": "^[0-9a-f]{64}$"
+                    },
+                    "byte_size": {"type": "integer", "minimum": 1, "maximum": 20971520},
+                    "width": {"type": "integer", "minimum": 1},
+                    "height": {"type": "integer", "minimum": 1},
+                    "caption": {"type": "string", "minLength": 1},
+                    "credit": {"type": "string", "minLength": 1}
+                  },
+                  "additionalProperties": false
+                },
                 "featured_event_id": {"type": "string"},
                 "evidence_note": {"type": "string"}
               },
@@ -502,10 +538,131 @@
               },
               "additionalProperties": false
             }
+          },
+          "time_horizon": {
+            "type": "string",
+            "minLength": 1
+          },
+          "causal_chain": {
+            "type": "array",
+            "minItems": 2,
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "assumptions": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "evidence_gaps": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string",
+              "minLength": 1
+            }
+          },
+          "confidence_rationale": {
+            "type": "string",
+            "minLength": 10
+          },
+          "change_from_prior": {
+            "type": "string",
+            "minLength": 10
+          },
+          "decision_relevance": {
+            "type": "string",
+            "minLength": 10
           }
         },
         "additionalProperties": true
       }
+    },
+    "analysis_protocol_version": {
+      "enum": ["2.0"]
+    },
+    "cross_perspective_synthesis": {
+      "type": "object",
+      "required": [
+        "overall_judgment",
+        "consensus",
+        "tensions",
+        "transmission_chain",
+        "shared_watch_signals",
+        "revision_triggers",
+        "evidence_event_ids"
+      ],
+      "properties": {
+        "overall_judgment": {
+          "type": "string",
+          "minLength": 20
+        },
+        "consensus": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "tensions": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "object",
+            "required": ["issue", "perspectives", "source_of_difference"],
+            "properties": {
+              "issue": {"type": "string", "minLength": 1},
+              "perspectives": {
+                "type": "array",
+                "minItems": 2,
+                "items": {"type": "string", "minLength": 1}
+              },
+              "source_of_difference": {"type": "string", "minLength": 1}
+            },
+            "additionalProperties": false
+          }
+        },
+        "transmission_chain": {
+          "type": "array",
+          "minItems": 2,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "shared_watch_signals": {
+          "type": "array",
+          "minItems": 3,
+          "maxItems": 5,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "revision_triggers": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        },
+        "evidence_event_ids": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "minLength": 1
+          }
+        }
+      },
+      "additionalProperties": false
     },
     "changes": {
       "type": "array",
@@ -628,6 +785,28 @@
             "enum": ["formatting", "event_summaries", "analyses", "source_access", "all"]
           }
         }
+      },
+      "additionalProperties": false
+    },
+    "media_metrics": {
+      "type": "object",
+      "required": [
+        "candidates",
+        "attached",
+        "unique_files",
+        "reused_files",
+        "failed",
+        "skipped_budget",
+        "total_bytes"
+      ],
+      "properties": {
+        "candidates": {"type": "integer", "minimum": 0},
+        "attached": {"type": "integer", "minimum": 0},
+        "unique_files": {"type": "integer", "minimum": 0},
+        "reused_files": {"type": "integer", "minimum": 0},
+        "failed": {"type": "integer", "minimum": 0},
+        "skipped_budget": {"type": "integer", "minimum": 0},
+        "total_bytes": {"type": "integer", "minimum": 0}
       },
       "additionalProperties": false
     }

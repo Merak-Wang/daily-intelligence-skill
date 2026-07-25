@@ -27,10 +27,16 @@ class SourceConfig:
     adapter: str | None = None
     enabled: bool = True
     role: str = "evidence"
+    tier: int = 2
+    bundle: str = "core"
     module: str = "information"
     category: str = "international"
     language: str = "en"
     region: str = "global"
+    feed_urls: list[str] = field(default_factory=list)
+    monitor_enabled: bool = True
+    refresh_interval_minutes: int | None = None
+    feed_item_limit: int | None = None
     include_domains: list[str] = field(default_factory=list)
     article_patterns: list[str] = field(default_factory=list)
     exclude_patterns: list[str] = field(default_factory=list)
@@ -75,6 +81,42 @@ class OutputConfig:
     formats: list[str] = field(default_factory=lambda: ["html", "pdf"])
     pdf_engine: str = "edge"
     open_after_finalize: bool = False
+    copy_html_to_desktop: bool = False
+    desktop_dir: str | None = None
+
+
+@dataclass(slots=True)
+class MediaConfig:
+    enabled: bool = True
+    max_images_per_report: int = 1000
+    max_image_bytes: int = 8 * 1024 * 1024
+    max_total_bytes: int = 80 * 1024 * 1024
+    max_image_pixels: int = 25_000_000
+    request_timeout_seconds: float = 10.0
+    max_redirects: int = 5
+    global_concurrency: int = 12
+    per_domain_concurrency: int = 2
+    cache_success_ttl_hours: int = 168
+    cache_failure_retry_minutes: int = 60
+
+
+@dataclass(slots=True)
+class MonitorConfig:
+    enabled: bool = True
+    sources_file: str | None = "discovery-sources.yaml"
+    refresh_before_edition: bool = True
+    reuse_fresh_snapshot_before_edition: bool = True
+    auto_discover_feeds: bool = True
+    html_fallback: bool = True
+    request_timeout_seconds: float = 10.0
+    global_concurrency: int = 16
+    per_domain_concurrency: int = 2
+    max_feed_bytes: int = 2 * 1024 * 1024
+    max_items_per_feed: int = 40
+    max_age_hours: int = 168
+    snapshot_max_age_minutes: int = 90
+    default_refresh_interval_minutes: int = 30
+    cluster_similarity_threshold: float = 0.68
 
 
 def validate_output_config(output: OutputConfig) -> OutputConfig:
@@ -89,7 +131,38 @@ def validate_output_config(output: OutputConfig) -> OutputConfig:
         raise ValueError("PDF output requires HTML because PDF is rendered from the local HTML")
     if output.pdf_engine not in {"edge", "reportlab", "auto"}:
         raise ValueError("output.pdf_engine must be one of: edge, reportlab, auto")
+    if output.desktop_dir and not Path(output.desktop_dir).expanduser().is_absolute():
+        raise ValueError("output.desktop_dir must be an absolute path")
     return output
+
+
+def validate_media_config(media: MediaConfig) -> MediaConfig:
+    if media.max_images_per_report < 0:
+        raise ValueError("media.max_images_per_report must be non-negative")
+    if not 0 < media.max_image_bytes <= 20 * 1024 * 1024:
+        raise ValueError(
+            "media.max_image_bytes must be positive and no more than Notion's "
+            "20 MB direct-upload limit"
+        )
+    if media.max_total_bytes < media.max_image_bytes:
+        raise ValueError("media.max_total_bytes must be at least media.max_image_bytes")
+    if media.max_image_pixels <= 0:
+        raise ValueError("media.max_image_pixels must be positive")
+    if media.request_timeout_seconds <= 0:
+        raise ValueError("media.request_timeout_seconds must be positive")
+    if not 0 <= media.max_redirects <= 10:
+        raise ValueError("media.max_redirects must be between 0 and 10")
+    if media.global_concurrency <= 0 or media.per_domain_concurrency <= 0:
+        raise ValueError("media concurrency values must be positive")
+    if media.per_domain_concurrency > media.global_concurrency:
+        raise ValueError(
+            "media.per_domain_concurrency must not exceed global_concurrency"
+        )
+    if media.cache_success_ttl_hours <= 0:
+        raise ValueError("media.cache_success_ttl_hours must be positive")
+    if media.cache_failure_retry_minutes <= 0:
+        raise ValueError("media.cache_failure_retry_minutes must be positive")
+    return media
 
 
 @dataclass(slots=True)
@@ -99,12 +172,88 @@ class AppConfig:
     sources: list[SourceConfig]
     budget: BudgetConfig = field(default_factory=BudgetConfig)
     output: OutputConfig = field(default_factory=OutputConfig)
+    media: MediaConfig = field(default_factory=MediaConfig)
+    monitor: MonitorConfig = field(default_factory=MonitorConfig)
+    monitor_sources: list[SourceConfig] = field(default_factory=list)
 
     def source_by_id(self, source_id: str) -> SourceConfig:
-        for source in self.sources:
+        for source in [*self.sources, *self.monitor_sources]:
             if source.id == source_id:
                 return source
         raise KeyError(f"Unknown source: {source_id}")
+
+    @property
+    def all_monitor_sources(self) -> list[SourceConfig]:
+        seen: set[str] = set()
+        sources: list[SourceConfig] = []
+        for source in [*self.sources, *self.monitor_sources]:
+            if source.id in seen or not source.monitor_enabled:
+                continue
+            seen.add(source.id)
+            sources.append(source)
+        return sources
+
+
+def validate_monitor_config(monitor: MonitorConfig) -> MonitorConfig:
+    if monitor.request_timeout_seconds <= 0:
+        raise ValueError("monitor.request_timeout_seconds must be positive")
+    if monitor.global_concurrency <= 0 or monitor.per_domain_concurrency <= 0:
+        raise ValueError("monitor concurrency values must be positive")
+    if not 1024 <= monitor.max_feed_bytes <= 10 * 1024 * 1024:
+        raise ValueError("monitor.max_feed_bytes must be between 1 KB and 10 MB")
+    if not 1 <= monitor.max_items_per_feed <= 200:
+        raise ValueError("monitor.max_items_per_feed must be between 1 and 200")
+    if monitor.max_age_hours <= 0:
+        raise ValueError("monitor.max_age_hours must be positive")
+    if monitor.snapshot_max_age_minutes <= 0:
+        raise ValueError("monitor.snapshot_max_age_minutes must be positive")
+    if monitor.default_refresh_interval_minutes <= 0:
+        raise ValueError("monitor.default_refresh_interval_minutes must be positive")
+    if not 0.4 <= monitor.cluster_similarity_threshold <= 0.95:
+        raise ValueError(
+            "monitor.cluster_similarity_threshold must be between 0.4 and 0.95"
+        )
+    return monitor
+
+
+def _load_source_rows(path: Path) -> list[dict[str, Any]]:
+    if not path.exists():
+        return []
+    payload = yaml.safe_load(path.read_text(encoding="utf-8"))
+    if payload is None:
+        return []
+    if isinstance(payload, list):
+        rows = payload
+    elif isinstance(payload, dict):
+        rows = payload.get("sources", [])
+    else:
+        raise ValueError(f"Source bundle must be a YAML mapping or list: {path}")
+    if not isinstance(rows, list) or not all(isinstance(row, dict) for row in rows):
+        raise ValueError(f"Source bundle requires a sources array of objects: {path}")
+    return rows
+
+
+def _validate_source(source: SourceConfig, budget: BudgetConfig) -> None:
+    validate_content_taxonomy(source.module, source.category)
+    if source.tier not in {1, 2, 3}:
+        raise ValueError(f"Invalid source tier for {source.id!r}: use 1, 2, or 3")
+    if source.refresh_interval_minutes is not None and source.refresh_interval_minutes <= 0:
+        raise ValueError(
+            f"Invalid refresh_interval_minutes for {source.id!r}: require a positive value"
+        )
+    if source.feed_item_limit is not None and not 1 <= source.feed_item_limit <= 200:
+        raise ValueError(
+            f"Invalid feed_item_limit for {source.id!r}: require 1 through 200"
+        )
+    for feed_url in source.feed_urls:
+        parsed = urlsplit(feed_url)
+        if parsed.scheme not in {"http", "https"} or not parsed.netloc:
+            raise ValueError(f"Invalid feed URL for {source.id!r}: {feed_url!r}")
+    if not 0 <= source.report_target <= source.report_max <= budget.report_items_per_source:
+        raise ValueError(
+            f"Invalid report target for {source.id!r}: require 0 <= report_target <= "
+            f"report_max <= {budget.report_items_per_source}"
+        )
 
 
 def project_root() -> Path:
@@ -151,15 +300,36 @@ def load_config(path: Path | None = None, timezone: str | None = None) -> AppCon
     raw: dict[str, Any] = yaml.safe_load(config_path.read_text(encoding="utf-8"))
     browser = BrowserConfig(**raw.get("browser", {}))
     budget = BudgetConfig(**raw.get("budget", {}))
-    output = validate_output_config(OutputConfig(**raw.get("output", {})))
+    output_values = dict(raw.get("output", {}))
+    output_values.setdefault("copy_html_to_desktop", True)
+    output = validate_output_config(OutputConfig(**output_values))
+    media = validate_media_config(MediaConfig(**raw.get("media", {})))
+    monitor = validate_monitor_config(MonitorConfig(**raw.get("monitor", {})))
     sources = [SourceConfig(**item) for item in raw.get("sources", [])]
     for source in sources:
-        validate_content_taxonomy(source.module, source.category)
-        if not 0 <= source.report_target <= source.report_max <= budget.report_items_per_source:
-            raise ValueError(
-                f"Invalid report target for {source.id!r}: require 0 <= report_target <= "
-                f"report_max <= {budget.report_items_per_source}"
+        _validate_source(source, budget)
+    monitor_sources: list[SourceConfig] = []
+    if monitor.sources_file:
+        bundle_path = (config_path.parent / monitor.sources_file).resolve()
+        monitor_sources = [
+            SourceConfig(
+                **{
+                    "report_target": 0,
+                    "report_max": 0,
+                    "bundle": "discovery",
+                    **item,
+                }
             )
+            for item in _load_source_rows(bundle_path)
+        ]
+    configured_ids = [source.id for source in [*sources, *monitor_sources]]
+    duplicate_ids = sorted(
+        source_id for source_id in set(configured_ids) if configured_ids.count(source_id) > 1
+    )
+    if duplicate_ids:
+        raise ValueError(f"Duplicate source IDs across core and monitor sources: {duplicate_ids}")
+    for source in monitor_sources:
+        _validate_source(source, budget)
     configured_timezone = timezone or raw.get("timezone", "Asia/Shanghai")
     return AppConfig(
         timezone=configured_timezone,
@@ -167,6 +337,9 @@ def load_config(path: Path | None = None, timezone: str | None = None) -> AppCon
         sources=sources,
         budget=budget,
         output=output,
+        media=media,
+        monitor=monitor,
+        monitor_sources=monitor_sources,
     )
 
 

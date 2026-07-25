@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import hashlib
 import os
 import re
 import time
@@ -24,7 +25,7 @@ from .reports import (
     group_items_by_source,
     ordered_sections,
 )
-from .utils import read_json, write_json
+from .utils import canonicalize_url, read_json, write_json
 
 _PROPERTY_TYPES: dict[str, set[str]] = {
     "title": {"title"},
@@ -124,7 +125,7 @@ class NotionPublisher:
             headers={
                 "Authorization": f"Bearer {token}",
                 "Notion-Version": self.config.get("api_version", "2026-03-11"),
-                "Content-Type": "application/json",
+                "Accept": "application/json",
             },
             timeout=30,
         )
@@ -141,6 +142,13 @@ class NotionPublisher:
     def _request(self, method: str, path: str, **kwargs: Any) -> dict[str, Any]:
         delay = 1.0
         for attempt in range(5):
+            for file_value in kwargs.get("files", {}).values():
+                if (
+                    isinstance(file_value, tuple)
+                    and len(file_value) >= 2
+                    and hasattr(file_value[1], "seek")
+                ):
+                    file_value[1].seek(0)
             response = self.client.request(method, path, **kwargs)
             if response.status_code != 429:
                 response.raise_for_status()
@@ -151,6 +159,37 @@ class NotionPublisher:
             time.sleep(retry_after)
             delay *= 2
         raise RuntimeError("Unreachable")
+
+    def retrieve_file_upload(self, file_upload_id: str) -> dict[str, Any]:
+        return self._request("GET", f"/file_uploads/{file_upload_id}")
+
+    def upload_file(self, path: Path, content_type: str) -> str:
+        if not path.is_file():
+            raise FileNotFoundError(f"Notion image upload file does not exist: {path}")
+        if path.stat().st_size > 20 * 1024 * 1024:
+            raise ValueError("Notion direct file uploads must not exceed 20 MB")
+        created = self._request(
+            "POST",
+            "/file_uploads",
+            json={
+                "mode": "single_part",
+                "filename": path.name,
+                "content_type": content_type,
+            },
+        )
+        file_upload_id = str(created["id"])
+        with path.open("rb") as handle:
+            uploaded = self._request(
+                "POST",
+                f"/file_uploads/{file_upload_id}/send",
+                files={"file": (path.name, handle, content_type)},
+            )
+        if uploaded.get("status") != "uploaded":
+            raise RuntimeError(
+                f"Notion file upload {file_upload_id} ended with "
+                f"status {uploaded.get('status')!r}"
+            )
+        return file_upload_id
 
     def find_page(self, report_date: str) -> str | None:
         date_property = self.mapping["properties"]["date"]
@@ -292,7 +331,45 @@ def _callout(text: str, color: str = "blue_background", icon: str = "💡") -> d
     }
 
 
-def _event_block(item: dict[str, Any]) -> dict[str, Any]:
+def _image_block(
+    image: dict[str, Any],
+    image_uploads: dict[str, str] | None = None,
+) -> dict[str, Any] | None:
+    upload_id = None
+    if image_uploads and image.get("sha256"):
+        upload_id = image_uploads.get(str(image["sha256"]))
+    if upload_id:
+        file_data: dict[str, Any] = {
+            "type": "file_upload",
+            "file_upload": {"id": upload_id},
+        }
+    else:
+        source_url = image.get("source_url") or image.get("url")
+        if not isinstance(source_url, str) or not source_url.startswith(
+            ("http://", "https://")
+        ):
+            return None
+        file_data = {
+            "type": "external",
+            "external": {"url": source_url},
+        }
+    caption = str(image.get("caption") or "")
+    credit = str(image.get("credit") or "")
+    caption_text = "｜来源：".join(part for part in (caption, credit) if part)
+    return {
+        "object": "block",
+        "type": "image",
+        "image": {
+            **file_data,
+            "caption": [_text(caption_text)] if caption_text else [],
+        },
+    }
+
+
+def _event_block(
+    item: dict[str, Any],
+    image_uploads: dict[str, str] | None = None,
+) -> dict[str, Any]:
     status = STATUS_LABELS.get(item["status"], item["status"])
     link = item["source_refs"][0]["url"]
     evidence_children: list[dict[str, Any]] = []
@@ -334,18 +411,8 @@ def _event_block(item: dict[str, Any]) -> dict[str, Any]:
         },
     ]
     image = item.get("image")
-    if image:
-        children.append(
-            {
-                "object": "block",
-                "type": "image",
-                "image": {
-                    "type": "external",
-                    "external": {"url": image["url"]},
-                    "caption": [_text(f"{image['caption']}｜来源：{image['credit']}")],
-                },
-            }
-        )
+    if isinstance(image, dict) and (image_block := _image_block(image, image_uploads)):
+        children.insert(0, image_block)
     return {
         "object": "block",
         "type": "numbered_list_item",
@@ -357,11 +424,17 @@ def _event_block(item: dict[str, Any]) -> dict[str, Any]:
     }
 
 
-def _brief_block(item: dict[str, Any]) -> dict[str, Any]:
+def _brief_block(
+    item: dict[str, Any],
+    image_uploads: dict[str, str] | None = None,
+) -> dict[str, Any]:
     ref = item["source_ref"]
     status = STATUS_LABELS.get(item["status"], item["status"])
     source_rank = f" [{item['source_rank_label']}]" if item.get("source_rank_label") else ""
     children: list[dict[str, Any]] = []
+    image = item.get("image")
+    if isinstance(image, dict) and (image_block := _image_block(image, image_uploads)):
+        children.append(image_block)
     if item.get("title_zh"):
         children.append(_block("paragraph", f"中文标题｜{item['title_zh']}"))
     if time_info := reference_time_label(ref):
@@ -468,7 +541,10 @@ def sync_user_feedback(data_dir: Path, config_path: Path | None = None) -> Path 
     return path
 
 
-def report_to_blocks(report: dict[str, Any]) -> list[dict[str, Any]]:
+def report_to_blocks(
+    report: dict[str, Any],
+    image_uploads: dict[str, str] | None = None,
+) -> list[dict[str, Any]]:
     edition_label = "06:00 早报" if report["edition"] == "morning" else "18:00 晚报"
     blocks: list[dict[str, Any]] = [
         {"object": "block", "type": "divider", "divider": {}},
@@ -505,8 +581,12 @@ def report_to_blocks(report: dict[str, Any]) -> list[dict[str, Any]]:
                         },
                     }
                 )
-                renderer = _brief_block if report.get("schema_version") == "1.5" else _event_block
-                blocks.extend(renderer(item) for item in items)
+                renderer = (
+                    _brief_block
+                    if report.get("schema_version") in {"1.5", "2.0"}
+                    else _event_block
+                )
+                blocks.extend(renderer(item, image_uploads) for item in items)
         if module == "information" and report.get("pending_verifications"):
             blocks.append(
                 _callout(
@@ -599,6 +679,28 @@ def report_to_blocks(report: dict[str, Any]) -> list[dict[str, Any]]:
                     _block("bulleted_list_item", f"观察：{value}")
                     for value in analysis.get("watch_signals", [])
                 ],
+                *[
+                    _block("bulleted_list_item", f"因果链：{value}")
+                    for value in analysis.get("causal_chain", [])
+                ],
+                *[
+                    _block("bulleted_list_item", f"关键假设：{value}")
+                    for value in analysis.get("assumptions", [])
+                ],
+                *[
+                    _block("bulleted_list_item", f"证据缺口：{value}")
+                    for value in analysis.get("evidence_gaps", [])
+                ],
+                *[
+                    _block("paragraph", f"{label}：{analysis[key]}")
+                    for label, key in (
+                        ("时间跨度", "time_horizon"),
+                        ("置信度依据", "confidence_rationale"),
+                        ("相对上一版", "change_from_prior"),
+                        ("决策相关性", "decision_relevance"),
+                    )
+                    if analysis.get(key)
+                ],
             ]
             blocks.append(
                 {
@@ -613,6 +715,42 @@ def report_to_blocks(report: dict[str, Any]) -> list[dict[str, Any]]:
             )
     else:
         blocks.append(_block("paragraph", "本版没有形成达到证据门槛的研判。"))
+    synthesis = report.get("cross_perspective_synthesis")
+    if isinstance(synthesis, dict):
+        blocks.append(_block("heading_2", "跨视角综合"))
+        blocks.append(
+            _callout(
+                synthesis.get("overall_judgment", ""),
+                "blue_background",
+                "🧭",
+            )
+        )
+        for value in synthesis.get("consensus", []):
+            blocks.append(_block("bulleted_list_item", f"共同结论：{value}"))
+        for tension in synthesis.get("tensions", []):
+            if not isinstance(tension, dict):
+                continue
+            perspectives = "、".join(tension.get("perspectives", []))
+            blocks.append(
+                _block(
+                    "bulleted_list_item",
+                    f"分歧｜{tension.get('issue', '')}（{perspectives}）："
+                    f"{tension.get('source_of_difference', '')}",
+                )
+            )
+        for label, key in (
+            ("传导链", "transmission_chain"),
+            ("共同观察", "shared_watch_signals"),
+            ("修正触发", "revision_triggers"),
+        ):
+            for value in synthesis.get(key, []):
+                blocks.append(_block("bulleted_list_item", f"{label}：{value}"))
+        blocks.append(
+            _block(
+                "paragraph",
+                "综合引用事件：" + "、".join(synthesis.get("evidence_event_ids", [])),
+            )
+        )
     if report.get("changes"):
         blocks.append(_block("heading_2", "日间新增、确认与修正"))
         for change in report["changes"]:
@@ -655,7 +793,7 @@ def report_to_blocks(report: dict[str, Any]) -> list[dict[str, Any]]:
                 "用户反馈|相关性=|准确性=|分析价值=|整体满意度=|补充意见=",
             )
         )
-    elif report.get("schema_version") == "1.5":
+    elif report.get("schema_version") in {"1.5", "2.0"}:
         blocks.append(_block("heading_1", "质量评估与用户反馈", "green_background"))
         blocks.append(
             _callout(
@@ -732,6 +870,284 @@ def append_evaluation(
     return str(entry["page_id"]), "appended"
 
 
+def _local_report_images(
+    report: dict[str, Any],
+    data_dir: Path,
+) -> dict[str, tuple[Path, str]]:
+    root = data_dir.resolve()
+    images: dict[str, tuple[Path, str]] = {}
+    for section in report.get("sections", []):
+        if not isinstance(section, dict):
+            continue
+        for collection in ("briefs", "items"):
+            for item in section.get(collection, []):
+                if not isinstance(item, dict) or not isinstance(item.get("image"), dict):
+                    continue
+                image = item["image"]
+                digest = str(image.get("sha256") or "")
+                relative_path = image.get("local_path")
+                content_type = str(image.get("content_type") or "")
+                if not digest or not isinstance(relative_path, str) or not content_type:
+                    continue
+                path = (root / relative_path).resolve()
+                if not path.is_relative_to(root):
+                    raise ValueError(
+                        f"Report image path escapes the configured data root: {relative_path}"
+                    )
+                images.setdefault(digest, (path, content_type))
+    return images
+
+
+def _file_sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as handle:
+        for chunk in iter(lambda: handle.read(1024 * 1024), b""):
+            digest.update(chunk)
+    return digest.hexdigest()
+
+
+def _saved_upload_id(value: object) -> str | None:
+    if isinstance(value, str):
+        return value
+    if isinstance(value, dict) and value.get("id"):
+        return str(value["id"])
+    return None
+
+
+def _prepare_image_uploads(
+    publisher: NotionPublisher,
+    report: dict[str, Any],
+    data_dir: Path,
+    entry: dict[str, Any],
+    on_progress: Callable[[], None],
+) -> tuple[dict[str, str], dict[str, str]]:
+    local_images = _local_report_images(report, data_dir)
+    state = entry.setdefault("image_uploads", {})
+    if not isinstance(state, dict):
+        state = {}
+        entry["image_uploads"] = state
+    errors: dict[str, str] = {}
+    resolved: dict[str, str] = {}
+    for digest, (path, content_type) in local_images.items():
+        saved_id = _saved_upload_id(state.get(digest))
+        if saved_id:
+            try:
+                saved = publisher.retrieve_file_upload(saved_id)
+            except Exception:
+                saved = {}
+            if saved.get("status") == "uploaded":
+                resolved[digest] = saved_id
+                continue
+        try:
+            if not path.is_file():
+                raise FileNotFoundError(f"local image file is missing: {path}")
+            if _file_sha256(path) != digest:
+                raise ValueError(f"local image hash does not match report metadata: {path}")
+            file_upload_id = publisher.upload_file(path, content_type)
+        except Exception as exc:
+            state.pop(digest, None)
+            errors[digest] = f"{type(exc).__name__}: {str(exc)[:500]}"
+        else:
+            state[digest] = {
+                "id": file_upload_id,
+                "local_path": str(path.relative_to(data_dir.resolve()).as_posix()),
+                "content_type": content_type,
+            }
+            resolved[digest] = file_upload_id
+        entry["image_upload_errors"] = errors
+        on_progress()
+    entry["image_upload_errors"] = errors
+    return resolved, errors
+
+
+def _block_plain_text(block: dict[str, Any]) -> str:
+    kind = block.get("type")
+    if not isinstance(kind, str):
+        return ""
+    rich_text = block.get(kind, {}).get("rich_text", [])
+    return "".join(
+        str(item.get("plain_text") or item.get("text", {}).get("content") or "")
+        for item in rich_text
+        if isinstance(item, dict)
+    )
+
+
+def _block_link_url(block: dict[str, Any]) -> str | None:
+    kind = block.get("type")
+    if not isinstance(kind, str):
+        return None
+    for item in block.get(kind, {}).get("rich_text", []):
+        if not isinstance(item, dict):
+            continue
+        url = item.get("href") or item.get("text", {}).get("link", {}).get("url")
+        if isinstance(url, str) and url.startswith(("http://", "https://")):
+            return url
+    return None
+
+
+def _edition_story_blocks(
+    blocks: list[dict[str, Any]],
+    edition: str,
+) -> list[dict[str, Any]]:
+    label = "06:00 早报" if edition == "morning" else "18:00 晚报"
+    in_edition = False
+    stories: list[dict[str, Any]] = []
+    for block in blocks:
+        if in_edition and block.get("type") == "divider":
+            break
+        if (
+            block.get("type") == "heading_2"
+            and _block_plain_text(block).strip() == label
+        ):
+            in_edition = True
+            continue
+        if in_edition and block.get("type") == "numbered_list_item":
+            stories.append(block)
+    if not in_edition:
+        raise RuntimeError(
+            f"Could not find the {label!r} section on the registered Notion page"
+        )
+    return stories
+
+
+def _report_items_with_images(
+    report: dict[str, Any],
+) -> list[tuple[str, str, dict[str, Any]]]:
+    items: list[tuple[str, str, dict[str, Any]]] = []
+    for section in report.get("sections", []):
+        if not isinstance(section, dict):
+            continue
+        for collection in ("briefs", "items"):
+            for item in section.get(collection, []):
+                if not isinstance(item, dict) or not isinstance(item.get("image"), dict):
+                    continue
+                ref = item.get("source_ref")
+                if not isinstance(ref, dict):
+                    refs = item.get("source_refs", [])
+                    ref = refs[0] if isinstance(refs, list) and refs else {}
+                url = ref.get("url") if isinstance(ref, dict) else None
+                if isinstance(url, str) and url.startswith(("http://", "https://")):
+                    items.append((str(item.get("item_id") or ""), url, item["image"]))
+    return items
+
+
+def backfill_report_images(
+    report_path: Path,
+    data_dir: Path,
+    config_path: Path | None = None,
+) -> tuple[str, str]:
+    """Append missing images to existing story blocks without duplicating the edition."""
+    errors, _warnings = validate_report(report_path)
+    if errors:
+        raise ValueError("Report validation failed: " + "; ".join(errors))
+    report = read_json(report_path)
+    if not isinstance(report, dict):
+        raise ValueError("Report must be a JSON object")
+    image_items = _report_items_with_images(report)
+    if not image_items:
+        raise ValueError("Report contains no materialized images to backfill")
+
+    token = os.getenv("NOTION_TOKEN")
+    data_source_id = os.getenv("NOTION_DATA_SOURCE_ID")
+    if not token or not data_source_id:
+        raise RuntimeError("NOTION_TOKEN and NOTION_DATA_SOURCE_ID are required")
+
+    registry_path = data_dir / "publishing" / "notion-registry.json"
+    registry = read_json(registry_path) if registry_path.exists() else {}
+    if not isinstance(registry, dict):
+        raise ValueError("Notion publishing registry must be a JSON object")
+    key = f"{report['date']}:{report['edition']}"
+    entry = registry.get(key)
+    if not isinstance(entry, dict) or not entry.get("page_id"):
+        raise RuntimeError("Publish the report before backfilling its images")
+
+    page_id = str(entry["page_id"])
+    progress = {
+        "status": "publishing",
+        "report_id": report["report_id"],
+        "revision": report["revision"],
+        "target_images": len(image_items),
+        "appended": 0,
+        "already_present": 0,
+        "missing_item_ids": [],
+    }
+    entry["image_backfill"] = progress
+    write_json(registry_path, registry)
+
+    publisher = NotionPublisher(token, data_source_id, config_path)
+    try:
+        def save_progress() -> None:
+            write_json(registry_path, registry)
+
+        image_uploads, image_upload_errors = _prepare_image_uploads(
+            publisher,
+            report,
+            data_dir,
+            entry,
+            save_progress,
+        )
+        stories = _edition_story_blocks(
+            publisher.retrieve_blocks(page_id),
+            str(report["edition"]),
+        )
+        stories_by_url: dict[str, list[dict[str, Any]]] = {}
+        for story in stories:
+            url = _block_link_url(story)
+            if url:
+                stories_by_url.setdefault(canonicalize_url(url), []).append(story)
+
+        used_block_ids: set[str] = set()
+        for item_id, url, image in image_items:
+            matches = [
+                block
+                for block in stories_by_url.get(canonicalize_url(url), [])
+                if str(block.get("id") or "") not in used_block_ids
+            ]
+            if not matches:
+                progress["missing_item_ids"].append(item_id)
+                save_progress()
+                continue
+            story = matches[0]
+            story_id = str(story.get("id") or "")
+            if not story_id:
+                progress["missing_item_ids"].append(item_id)
+                save_progress()
+                continue
+            used_block_ids.add(story_id)
+            children = publisher.retrieve_blocks(story_id)
+            if any(child.get("type") == "image" for child in children):
+                progress["already_present"] += 1
+                save_progress()
+                continue
+            image_block = _image_block(image, image_uploads)
+            if image_block is None:
+                progress["missing_item_ids"].append(item_id)
+                save_progress()
+                continue
+            publisher.append_blocks(story_id, [image_block])
+            progress["appended"] += 1
+            save_progress()
+    finally:
+        publisher.close()
+
+    progress["status"] = "partial" if progress["missing_item_ids"] else "complete"
+    entry["media_report_id"] = report["report_id"]
+    entry["media_revision"] = report["revision"]
+    entry["media_status"] = (
+        "external_fallback" if image_upload_errors else "uploaded"
+    )
+    write_json(registry_path, registry)
+    if progress["missing_item_ids"]:
+        status = "images_backfilled_partial"
+    elif progress["appended"] == 0:
+        status = "skipped_already_present"
+    elif image_upload_errors:
+        status = "images_backfilled_with_fallbacks"
+    else:
+        status = "images_backfilled"
+    return page_id, status
+
+
 def publish_report(
     report_path: Path,
     data_dir: Path,
@@ -781,20 +1197,55 @@ def publish_report(
                 publisher.update_properties(page_id, report)
             start_block = 0
 
-        blocks = report_to_blocks(report)
-        registry[key] = {
+        prior_uploads = (
+            existing.get("image_uploads", {})
+            if isinstance(existing, dict)
+            and existing.get("report_id") == report["report_id"]
+            else {}
+        )
+        entry = {
             "page_id": page_id,
             "report_id": report["report_id"],
             "revision": report["revision"],
             "published_at": report["generated_at"],
             "status": "publishing",
             "blocks_appended": start_block,
-            "blocks_total": len(blocks),
+            "blocks_total": 0,
+            "image_uploads": prior_uploads,
+            "image_upload_errors": {},
         }
+        if isinstance(existing, dict) and existing.get("evaluation_ids"):
+            entry["evaluation_ids"] = existing["evaluation_ids"]
+        registry[key] = entry
+        write_json(registry_path, registry)
+
+        def save_image_progress() -> None:
+            write_json(registry_path, registry)
+
+        image_uploads, image_upload_errors = _prepare_image_uploads(
+            publisher,
+            report,
+            data_dir,
+            entry,
+            save_image_progress,
+        )
+        blocks = (
+            report_to_blocks(report, image_uploads)
+            if image_uploads
+            else report_to_blocks(report)
+        )
+        entry["blocks_total"] = len(blocks)
+        entry["media_status"] = (
+            "external_fallback"
+            if image_upload_errors
+            else "uploaded"
+            if image_uploads
+            else "no_local_images"
+        )
         write_json(registry_path, registry)
 
         def save_progress(completed: int) -> None:
-            registry[key]["blocks_appended"] = completed
+            entry["blocks_appended"] = completed
             write_json(registry_path, registry)
 
         publisher.append_blocks(
@@ -803,9 +1254,10 @@ def publish_report(
             start_block=start_block,
             on_progress=save_progress,
         )
-        registry[key]["status"] = "complete"
-        registry[key]["blocks_appended"] = len(blocks)
+        entry["status"] = "complete"
+        entry["blocks_appended"] = len(blocks)
         write_json(registry_path, registry)
-        return page_id, "published"
+        status = "published_with_image_fallbacks" if image_upload_errors else "published"
+        return page_id, status
     finally:
         publisher.close()

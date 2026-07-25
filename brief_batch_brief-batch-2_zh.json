@@ -1,0 +1,275 @@
+{
+  "batch_id": "brief-batch-2",
+  "briefs": [
+    {
+      "item_id": "abc_news-fbcbaa205a29",
+      "title_zh": "刚果与乌干达埃博拉疫情死亡人数超1000人，专家表达担忧",
+      "tldr": "刚果和乌干达暴发的埃博拉疫情已导致超过1000人死亡，专家们对此局势表达了严重关切。"
+    },
+    {
+      "item_id": "abc_news-f2ed26f11ae2",
+      "title_zh": "欧盟裁定TikTok违反其数字规则",
+      "tldr": "欧盟发现TikTok违反了其数字规则手册，这是平台在欧盟面临的最新监管挑战。"
+    },
+    {
+      "item_id": "abc_news-cbe8ea3fb696",
+      "title_zh": "欧盟因Google Play应用商店和搜索服务对谷歌处以10亿美元罚款",
+      "tldr": "欧盟对谷歌处以10亿美元罚款，涉及其Play应用商店和搜索服务的竞争违规行为。"
+    },
+    {
+      "item_id": "abc_news-cbd3c1ae2d4b",
+      "title_zh": "特朗普在白宫接见世界大赛冠军道奇队",
+      "tldr": "特朗普在白宫欢迎世界大赛冠军洛杉矶道奇队到访。"
+    },
+    {
+      "item_id": "abc_news-c56203e554e4",
+      "title_zh": "FDA审查RFK Jr.及健康影响者推崇的肽类注射剂",
+      "tldr": "美国食品药品监督管理局正在审查肽类注射剂，这类产品受到RFK Jr.和健康领域影响者的推崇。"
+    },
+    {
+      "item_id": "abc_news-bfc26316fed2",
+      "title_zh": "中国以涉俄制裁为由对14个欧盟实体实施出口管制",
+      "tldr": "中国以与俄罗斯相关的制裁为由，对14个欧盟实体实施出口管制措施。"
+    },
+    {
+      "item_id": "abc_news-b784b29bf15e",
+      "title_zh": "濒危露脊鲸或需等待近十年才能获得美国新保护措施",
+      "tldr": "濒危露脊鲸可能需要等待近十年才能获得美国的新保护措施。"
+    },
+    {
+      "item_id": "abc_news-b6e2970e5bbb",
+      "title_zh": "泽连斯基称正与美国公司洽谈联合生产爱国者系统",
+      "tldr": "乌克兰总统泽连斯基表示，他正在与美国公司就在乌克兰联合生产爱国者防空系统进行谈判。"
+    },
+    {
+      "item_id": "abc_news-9bc355fde8c9",
+      "title_zh": "巴西调查显示严重结冰导致2024年坠机事故致62人遇难",
+      "tldr": "巴西调查显示，严重结冰是导致2024年飞机坠毁事故的主要原因，该事故造成62人遇难。"
+    },
+    {
+      "item_id": "abc_news-9b165ce7e450",
+      "title_zh": "蜘蛛侠装扮者现身助坐轮椅男子穿越多条车道",
+      "tldr": "一名装扮成蜘蛛侠的好心人出手相助，帮助一名坐轮椅的男子安全穿越多条车道。"
+    },
+    {
+      "item_id": "arxiv_ai-7ae98ef97380",
+      "title_zh": "融合隐式与显式几何的三维感知视觉语言模型",
+      "tldr": "arXiv论文2607.21595v1提出了一种融合隐式和显式几何信息的三维感知视觉语言模型。"
+    },
+    {
+      "item_id": "arxiv_ai-e0918ab364df",
+      "title_zh": "GraphVid：基于图交互的可控视频生成",
+      "tldr": "GraphVid是一种基于图条件约束的图像到视频生成模型，通过结构化交互实现灵活而精确的多主体视频控制，解决了文本提示和轨迹控制在复杂场景中的局限性。"
+    },
+    {
+      "item_id": "arxiv_ai-51c449d99458",
+      "title_zh": "Barzilai-Borwein方法在n≥4维二次型开集上无法实现超线性收敛",
+      "tldr": "研究表明，对于每一维度n≥4，存在一个非空开集的严格凸二次型问题及初始点，使得长步Barzilai-Borwein方法收敛但无法达到超线性收敛速度。"
+    },
+    {
+      "item_id": "arxiv_ai-ae13f499c398",
+      "title_zh": "用于凹版印刷质量检测自动化的合成数据生成框架",
+      "tldr": "针对凹版印刷中真实工业缺陷图像极度稀缺的挑战，该论文提出了一种新颖的合成数据生成框架，以支持YOLO和Vision Transformers等深度学习模型的训练。"
+    },
+    {
+      "item_id": "arxiv_ai-9585c89ff2d6",
+      "title_zh": "超越充分性：基于反事实必要性的时间序列解释方法",
+      "tldr": "TimePNS是一种必要性感知的时间序列解释框架，受Pearl反事实必要性概念启发，通过干预并衡量时间因素对模型决策的必要性，解决现有方法仅关注充分性而可能赋予伪相关子序列过高重要性的问题。"
+    },
+    {
+      "item_id": "cnbc_world-f6a2975a35e2",
+      "title_zh": "目光短浅的股市无法再忽视战争影响：油价突破100美元令投资者难以回避",
+      "tldr": "在美国与伊朗战争再度升级之际，股市此前一直保持平稳，但周四随着油价突破每桶100美元，股市大幅下跌。"
+    },
+    {
+      "item_id": "cnbc_world-1731dd954760",
+      "title_zh": "英特尔借AI热潮实现近15年来最快营收增长，但股价仍下跌",
+      "tldr": "英特尔营收同比增长25%，创下自2011年第三季度以来最强劲的增长，但股价在财报发布后下跌。"
+    },
+    {
+      "item_id": "cnbc_world-d03051396e08",
+      "title_zh": "俄罗斯袭击导致乌克兰北部约15万人断电，基辅打击俄导弹和石油设施",
+      "tldr": "俄罗斯的袭击切断了乌克兰北部约15万人的电力供应，乌克兰总统泽连斯基则对俄军在基洛夫市的关键导弹部件设施遭到打击表示欢迎。"
+    },
+    {
+      "item_id": "cnbc_world-c8d4d0f620a3",
+      "title_zh": "中国AI模型如何阻止了OpenAI遭遇的前所未有网络攻击",
+      "tldr": "Hugging Face用来对抗恶意AI的模型来源引发关注——一个中国AI模型帮助阻止了OpenAI遭遇的史无前例的网络攻击。"
+    },
+    {
+      "item_id": "cnbc_world-6a187400654a",
+      "title_zh": "油价小幅回落但周涨幅仍达10%，特朗普考虑对伊朗实施前所未有打击",
+      "tldr": "油价周五下跌约3%，但仍有望实现10%的周度涨幅，因美伊战争持续升级，且特朗普暗示可能发动比以往更大的军事行动。"
+    },
+    {
+      "item_id": "cnbc_world-04ab09e0c9c4",
+      "title_zh": "五角大楼下调伊朗战争官方阵亡人数，删除本月阵亡的4人",
+      "tldr": "五角大楼将伊朗战争的官方阵亡人数从18人下调至14人，移除了本月阵亡的4名军人。"
+    },
+    {
+      "item_id": "cnbc_world-bd6604fe14be",
+      "title_zh": "特朗普新全球关税以强迫劳动为由遭贸易伙伴谴责",
+      "tldr": "美国贸易伙伴拒绝了特朗普新全球关税背后有关强迫劳动的论据，但大多数信号显示它们将继续进行谈判。"
+    },
+    {
+      "item_id": "cnbc_world-167f40c27459",
+      "title_zh": "特朗普考虑对伊朗实施大规模打击，德黑兰称英国是美国的共犯",
+      "tldr": "特朗普告诉Axios，他正在考虑一项前所未有的军事行动。与此同时，伊朗将英国称为美国的共犯。"
+    },
+    {
+      "item_id": "cnbc_world-61df1307f161",
+      "title_zh": "大众汽车CFO就利润下滑回应工厂关闭和裁员问题",
+      "tldr": "德国汽车巨头大众汽车周五公布的第二季度利润低于预期，并下调了2026年的销售预期。"
+    },
+    {
+      "item_id": "cnbc_world-92dfc8b4ced3",
+      "title_zh": "韩国总统借日本房地产崩盘教训推动国内房地产政策议程",
+      "tldr": "韩国总统强调国内过度投资房地产的严重性，并指出日本房地产市场像气球一样破裂的教训。"
+    },
+    {
+      "item_id": "google_research_publications-fb4a81294532",
+      "title_zh": "基于概率框架从短时训练数据学习气候长期模拟的非侵入性校正",
+      "tldr": "Google Research提出了一种概率框架，利用短时训练数据学习气候长期模拟中的非侵入性校正方法。"
+    },
+    {
+      "item_id": "google_research_publications-7df87a5c9064",
+      "title_zh": null,
+      "tldr": "该条目为Google Research出版物页面上的导航链接，无实际内容。"
+    },
+    {
+      "item_id": "google_research_publications-5042b4f79f48",
+      "title_zh": "通过任务套利和拜占庭共识实现多AI编排的框架",
+      "tldr": "Google Research提出了一种通过任务套利和拜占庭共识实现多AI系统协同编排的框架。"
+    },
+    {
+      "item_id": "google_research_publications-4690e886127f",
+      "title_zh": "Google和Fitbit可穿戴设备睡眠追踪算法更新性能分析",
+      "tldr": "Google Research发布了在Google和Fitbit可穿戴设备上更新的睡眠追踪算法的性能分析结果。"
+    },
+    {
+      "item_id": "guardian_uk-fdd2da060d3e",
+      "title_zh": "英格兰部分地区发布高温警报，气温可能达到30摄氏度",
+      "tldr": "英格兰部分地区已发布高温警报，预计气温可能升至30摄氏度。"
+    },
+    {
+      "item_id": "guardian_uk-15cd922db6ee",
+      "title_zh": "专家称特朗普最新关税使英国处于对欧盟不利的地位",
+      "tldr": "专家表示，特朗普的最新关税政策使英国在与欧盟的竞争中处于不利地位。"
+    },
+    {
+      "item_id": "guardian_uk-baf404e9a1a4",
+      "title_zh": "专家警告马斯克和贝索斯提议的太空数据中心将对地球造成灾难性影响",
+      "tldr": "专家警告称，马斯克和贝索斯等人提出的太空数据中心计划将对地球环境产生灾难性影响。"
+    },
+    {
+      "item_id": "guardian_uk-f844a3e22386",
+      "title_zh": "食物中的营养物质正在减少，再生农业能否力挽狂澜？",
+      "tldr": "现代食物中的营养成分持续下降，文章探讨了再生农业能否扭转这一趋势。"
+    },
+    {
+      "item_id": "guardian_uk-9f9394d25799",
+      "title_zh": "Southport杀人犯Axel Rudakubana的受害者家属称其在操纵系统",
+      "tldr": "Southport杀人案凶手Axel Rudakubana的受害者家属表示，他正在利用司法系统进行操纵。"
+    },
+    {
+      "item_id": "guardian_uk-cfa7d39eafe8",
+      "title_zh": "特朗普对80多个国家加征新关税",
+      "tldr": "特朗普政府对超过80个国家实施了新一轮关税措施。"
+    },
+    {
+      "item_id": "lobsters-289b5b74e38f",
+      "title_zh": "开放权重与美国AI领导地位",
+      "tldr": "微软发表文章探讨开放权重模型对美国人工智能领导地位的影响。"
+    },
+    {
+      "item_id": "lobsters-cccaa901d476",
+      "title_zh": "制作折纸电路板",
+      "tldr": "一篇介绍如何制作折纸电路板的教程，将传统折纸艺术与电子电路相结合。"
+    },
+    {
+      "item_id": "lobsters-585fd84be06c",
+      "title_zh": "现代MUD游戏的复兴理由",
+      "tldr": "一篇文章探讨了多用户地牢类文本网络游戏在现代依然具有魅力和价值的理由。"
+    },
+    {
+      "item_id": "lobsters-797ddaede14e",
+      "title_zh": "Martin Fowler的7月21日碎片化思考",
+      "tldr": "Martin Fowler发布了7月21日的技术随笔，记录了近期对软件开发的观察与思考。"
+    },
+    {
+      "item_id": "lobsters-70f47251b539",
+      "title_zh": "WebAIM 2026报告：排名前100万网页的无障碍错误分析",
+      "tldr": "WebAIM发布了2026年报告，分析了全球排名前100万网页中存在的无障碍错误。"
+    },
+    {
+      "item_id": "lobsters-c33805af913f",
+      "title_zh": "用35mm胶片摄影制作GIF动图",
+      "tldr": "一篇博客介绍了使用35mm胶片摄影创作GIF动图的另类方法。"
+    },
+    {
+      "item_id": "lobsters-78631e79fb04",
+      "title_zh": "基础振荡器的快速合成方法",
+      "tldr": "一篇文章探讨了基础振荡器的快速合成技术。"
+    },
+    {
+      "item_id": "lobsters-cb7c522d5037",
+      "title_zh": "我后悔迁移到Codeberg",
+      "tldr": "一位开发者分享了他从其他平台迁移到Codeberg后的后悔经历和反思。"
+    },
+    {
+      "item_id": "openai_publications-0bcaef7a6755",
+      "title_zh": "ChatGPT推出健康功能",
+      "tldr": "ChatGPT的Health功能现允许符合条件的美国用户安全连接医疗记录和Apple Health数据，以获得更个性化的健康洞察。"
+    },
+    {
+      "item_id": "openai_publications-b24412402cc2",
+      "title_zh": "与Effingham County社区共建AI基础设施",
+      "tldr": "OpenAI宣布在佐治亚州Effingham County启动Camellia项目，承诺负责任的能源使用、社区投资、就业机会以及Codex访问权限。"
+    },
+    {
+      "item_id": "openai_publications-665d1d42d72e",
+      "title_zh": "新闻机构如何利用AI推进其重要使命",
+      "tldr": "新闻机构正在利用AI加强报道、扩大受众并改善业务运营，OpenAI工具正在支持全球记者和出版商。"
+    },
+    {
+      "item_id": "openai_publications-d340540b3379",
+      "title_zh": "推动国家科学事业的下一个时代",
+      "tldr": "OpenAI阐述了其与美国能源部及国家实验室合作、利用前沿AI加速科学发现的承诺。"
+    },
+    {
+      "item_id": "rusi_publications-cc0be013cc79",
+      "title_zh": "保护国际金融体系是谁的责任？",
+      "tldr": "国际金融中心在专业服务领域打击非法金融和盗贼统治方面的经验值得借鉴。"
+    },
+    {
+      "item_id": "rusi_publications-f96be8c9705e",
+      "title_zh": "北非的天然气燃烧问题是欧洲的机遇",
+      "tldr": "伊朗战争对欧洲经济造成冲击，英国领导层换届为投资解决北非天然气燃烧问题提供了契机，有助于保障供应安全并与利比亚相关外交努力相结合。"
+    },
+    {
+      "item_id": "rusi_publications-ccc4411c6997",
+      "title_zh": "西方在塞舌尔的长期利益正在失控",
+      "tldr": "塞舌尔作为曾经运转良好的民主国际金融中心并长期受益于西方支持，如今似乎在重新选择盟友。"
+    },
+    {
+      "item_id": "rusi_publications-e56443c8b0dd",
+      "title_zh": "日本对俄罗斯和乌克兰的摇摆政策",
+      "tldr": "首相高市早苗在俄罗斯政策上的模棱两可立场，助长了日本国内寻求与莫斯科重新接触的势力。"
+    },
+    {
+      "item_id": "rusi_publications-5b32c6b2cc6c",
+      "title_zh": "俄罗斯的选择性适应：战争中的指挥控制与学习局限",
+      "tldr": "俄罗斯在战术灵活性与作战僵化之间的反差，揭示了其执行功能中的不安全感。"
+    },
+    {
+      "item_id": "rusi_publications-c357dbd8b8ea",
+      "title_zh": "乌克兰国防部长被解职",
+      "tldr": "费多罗夫被免职后，乌克兰国防部与总参谋部之间的关键问题仍未解决。"
+    },
+    {
+      "item_id": "rusi_publications-b4966e3f8391",
+      "title_zh": "Andy Burnham的国际首秀：关键挑战与机遇",
+      "tldr": "英国首相Andy Burnham面临严峻的国际局势，既有棘手的难题，也有领导英国发挥全球影响力的机会。"
+    }
+  ]
+}

@@ -46,6 +46,20 @@ def html_index_rows(html: str) -> tuple[str, list[dict[str, str]]]:
             )
         )
         time = parent.select_one("time") if isinstance(parent, Tag) else None
+        image = anchor.select_one("img")
+        if image is None and isinstance(parent, Tag):
+            image = parent.select_one("img")
+        image_url = ""
+        if image is not None:
+            image_url = str(
+                image.get("src")
+                or image.get("data-src")
+                or image.get("data-original")
+                or image.get("data-lazy-src")
+                or ""
+            )
+            if not image_url and image.get("srcset"):
+                image_url = str(image.get("srcset")).split(",")[-1].strip().split()[0]
         context = " ".join(
             part
             for part in (
@@ -65,6 +79,7 @@ def html_index_rows(html: str) -> tuple[str, list[dict[str, str]]]:
             {
                 "title": str(anchor_title or ""),
                 "href": str(anchor.get("href") or ""),
+                "image_url": image_url,
                 "context": context,
             }
         )

@@ -36,6 +36,38 @@ def test_local_html_and_pdf_are_default_reading_outputs():
     assert config.output.formats == ["html", "pdf"]
     assert config.output.pdf_engine == "edge"
     assert config.output.open_after_finalize is False
+    assert config.output.copy_html_to_desktop is True
+    assert config.output.desktop_dir is None
+    assert config.media.enabled is True
+    assert config.media.max_images_per_report == 1000
+    assert config.media.max_image_bytes == 8 * 1024 * 1024
+    assert config.media.global_concurrency == 12
+    assert config.media.per_domain_concurrency == 2
+    assert config.media.cache_success_ttl_hours == 168
+
+
+def test_existing_config_without_desktop_key_inherits_desktop_delivery(tmp_path):
+    config_path = tmp_path / "sources.yaml"
+    config_path.write_text(
+        "timezone: Asia/Shanghai\noutput:\n  formats: [html]\nsources: []\n",
+        encoding="utf-8",
+    )
+
+    assert load_config(config_path).output.copy_html_to_desktop is True
+
+
+def test_monitor_expands_sources_without_changing_newspaper_quotas():
+    config = load_config()
+
+    assert len(config.sources) == 32
+    assert len(config.monitor_sources) == 51
+    assert len(config.all_monitor_sources) == 83
+    assert all(source.report_target == 0 for source in config.monitor_sources)
+    assert config.budget.max_agent_tokens == 10_000_000
+    assert config.budget.max_fulltext_per_run == 12
+    assert config.monitor.default_refresh_interval_minutes == 30
+    assert config.monitor.max_items_per_feed == 40
+    assert config.monitor.reuse_fresh_snapshot_before_edition is True
 
 
 def test_pdf_output_requires_html_and_known_engine(tmp_path):
@@ -55,6 +87,21 @@ def test_pdf_output_requires_html_and_known_engine(tmp_path):
         encoding="utf-8",
     )
     with pytest.raises(ValueError, match="pdf_engine"):
+        load_config(config_path)
+
+
+def test_media_limits_must_fit_notion_direct_upload(tmp_path):
+    config_path = tmp_path / "sources.yaml"
+    config_path.write_text(
+        "timezone: Asia/Shanghai\n"
+        "media:\n"
+        "  max_image_bytes: 20971521\n"
+        "  max_total_bytes: 41943042\n"
+        "sources: []\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="20 MB"):
         load_config(config_path)
 
 

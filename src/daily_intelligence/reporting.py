@@ -26,6 +26,8 @@ from .taxonomy import (
 from .utils import canonicalize_url, now_iso, read_json
 
 MAX_FEATURED_EVENTS = 12
+CURRENT_REPORT_SCHEMA = "2.0"
+BRIEF_REPORT_SCHEMAS = {"1.5", "2.0"}
 IMPORTANCE_CAPS = {
     "impact": 30,
     "freshness": 15,
@@ -81,6 +83,7 @@ _TLDR_BOILERPLATE_PATTERNS = (
     re.compile(r"关于.{0,100}(?:详细报道|相关报道)"),
 )
 _UNREAD_BODY_MARKERS = ("未读取正文", "正文尚未读取", "仅依据标题", "仅依据元数据")
+_REPORT_REVISION_PATTERN = re.compile(r"^(.+)-r\d+$")
 EVALUATION_DIMENSIONS = {
     "coverage",
     "importance_ordering",
@@ -99,6 +102,11 @@ REQUIRED_PERSPECTIVES = {
     "china_standpoint",
     "western_standpoint",
 }
+
+
+def _report_series_id(report_id: object) -> str | None:
+    match = _REPORT_REVISION_PATTERN.fullmatch(str(report_id or ""))
+    return match.group(1) if match else None
 
 
 def evaluation_continuity_floor(
@@ -549,10 +557,10 @@ def compile_report_data(
     index: dict,
     semantic_cache: dict[str, dict[str, Any]] | None = None,
 ) -> list[str]:
-    """Compile model-authored semantics into the deterministic schema 1.5 envelope."""
+    """Compile model-authored semantics into the deterministic current envelope."""
     warnings: list[str] = []
-    report.setdefault("schema_version", "1.5")
-    if report.get("schema_version") != "1.5":
+    report.setdefault("schema_version", CURRENT_REPORT_SCHEMA)
+    if report.get("schema_version") not in BRIEF_REPORT_SCHEMAS:
         return warnings
     report.setdefault("date", index.get("date"))
     report.setdefault("edition", index.get("edition"))
@@ -576,6 +584,8 @@ def compile_report_data(
     report["language"] = "zh-CN"
     report["generated_at"] = now_iso(str(index.get("timezone", "Asia/Shanghai")))
     report["evaluation_status"] = "pending"
+    if report.get("schema_version") == "2.0":
+        report["analysis_protocol_version"] = "2.0"
     report.pop("quality_evaluation", None)
     report.setdefault("changes", [])
     report.setdefault("tomorrow_watch_items", [])
@@ -933,6 +943,30 @@ def compile_report_data(
                 f"analysis {domain or position!r} ignored evidence item IDs that are not "
                 f"part of any featured event: {sorted(set(ignored_evidence))}"
             )
+    if report.get("schema_version") == "2.0":
+        synthesis = report.get("cross_perspective_synthesis")
+        if isinstance(synthesis, dict):
+            evidence_ids = synthesis.get("evidence_item_ids") or synthesis.get(
+                "evidence_event_ids", []
+            )
+            compiled_evidence: list[str] = []
+            ignored_evidence: list[str] = []
+            for item_id in evidence_ids:
+                requested_id = str(item_id)
+                event_id = event_by_item.get(requested_id)
+                if event_id:
+                    compiled_evidence.append(event_id)
+                elif requested_id in event_ids:
+                    compiled_evidence.append(requested_id)
+                else:
+                    ignored_evidence.append(requested_id)
+            synthesis["evidence_event_ids"] = list(dict.fromkeys(compiled_evidence))
+            synthesis.pop("evidence_item_ids", None)
+            if ignored_evidence:
+                warnings.append(
+                    "cross-perspective synthesis ignored evidence item IDs that are not "
+                    f"part of any featured event: {sorted(set(ignored_evidence))}"
+                )
     analysis_order = {"geopolitics": 0, "ai_technology": 1, "markets": 2}
     report.setdefault("analyses", []).sort(
         key=lambda analysis: analysis_order.get(str(analysis.get("domain")), 99)
@@ -958,7 +992,7 @@ def compile_report_data(
 def normalize_report_data(report: dict, index: dict | None) -> None:
     """Fill deterministic counters and source metrics for the current contract."""
     hydrate_report_evidence(report, index)
-    if report.get("schema_version") != "1.5":
+    if report.get("schema_version") not in BRIEF_REPORT_SCHEMAS:
         return
     events = [item for section in report.get("sections", []) for item in section.get("items", [])]
     briefs = [item for section in report.get("sections", []) for item in section.get("briefs", [])]
@@ -1027,6 +1061,7 @@ def validate_report_data(
     report: object,
     index: object | None = None,
     existing_events: list[dict] | None = None,
+    coverage_targets: dict[str, int] | None = None,
 ) -> tuple[list[str], list[str]]:
     if isinstance(report, dict):
         normalize_report_data(report, index if isinstance(index, dict) else None)
@@ -1036,11 +1071,12 @@ def validate_report_data(
 
     warnings: list[str] = []
     schema_version = report.get("schema_version")
-    strict_contract = schema_version in {"1.1", "1.2", "1.3", "1.4", "1.5"}
-    freshness_contract = schema_version in {"1.2", "1.3", "1.4", "1.5"}
-    daily_contract = schema_version in {"1.3", "1.4", "1.5"}
-    source_group_contract = schema_version in {"1.4", "1.5"}
-    brief_contract = schema_version == "1.5"
+    strict_contract = schema_version in {"1.1", "1.2", "1.3", "1.4", "1.5", "2.0"}
+    freshness_contract = schema_version in {"1.2", "1.3", "1.4", "1.5", "2.0"}
+    daily_contract = schema_version in {"1.3", "1.4", "1.5", "2.0"}
+    source_group_contract = schema_version in {"1.4", "1.5", "2.0"}
+    brief_contract = schema_version in BRIEF_REPORT_SCHEMAS
+    analysis_v2_contract = schema_version == "2.0"
 
     def require_chinese(value: object, location: str) -> None:
         if strict_contract:
@@ -1106,6 +1142,7 @@ def validate_report_data(
         for item_id in event.get("source_item_ids", [])
         if isinstance(item_id, str)
     }
+    report_series_id = _report_series_id(report.get("report_id"))
     report_date = date.fromisoformat(report["date"])
     timezone = (
         str(index.get("timezone", "Asia/Shanghai"))
@@ -1140,7 +1177,9 @@ def validate_report_data(
             )
         briefs = section.get("briefs", []) if brief_contract else []
         if brief_contract and "briefs" not in section:
-            errors.append(f"{prefix}.briefs: required by schema_version 1.5")
+            errors.append(
+                f"{prefix}.briefs: required by brief-based schema {schema_version}"
+            )
         if strict_contract and not section["items"] and not briefs:
             note = section.get("coverage_note")
             if not note:
@@ -1339,7 +1378,8 @@ def validate_report_data(
                 )
             if brief_contract and len(item["source_refs"]) > 1:
                 errors.append(
-                    f"{item_prefix}.source_refs: schema 1.5 featured events require exactly one "
+                    f"{item_prefix}.source_refs: schema {schema_version} featured events "
+                    "require exactly one "
                     "source item. Keep corroborating articles as separate featured events and "
                     "cite both event IDs in analysis"
                 )
@@ -1388,12 +1428,38 @@ def validate_report_data(
                 (errors if brief_contract else warnings).append(message)
 
             if freshness_contract and item["status"] == "NEW":
-                if event_id in previous_events:
+                previous_event = previous_events.get(event_id)
+                previous_report_ids: list[object] = []
+                if isinstance(previous_event, dict):
+                    raw_report_ids = previous_event.get("report_ids", [])
+                    if isinstance(raw_report_ids, list):
+                        previous_report_ids.extend(raw_report_ids)
+                    if previous_event.get("last_report_id"):
+                        previous_report_ids.append(previous_event["last_report_id"])
+                same_edition_revision = bool(
+                    report_series_id
+                    and any(
+                        _report_series_id(previous_report_id) == report_series_id
+                        for previous_report_id in previous_report_ids
+                    )
+                )
+                if previous_event and not same_edition_revision:
                     errors.append(
                         f"{item_prefix}.status: event_id {event_id!r} already exists; "
                         "reuse it with UPD/CONF/REV/WATCH/CLOSED"
                     )
-                reused_items = sorted(referenced_item_ids & previous_item_ids)
+                revision_items = (
+                    {
+                        item_id
+                        for item_id in previous_event.get("source_item_ids", [])
+                        if isinstance(item_id, str)
+                    }
+                    if same_edition_revision and isinstance(previous_event, dict)
+                    else set()
+                )
+                reused_items = sorted(
+                    (referenced_item_ids & previous_item_ids) - revision_items
+                )
                 if reused_items:
                     errors.append(
                         f"{item_prefix}.status: NEW reuses previously reported source items "
@@ -1441,6 +1507,19 @@ def validate_report_data(
                     int(policy.get("report_max", 15)),
                     15,
                 )
+                if coverage_targets is not None and source_id in coverage_targets:
+                    override = coverage_targets[source_id]
+                    if (
+                        not isinstance(override, int)
+                        or isinstance(override, bool)
+                        or override < 0
+                    ):
+                        errors.append(
+                            f"coverage target override for {source_id!r} must be "
+                            "a non-negative integer"
+                        )
+                        continue
+                    target = min(target, override)
                 selected = source_counts[source_id]
                 if selected < target:
                     errors.append(
@@ -1451,7 +1530,8 @@ def validate_report_data(
     if brief_contract:
         if len(event_ids) > MAX_FEATURED_EVENTS:
             errors.append(
-                f"schema 1.5 allows at most {MAX_FEATURED_EVENTS} featured events; "
+                f"schema {schema_version} allows at most {MAX_FEATURED_EVENTS} "
+                "featured events; "
                 "keep the remaining stories as briefs"
             )
         missing_featured = sorted(event_ids - featured_brief_event_ids)
@@ -1520,6 +1600,33 @@ def validate_report_data(
                 if not analysis.get(field):
                     errors.append(
                         f"{analysis_prefix}.{field}: required by schema_version {schema_version}"
+                    )
+        if analysis_v2_contract:
+            for field in (
+                "time_horizon",
+                "confidence_rationale",
+                "change_from_prior",
+                "decision_relevance",
+            ):
+                value = analysis.get(field)
+                if not value:
+                    errors.append(
+                        f"{analysis_prefix}.{field}: required by analysis protocol 2.0"
+                    )
+                else:
+                    require_chinese(value, f"{analysis_prefix}.{field}")
+            for field in ("causal_chain", "assumptions", "evidence_gaps"):
+                values = analysis.get(field, [])
+                minimum = 2 if field == "causal_chain" else 1
+                if not isinstance(values, list) or len(values) < minimum:
+                    errors.append(
+                        f"{analysis_prefix}.{field}: analysis protocol 2.0 requires "
+                        f"at least {minimum} item(s)"
+                    )
+                    continue
+                for value_index, value in enumerate(values):
+                    require_chinese(
+                        value, f"{analysis_prefix}.{field}[{value_index}]"
                     )
         if daily_contract:
             assessment_types.update(analysis.get("assessment_types", []))
@@ -1600,6 +1707,103 @@ def validate_report_data(
                 "analyses must contain separate geopolitics, ai_technology, and markets "
                 f"sections; missing {missing_domains}"
             )
+        duplicate_domains = sorted(
+            domain for domain, count in analysis_domains.items() if count > 1
+        )
+        if duplicate_domains:
+            errors.append(
+                "analyses must contain exactly one section per domain; duplicates "
+                f"{duplicate_domains}"
+            )
+    if analysis_v2_contract:
+        if report.get("analysis_protocol_version") != "2.0":
+            errors.append("analysis_protocol_version: schema 2.0 requires '2.0'")
+        synthesis = report.get("cross_perspective_synthesis")
+        if not isinstance(synthesis, dict):
+            errors.append(
+                "cross_perspective_synthesis: schema 2.0 requires an explicit synthesis"
+            )
+        else:
+            overall = synthesis.get("overall_judgment")
+            if not overall:
+                errors.append(
+                    "cross_perspective_synthesis.overall_judgment: required"
+                )
+            else:
+                require_chinese(
+                    overall, "cross_perspective_synthesis.overall_judgment"
+                )
+            for field, minimum in (
+                ("consensus", 1),
+                ("transmission_chain", 2),
+                ("shared_watch_signals", 3),
+                ("revision_triggers", 1),
+            ):
+                values = synthesis.get(field, [])
+                if not isinstance(values, list) or len(values) < minimum:
+                    errors.append(
+                        f"cross_perspective_synthesis.{field}: require at least "
+                        f"{minimum} item(s)"
+                    )
+                    continue
+                for value_index, value in enumerate(values):
+                    require_chinese(
+                        value,
+                        f"cross_perspective_synthesis.{field}[{value_index}]",
+                    )
+            tensions = synthesis.get("tensions", [])
+            if not isinstance(tensions, list) or not tensions:
+                errors.append(
+                    "cross_perspective_synthesis.tensions: require at least one "
+                    "explicit disagreement"
+                )
+            else:
+                for tension_index, tension in enumerate(tensions):
+                    prefix = (
+                        f"cross_perspective_synthesis.tensions[{tension_index}]"
+                    )
+                    if not isinstance(tension, dict):
+                        errors.append(f"{prefix}: must be an object")
+                        continue
+                    for field in ("issue", "source_of_difference"):
+                        if not tension.get(field):
+                            errors.append(f"{prefix}.{field}: required")
+                        else:
+                            require_chinese(
+                                tension[field], f"{prefix}.{field}"
+                            )
+                    tension_perspectives = tension.get("perspectives", [])
+                    if (
+                        not isinstance(tension_perspectives, list)
+                        or len(tension_perspectives) < 2
+                    ):
+                        errors.append(
+                            f"{prefix}.perspectives: require at least two viewpoints"
+                        )
+                    else:
+                        for perspective_index, perspective in enumerate(
+                            tension_perspectives
+                        ):
+                            require_chinese(
+                                perspective,
+                                f"{prefix}.perspectives[{perspective_index}]",
+                            )
+            synthesis_evidence = synthesis.get("evidence_event_ids", [])
+            if not synthesis_evidence:
+                errors.append(
+                    "cross_perspective_synthesis.evidence_event_ids: synthesis must "
+                    "cite featured events"
+                )
+            unknown_synthesis_events = [
+                event_id
+                for event_id in synthesis_evidence
+                if event_id not in event_ids
+            ]
+            if unknown_synthesis_events:
+                errors.append(
+                    "cross_perspective_synthesis references unknown event IDs: "
+                    f"{unknown_synthesis_events}"
+                )
     for change_index, change in enumerate(report.get("changes", [])):
         require_chinese(change, f"changes[{change_index}]")
     for watch_index, watch in enumerate(report.get("tomorrow_watch_items", [])):
@@ -1658,10 +1862,12 @@ def validate_report_data(
                     "quality_evaluation.exclude_from_continuity: reject requires 'all'"
                 )
     if brief_contract and report.get("evaluation_status") != "pending":
-        errors.append("evaluation_status: newly published schema 1.5 report must be pending")
+        errors.append(
+            "evaluation_status: newly published brief-based report must be pending"
+        )
     if brief_contract and "quality_evaluation" in report:
         errors.append(
-            "quality_evaluation: schema 1.5 stores evaluation as a separate "
+            "quality_evaluation: brief-based schemas store evaluation as a separate "
             "post-publication artifact"
         )
     return errors, warnings
@@ -1671,6 +1877,7 @@ def validate_report(
     report_path: Path,
     index_path: Path | None = None,
     events_path: Path | None = None,
+    coverage_targets: dict[str, int] | None = None,
 ) -> tuple[list[str], list[str]]:
     report = read_json(report_path)
     index = read_json(index_path) if index_path else None
@@ -1686,7 +1893,12 @@ def validate_report(
         payload = read_json(events_path)
         if isinstance(payload, dict) and isinstance(payload.get("items"), list):
             existing_events = [item for item in payload["items"] if isinstance(item, dict)]
-    errors, validation_warnings = validate_report_data(report, index, existing_events)
+    errors, validation_warnings = validate_report_data(
+        report,
+        index,
+        existing_events,
+        coverage_targets=coverage_targets,
+    )
     return errors, [*compile_warnings, *validation_warnings]
 
 

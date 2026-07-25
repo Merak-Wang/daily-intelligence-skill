@@ -4,8 +4,8 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "daily-intelligence-skill"
-version = "1.0.0"
-description = "Deterministic collection and multi-format publishing CLI for a twice-daily Agent Skill intelligence brief."
+version = "2.0.0"
+description = "Local-first feed monitoring, story clustering, and multi-format publishing for twice-daily intelligence briefs."
 readme = "README.md"
 requires-python = ">=3.11"
 license = {text = "MIT"}
@@ -14,6 +14,7 @@ dependencies = [
   "beautifulsoup4>=4.12,<5",
   "httpx>=0.27,<1",
   "jsonschema>=4.23,<5",
+  "Pillow>=10,<11",
   "playwright>=1.50,<2",
   "python-dotenv>=1.0,<2",
   "PyYAML>=6.0,<7",
@@ -36,6 +37,7 @@ where = ["src"]
 [tool.pytest.ini_options]
 addopts = "-q"
 testpaths = ["tests"]
+pythonpath = ["src"]
 
 [tool.ruff]
 line-length = 100

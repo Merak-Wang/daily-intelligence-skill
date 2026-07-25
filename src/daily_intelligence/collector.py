@@ -17,6 +17,7 @@ from .config import (
     source_urls,
 )
 from .models import SourceResult, SourceStatus
+from .monitor import load_monitor_results
 from .prefetch import page_needs_browser, prefetch_browser_pages
 from .storage import next_revision, write_immutable_json
 from .utils import now_iso, read_json, timestamp_slug, today_str, write_json
@@ -135,11 +136,17 @@ def collect_source(
     config: AppConfig,
     data_dir: Path,
     prefetched_pages: dict[tuple[str, str], SourceResult] | None = None,
+    monitor_result: SourceResult | None = None,
 ) -> SourceResult:
     prefetch_supplied = prefetched_pages is not None
     prefetched_pages = prefetched_pages or {}
-    page_results: list[SourceResult] = []
-    for url in source_urls(source, data_dir):
+    target = max(1, min(source.report_target, source.max_items))
+    monitor_sufficient = bool(
+        monitor_result and len(monitor_result.items) >= target
+    )
+    page_results: list[SourceResult] = [monitor_result] if monitor_result else []
+    urls = [] if monitor_sufficient else source_urls(source, data_dir)
+    for url in urls:
         prefetched = prefetched_pages.get((source.id, url))
         if not page_needs_browser(prefetched):
             page_results.append(prefetched)
@@ -211,6 +218,11 @@ def collect_source(
                 "error": result.error,
                 "challenge": result.challenge,
                 "items_count": len(result.items),
+                "acquisition_method": (
+                    "monitor_cache"
+                    if result.challenge.get("monitor_cache")
+                    else "browser_or_http"
+                ),
             }
             for result in page_results
         ],
@@ -248,12 +260,28 @@ def collect_sources(
     profile = resolve_profile_dir(config, profile_dir)
     profile.mkdir(parents=True, exist_ok=True)
     channel = resolve_browser_channel(config, browser_channel)
+    monitor_results = load_monitor_results(
+        data_dir,
+        selected,
+        config.timezone,
+        config.monitor.snapshot_max_age_minutes,
+    )
+    html_sources = [
+        source
+        for source in selected
+        if (
+            len(monitor_results[source.id].items)
+            if source.id in monitor_results
+            else 0
+        )
+        < max(1, min(source.report_target, source.max_items))
+    ]
     prefetched_pages = (
-        {} if headed else prefetch_browser_pages(selected, config, data_dir)
+        {} if headed else prefetch_browser_pages(html_sources, config, data_dir)
     )
     requires_browser = any(
         page_needs_browser(prefetched_pages.get((source.id, url)))
-        for source in selected
+        for source in html_sources
         for url in source_urls(source, data_dir)
     )
     if requires_browser:
@@ -276,6 +304,7 @@ def collect_sources(
                         config,
                         data_dir,
                         prefetched_pages,
+                        monitor_results.get(source.id),
                     )
                     for source in selected
                 ]
@@ -283,7 +312,14 @@ def collect_sources(
                 context.close()
     else:
         results = [
-            collect_source(None, source, config, data_dir, prefetched_pages)
+            collect_source(
+                None,
+                source,
+                config,
+                data_dir,
+                prefetched_pages,
+                monitor_results.get(source.id),
+            )
             for source in selected
         ]
 
@@ -297,6 +333,9 @@ def collect_sources(
             source.id: {
                 "report_target": source.report_target,
                 "report_max": source.report_max,
+                "role": source.role,
+                "tier": source.tier,
+                "bundle": source.bundle,
             }
             for source in selected
         },

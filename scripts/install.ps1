@@ -21,7 +21,8 @@ $legacyRuntimeEntries = @(
     ".env", ".git", ".github", ".playwright-cli", ".pytest_cache", ".ruff_cache",
     "browser-profile", "browser-profiles", "build", "daily-intel-data",
     "daily-intelligence", "daily_intelligence_skill.egg-info", "data", "dist",
-    "edge-profile", "raw_html", "screenshots"
+    "edge-profile", "raw_html", "screenshots",
+    "brief_batch_brief-batch-2_zh.json", "briefs_batch_3.json"
 )
 $sameDirectory = [String]::Equals(
     [IO.Path]::GetFullPath($skillDir).TrimEnd([IO.Path]::DirectorySeparatorChar),
@@ -47,7 +48,7 @@ $excludedDirs = @(
     "browser-profiles", "edge-profile", "raw_html", "screenshots",
     "daily_intelligence_skill.egg-info"
 )
-$excludedFiles = @(".env", "*.cookies.json", "*.har", "*.storage-state.json")
+$excludedFiles = @(".env", "*.cookies.json", "*.har", "*.storage-state.json", "brief*.json")
 if (-not $sameDirectory) {
     & robocopy $skillDir $targetDir /MIR /R:1 /W:1 /NFL /NDL /NJH /NJS /NP `
         /XD $excludedDirs /XF $excludedFiles

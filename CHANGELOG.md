@@ -2,6 +2,28 @@
 
 ## Unreleased
 
+- Updated the complete developer Wiki for the current zero-token monitor, deterministic clustering, schema 2.0 authoring sessions, foreground HTML/desktop delivery, background tail, media cache, recovery model, configuration, and test layout.
+- Added automatic, atomic HTML delivery to the user's Desktop after each finalized edition, with absolute local media/archive/PDF links, an explicit directory override, and non-silent delivery errors.
+- Shortened the edition critical path with pre-media semantic validation, real completion timestamps, non-duplicating stage history, resumable post-persistence projections, and per-stage save metrics.
+- Added timed authoring sessions: model workers submit one packet-assigned JSON result, Python validates and atomically merges batches, and the main model reads only an 18-candidate analysis packet instead of reloading the full brief corpus.
+- Added bounded Hermes delegation telemetry for per-batch duration, API calls, input/output tokens, model and exit reason, with optional queue/first-token/prefill/decode/cache fields when a backend exposes them.
+- Made HTML the foreground deliverable; PDF, optional Notion publishing and independent evaluation now run as an idempotent background tail with separate readiness milestones.
+- Reserved the final 120 seconds for analysis and validation; incomplete brief batches can reduce coverage only after that deadline through run-owned targets, and schema 2.0 contexts reject legacy 1.5 publication.
+- Added a persistent image URL cache with success TTLs, negative-cache retry windows, content-file verification, shared HTTP connection pooling, process-local DNS reuse, and bounded global/per-domain download concurrency.
+- Changed full-text enrichment to bounded HTTP-first extraction with inert HTML parsing and existing-content reuse; Microsoft Edge now launches only for network failures or JavaScript shells that can benefit from browser rendering.
+- Reused a valid fresh zero-token monitor snapshot before editions instead of always refreshing all 83 sources, while retaining network refresh when the snapshot is stale or missing.
+- Generated bounded-scope brief authoring packets for each balanced batch and limited model workers to packet data, one assigned draft write plus one submission command, no browsing/search/scripts, and at most one validation-only repair.
+- Added a responsive, collapsible report table of contents with nested section links, current-position highlighting, remembered open state, mobile dismissal, and print exclusion while preserving the existing newspaper layout.
+- Added a zero-model-token local monitor with bounded RSS/Atom parsing, conditional-request caches, declared-feed discovery, static-HTML fallback, explicit source health, and reusable snapshots for formal editions.
+- Expanded discovery from 32 core sources to 83 configured sources without changing core report quotas, the 12-article full-text ceiling, or the Agent token budget.
+- Added deterministic cross-source story clustering, stable story identities, lifecycle phases, and an importance score based on source tier, corroboration, recency, severity, and novelty.
+- Added a localhost intelligence desk with vertical image-and-text news cards plus news-stream, story-cluster, source-health, and manual-verification views.
+- Upgraded new reports to schema 2.0: three lenses now share one selected-event dossier and record causal chains, assumptions, evidence gaps, change from prior, decision relevance, and a required cross-perspective synthesis.
+- Preserved report schemas 1.1–1.5 and the legacy source-index JSON shape for reads while keeping access failures distinct from `no_items`.
+- Percent-encoded non-ASCII public image paths before schema validation and remote projection, preventing valid raster downloads with Unicode filenames from blocking report finalization.
+- Added a bounded public-news image pipeline: capture card/Open Graph images, validate and store raster files locally by content hash, render vertical image-and-text stories, and upload local copies to resumable Notion image blocks with external fallback.
+- Added fail-closed public-DNS confirmation for proxy fake-IP environments, continued past failed image candidates until the success budget is filled, allowed same-edition report revisions to retain their original event identities, and added idempotent in-place Notion image backfill for previously published text-only reports.
+- Raised the default successful-image limit from 40 to 1000 while retaining the 8 MiB per-image, 80 MiB per-edition, raster-format, and pixel-count safety limits.
 - Reworked the README as a concise capability overview and rewrote the Wiki as developer documentation tied to current modules, states, commands, and tests.
 - Expanded repository ignores for runtime artifacts, browser data, coverage output, editor state, and local build audits; removed the machine-specific build report from the public tree.
 - Replaced real-looking media URLs in synthetic fixtures with reserved `.example` domains and documented the fixture boundary.

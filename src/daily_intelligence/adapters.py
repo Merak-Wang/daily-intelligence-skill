@@ -10,7 +10,7 @@ from playwright.sync_api import Page
 
 from .config import SourceConfig
 from .models import ArticleItem
-from .utils import canonicalize_url, clean_title, item_id
+from .utils import canonicalize_url, clean_title, item_id, url_for_source_filter
 
 IndexAdapter = Callable[[Page, SourceConfig, str], list[ArticleItem]]
 _LOW_INFORMATION_TITLES = {
@@ -29,6 +29,7 @@ def is_eligible(source: SourceConfig, title: str, url: str) -> bool:
     title = clean_title(title)
     if len(title) < 8 or not url.startswith(("http://", "https://")):
         return False
+    filter_url = url_for_source_filter(url)
     if title.casefold() in _LOW_INFORMATION_TITLES or not re.search(
         r"[A-Za-z\u3400-\u9fff]", title
     ):
@@ -37,18 +38,21 @@ def is_eligible(source: SourceConfig, title: str, url: str) -> bool:
         re.search(pattern, title, re.I) for pattern in source.exclude_title_patterns
     ):
         return False
-    hostname = urlsplit(url).netloc.lower().removeprefix("www.")
+    hostname = urlsplit(filter_url).netloc.lower().removeprefix("www.")
     if source.include_domains and not any(
         hostname == domain or hostname.endswith(f".{domain}") for domain in source.include_domains
     ):
         return False
     if source.exclude_patterns and any(
-        re.search(pattern, url, re.I) for pattern in source.exclude_patterns
+        re.search(pattern, filter_url, re.I) for pattern in source.exclude_patterns
     ):
         return False
     return not (
         source.article_patterns
-        and not any(re.search(pattern, url, re.I) for pattern in source.article_patterns)
+        and not any(
+            re.search(pattern, filter_url, re.I)
+            for pattern in source.article_patterns
+        )
     )
 
 
@@ -135,6 +139,19 @@ def collect_browser_index(
                 a.innerText || ''
             ).trim(),
             href: a.href || '',
+            image_url: (() => {
+                const card = a.closest('article, li, [class*="card"], [class*="story"]');
+                const image = a.querySelector('img') || (card ? card.querySelector('img') : null);
+                if (!image) return '';
+                const srcset = image.getAttribute('srcset') || '';
+                const srcsetCandidate = srcset
+                    ? srcset.split(',').at(-1).trim().split(/\\s+/)[0]
+                    : '';
+                return image.currentSrc || image.getAttribute('src') ||
+                    image.getAttribute('data-src') ||
+                    image.getAttribute('data-original') ||
+                    image.getAttribute('data-lazy-src') || srcsetCandidate || '';
+            })(),
             context: (() => {
                 const card = a.closest('article, li, [class*="card"], [class*="story"]');
                 const time = card ? card.querySelector('time') : null;
@@ -165,6 +182,10 @@ def browser_items_from_rows(
             continue
         article = _article(source, title, url, discovered_at)
         article.published_at = _published_at(row.get("context", ""), url, discovered_at)
+        raw_image_url = row.get("image_url", "")
+        image_url = urljoin(base_url, raw_image_url) if raw_image_url else ""
+        if image_url.startswith(("http://", "https://")):
+            article.image_url = image_url
         if article.canonical_url in seen:
             continue
         seen.add(article.canonical_url)

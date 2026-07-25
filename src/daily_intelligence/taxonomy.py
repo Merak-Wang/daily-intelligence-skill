@@ -100,7 +100,7 @@ def canonical_section_id(section_id: str) -> str:
 
 
 def required_section_ids(schema_version: str | None) -> set[str]:
-    if schema_version in {"1.3", "1.4", "1.5"}:
+    if schema_version in {"1.3", "1.4", "1.5", "2.0"}:
         return REQUIRED_SECTION_IDS_V13
     return REQUIRED_SECTION_IDS_V12 if schema_version == "1.2" else REQUIRED_SECTION_IDS_V11
 

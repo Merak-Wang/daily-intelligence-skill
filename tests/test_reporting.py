@@ -1,7 +1,9 @@
 import json
 from pathlib import Path
 
+from daily_intelligence.config import MediaConfig
 from daily_intelligence.local_output import render_report_html
+from daily_intelligence.media import DownloadedImage, materialize_report_images
 from daily_intelligence.notion import report_to_blocks
 from daily_intelligence.reporting import (
     compile_report_data,
@@ -202,6 +204,37 @@ def test_v12_rejects_new_event_reusing_previous_source_item():
     assert any("NEW requires source evidence" in error for error in errors)
 
 
+def test_same_edition_revision_may_reuse_its_original_new_event():
+    root = Path(__file__).resolve().parents[1]
+    report = json.loads((root / "examples" / "sample_report.json").read_text(encoding="utf-8"))
+    report["report_id"] = "daily-2026-07-12-morning-r2"
+    event = _first_report_item(report)
+    ref = event["source_refs"][0]
+    index = {
+        "timezone": "Asia/Shanghai",
+        "items": [
+            {
+                "item_id": ref["item_id"],
+                "content_status": ref["access"],
+                "published_at": "2026-07-12T08:00:00+08:00",
+            }
+        ],
+    }
+    previous = [
+        {
+            "event_id": event["event_id"],
+            "source_item_ids": [ref["item_id"]],
+            "last_report_id": "daily-2026-07-12-morning-r1",
+            "report_ids": ["daily-2026-07-12-morning-r1"],
+        }
+    ]
+
+    errors, _warnings = validate_report_data(report, index, previous)
+
+    assert not any("already exists" in error for error in errors)
+    assert not any("reuses previously reported source items" in error for error in errors)
+
+
 def test_v12_caps_freshness_by_source_age():
     root = Path(__file__).resolve().parents[1]
     report = json.loads((root / "examples" / "sample_report.json").read_text(encoding="utf-8"))
@@ -343,6 +376,134 @@ def _v15_index(report: dict) -> dict:
     }
 
 
+def _v20_report() -> dict:
+    report = _v15_report()
+    report["schema_version"] = "2.0"
+    report["analysis_protocol_version"] = "2.0"
+    for analysis in report["analyses"]:
+        analysis.update(
+            {
+                "time_horizon": "未来数周到一个季度",
+                "causal_chain": [
+                    "已确认的事实改变相关主体的约束条件。",
+                    "约束变化将传导到可观察的政策、工程或市场结果。",
+                ],
+                "assumptions": ["相关主体仍会按照当前公开目标采取行动。"],
+                "evidence_gaps": ["尚缺少一手执行数据和更多独立来源交叉确认。"],
+                "confidence_rationale": "现有证据支持方向判断，但执行细节仍限制置信度上限。",
+                "change_from_prior": "这是首次建立可追踪基线，后续版本将比较增强或减弱。",
+                "decision_relevance": "该判断将改变下一版全文读取和观察信号的优先顺序。",
+            }
+        )
+    event_id = _first_report_item(report)["event_id"]
+    report["cross_perspective_synthesis"] = {
+        "overall_judgment": "三个视角共同指向约束正在变化，但影响速度取决于执行与成本传导。",
+        "consensus": ["当前事实足以提高观察优先级，但不足以支持确定性结论。"],
+        "tensions": [
+            {
+                "issue": "影响出现的速度",
+                "perspectives": ["地缘政治", "AI 工程", "股票分析"],
+                "source_of_difference": "分歧主要来自时间跨度与成本传导假设不同。",
+            }
+        ],
+        "transmission_chain": [
+            "政策与地缘约束先改变资源配置。",
+            "资源变化再影响工程路径、成本和部署速度。",
+            "最终通过收入、成本与风险溢价进入市场定价。",
+        ],
+        "shared_watch_signals": [
+            "观察正式政策文本与执行细则。",
+            "观察工程基准、部署成本和复现结果。",
+            "观察公司指引、订单与风险溢价变化。",
+        ],
+        "revision_triggers": ["若执行数据与当前方向相反，则必须下调或修正总判断。"],
+        "evidence_event_ids": [event_id],
+    }
+    return report
+
+
+def test_v20_requires_falsifiable_lenses_and_cross_perspective_synthesis():
+    report = _v20_report()
+    errors, warnings = validate_report_data(report, _v15_index(report))
+
+    assert errors == []
+    assert warnings == []
+    report["analyses"][0].pop("causal_chain")
+    report.pop("cross_perspective_synthesis")
+
+    errors, _warnings = validate_report_data(report, _v15_index(report))
+
+    assert any("causal_chain" in error for error in errors)
+    assert any("cross_perspective_synthesis" in error for error in errors)
+
+
+def test_run_owned_coverage_target_allows_explicit_deadline_degradation():
+    report = _v20_report()
+    index = _v15_index(report)
+    source_id = _first_report_item(report)["primary_source"]["id"]
+    index["source_policies"] = {
+        source_id: {"report_target": 2, "report_max": 15}
+    }
+    extra = dict(index["items"][0])
+    extra.update(
+        {
+            "item_id": "second-available-item",
+            "url": "https://example.com/second-available-item",
+            "title": "Second available source item",
+        }
+    )
+    index["items"].append(extra)
+
+    errors, _warnings = validate_report_data(report, index)
+    degraded_errors, _warnings = validate_report_data(
+        report,
+        index,
+        coverage_targets={source_id: 1},
+    )
+
+    assert any("selected 1 of required 2" in error for error in errors)
+    assert not any("coverage source" in error for error in degraded_errors)
+
+
+def test_v20_compiler_maps_synthesis_item_ids_and_renders_it():
+    report = _v20_report()
+    event = _first_report_item(report)
+    item_id = event["source_refs"][0]["item_id"]
+    report["cross_perspective_synthesis"].pop("evidence_event_ids")
+    report["cross_perspective_synthesis"]["evidence_item_ids"] = [item_id]
+
+    compile_report_data(report, _v15_index(report))
+    errors, _warnings = validate_report_data(report, _v15_index(report))
+    markdown = render_report_markdown(report)
+    html = render_report_html(report)
+    notion = json.dumps(report_to_blocks(report), ensure_ascii=False)
+
+    assert errors == []
+    assert report["cross_perspective_synthesis"]["evidence_event_ids"] == [
+        event["event_id"]
+    ]
+    assert "跨视角综合" in markdown
+    assert "跨视角综合" in html
+    assert "跨视角综合" in notion
+
+
+def test_v20_html_has_collapsible_scroll_tracking_toc():
+    html = render_report_html(_v20_report())
+
+    assert 'id="report-toc"' in html
+    assert 'id="toc-toggle"' in html
+    assert 'aria-controls="report-toc"' in html
+    assert 'href="#summary"' in html
+    assert 'href="#information.international"' in html
+    assert 'href="#technology.open_source"' in html
+    assert 'href="#analysis-geopolitics"' in html
+    assert 'href="#analysis-synthesis"' in html
+    assert 'href="#feedback"' in html
+    assert "updateActiveToc" in html
+    assert "aria-current" in html
+    assert "@media print" in html and ".report-toc" in html
+
+
 def test_v15_uses_briefs_for_coverage_and_deterministic_counts():
     report = _v15_report()
     errors, warnings = validate_report_data(report, _v15_index(report))
@@ -384,6 +545,47 @@ def test_v15_prefers_publication_time_in_every_report_projection():
     assert "发布时间：2026-07-12T01:00:00+08:00" in render_report_html(report)
     notion = json.dumps(report_to_blocks(report), ensure_ascii=False)
     assert "发布时间｜2026-07-12T01:00:00+08:00" in notion
+
+
+def test_v15_compiler_binds_only_the_indexed_public_image(tmp_path: Path):
+    report = _v15_report()
+    index = _v15_index(report)
+    index.update(
+        {
+            "date": report["date"],
+            "edition": report["edition"],
+            "generated_at": "2026-07-12T05:40:00+08:00",
+        }
+    )
+    index["items"][0]["image_url"] = "https://cdn.example/public-story.png"
+    digest = "a" * 64
+
+    compile_report_data(report, index)
+    warnings = materialize_report_images(
+        report,
+        index,
+        tmp_path,
+        MediaConfig(),
+        downloader=lambda source_url, _data_dir, _config, **_kwargs: DownloadedImage(
+            source_url=source_url,
+            resolved_url=source_url,
+            local_path=f"media/images/aa/{digest}.png",
+            content_type="image/png",
+            sha256=digest,
+            byte_size=128,
+            width=16,
+            height=9,
+            reused=False,
+        ),
+    )
+    errors, _validation_warnings = validate_report_data(report, index)
+    brief = next(brief for section in report["sections"] for brief in section["briefs"])
+
+    assert warnings == []
+    assert errors == []
+    assert brief["image"]["source_url"] == index["items"][0]["image_url"]
+    assert brief["image"]["credit"] == brief["primary_source"]["name"]
+    assert report["media_metrics"]["attached"] == 1
 
 
 def test_v15_falls_back_to_legacy_source_collection_time_without_marking_new():

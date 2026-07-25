@@ -39,6 +39,7 @@ def ignore(_directory: str, names: list[str]) -> set[str]:
     blocked = {name for name in names if name in ignored}
     blocked.update(name for name in names if name == ".env" or name.endswith(".cookies.json"))
     blocked.update(name for name in names if name.endswith((".har", ".storage-state.json")))
+    blocked.update(name for name in names if name.startswith("brief") and name.endswith(".json"))
     return blocked
 
 target.parent.mkdir(parents=True, exist_ok=True)

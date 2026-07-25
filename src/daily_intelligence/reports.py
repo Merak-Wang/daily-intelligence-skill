@@ -1,12 +1,14 @@
 from __future__ import annotations
 
+import time
 from copy import deepcopy
 from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from .config import OutputConfig
+from .config import MediaConfig, OutputConfig
 from .local_output import write_local_outputs
+from .media import materialize_report_images
 from .reporting import (
     compile_report_data,
     normalize_report_data,
@@ -73,6 +75,7 @@ ANALYSIS_SECTION_LABELS = {
     "ai_technology": "从 AI 研究/开发工程师的角度",
     "markets": "从股票分析师的角度",
 }
+BRIEF_REPORT_SCHEMAS = {"1.5", "2.0"}
 EVALUATION_LABELS = {
     "coverage": "信息覆盖度",
     "importance_ordering": "重要性排序",
@@ -88,7 +91,7 @@ EVALUATION_LABELS = {
 
 def ordered_sections(report: dict[str, Any], module: str) -> list[dict[str, Any]]:
     sections = [section for section in report["sections"] if section.get("module") == module]
-    if report.get("schema_version") not in {"1.3", "1.4", "1.5"}:
+    if report.get("schema_version") not in {"1.3", "1.4", "1.5", "2.0"}:
         return sections
     by_id = {section["id"]: section for section in sections}
     return [by_id[section_id] for section_id in SECTION_GROUPS_V13[module] if section_id in by_id]
@@ -118,13 +121,43 @@ def group_items_by_source(section: dict[str, Any]) -> list[tuple[dict[str, str],
     return ordered
 
 
-def _brief_markdown(item: dict[str, Any], rank: int) -> list[str]:
+def _image_markdown_url(image: dict[str, Any], media_path_prefix: str | None) -> str:
+    local_path = str(image.get("local_path") or "").replace("\\", "/")
+    local_parts = [part for part in local_path.split("/") if part]
+    if (
+        media_path_prefix
+        and local_parts
+        and local_parts[0] == "media"
+        and ".." not in local_parts
+    ):
+        return f"{media_path_prefix.rstrip('/')}/{local_path}"
+    return str(image.get("source_url") or image.get("url") or "")
+
+
+def _brief_markdown(
+    item: dict[str, Any],
+    rank: int,
+    media_path_prefix: str | None = None,
+) -> list[str]:
     ref = item["source_ref"]
     status = STATUS_LABELS.get(item["status"], item["status"])
     source_rank = f" `{item['source_rank_label']}`" if item.get("source_rank_label") else ""
-    lines = [
-        f"**{rank}. [{item['title']}]({ref['url']})** `[{status}]`{source_rank}",
-    ]
+    lines: list[str] = []
+    image = item.get("image")
+    if isinstance(image, dict):
+        image_url = _image_markdown_url(image, media_path_prefix)
+        if image_url:
+            lines.extend(
+                [
+                    f"![{image.get('caption', item['title'])}]({image_url})",
+                    "",
+                    f"*图片来源：{image.get('credit', '原始来源')}*",
+                    "",
+                ]
+            )
+    lines.append(
+        f"**{rank}. [{item['title']}]({ref['url']})** `[{status}]`{source_rank}"
+    )
     if item.get("title_zh"):
         lines.extend(["", f"**中文标题：** {item['title_zh']}"])
     if time_info := reference_time_label(ref):
@@ -179,7 +212,10 @@ def _event_markdown(item: dict[str, Any], title: str) -> list[str]:
     return lines
 
 
-def render_report_markdown(report: dict[str, Any]) -> str:
+def render_report_markdown(
+    report: dict[str, Any],
+    media_path_prefix: str | None = None,
+) -> str:
     edition = EDITION_LABELS.get(report["edition"], report["edition"])
     lines = [
         f"# {report['title']}",
@@ -199,11 +235,11 @@ def render_report_markdown(report: dict[str, Any]) -> str:
             lines.extend([f"### {section['title']}", ""])
             if not section.get("items") and not section.get("briefs"):
                 lines.extend([section["coverage_note"], ""])
-            if report.get("schema_version") == "1.5":
+            if report.get("schema_version") in BRIEF_REPORT_SCHEMAS:
                 for source, items in group_items_by_source(section):
                     lines.extend([f"#### [{source['name']}]({source['url']})", ""])
                     for rank, item in enumerate(items, start=1):
-                        lines.extend(_brief_markdown(item, rank))
+                        lines.extend(_brief_markdown(item, rank, media_path_prefix))
             elif report.get("schema_version") == "1.4":
                 for source, items in group_items_by_source(section):
                     lines.extend([f"#### [{source['name']}]({source['url']})", ""])
@@ -305,8 +341,63 @@ def render_report_markdown(report: dict[str, Any]) -> str:
             lines.extend(f"- {item}" for item in analysis["watch_signals"])
             lines.extend(["", "**观点失效信号：**", ""])
             lines.extend(f"- {item}" for item in analysis.get("invalidation_signals", []))
+            for title, key in (
+                ("因果传导链", "causal_chain"),
+                ("关键假设", "assumptions"),
+                ("证据缺口", "evidence_gaps"),
+            ):
+                values = analysis.get(key, [])
+                if values:
+                    lines.extend(["", f"**{title}：**", ""])
+                    lines.extend(f"- {item}" for item in values)
+            for title, key in (
+                ("时间跨度", "time_horizon"),
+                ("置信度依据", "confidence_rationale"),
+                ("相对上一版", "change_from_prior"),
+                ("决策相关性", "decision_relevance"),
+            ):
+                if analysis.get(key):
+                    lines.extend(["", f"**{title}：** {analysis[key]}"])
     else:
         lines.append("本版没有形成达到证据门槛的研判。")
+
+    synthesis = report.get("cross_perspective_synthesis")
+    if isinstance(synthesis, dict):
+        lines.extend(
+            [
+                "",
+                "### 跨视角综合",
+                "",
+                synthesis.get("overall_judgment", ""),
+                "",
+                "**共同结论：**",
+                "",
+            ]
+        )
+        lines.extend(f"- {item}" for item in synthesis.get("consensus", []))
+        lines.extend(["", "**关键分歧：**", ""])
+        for tension in synthesis.get("tensions", []):
+            if not isinstance(tension, dict):
+                continue
+            perspectives = "、".join(tension.get("perspectives", []))
+            lines.append(
+                f"- **{tension.get('issue', '')}**（{perspectives}）："
+                f"{tension.get('source_of_difference', '')}"
+            )
+        for title, key in (
+            ("地缘—技术—市场传导链", "transmission_chain"),
+            ("共同观察信号", "shared_watch_signals"),
+            ("必须修正判断的触发条件", "revision_triggers"),
+        ):
+            lines.extend(["", f"**{title}：**", ""])
+            lines.extend(f"- {item}" for item in synthesis.get(key, []))
+        lines.extend(
+            [
+                "",
+                "**综合引用事件：** "
+                + "、".join(synthesis.get("evidence_event_ids", [])),
+            ]
+        )
 
     if report["changes"]:
         lines.extend(["", "### 日间新增、确认与修正", ""])
@@ -354,7 +445,7 @@ def render_report_markdown(report: dict[str, Any]) -> str:
                 "- 补充意见：",
             ]
         )
-    elif report.get("schema_version") == "1.5":
+    elif report.get("schema_version") in BRIEF_REPORT_SCHEMAS:
         lines.extend(
             [
                 "",
@@ -380,7 +471,10 @@ def save_report(
     index_path: Path,
     data_dir: Path,
     output_config: OutputConfig | None = None,
+    media_config: MediaConfig | None = None,
+    coverage_targets: dict[str, int] | None = None,
 ) -> dict[str, Any]:
+    save_started = time.perf_counter()
     raw = read_json(input_path)
     index = read_json(index_path)
     if not isinstance(raw, dict):
@@ -404,6 +498,7 @@ def save_report(
     report["revision"] = revision
     report["report_id"] = f"daily-{date}-{edition}-r{revision}"
 
+    compile_started = time.perf_counter()
     compile_warnings = compile_report_data(report, index, load_semantic_cache(data_dir))
     normalize_report_data(report, index)
     evaluation = report.get("quality_evaluation")
@@ -419,24 +514,100 @@ def save_report(
                 item for item in existing_payload["items"] if isinstance(item, dict)
             ]
 
-    errors, validation_warnings = validate_report_data(report, index, existing_events)
-    warnings = [*compile_warnings, *validation_warnings]
+    # Reject semantic and source-identity errors before network-bound media work.
+    errors, pre_media_validation_warnings = validate_report_data(
+        report,
+        index,
+        existing_events,
+        coverage_targets=coverage_targets,
+    )
     if errors:
         raise ValueError("Report validation failed: " + "; ".join(errors))
+    compile_validation_seconds = time.perf_counter() - compile_started
 
+    media_started = time.perf_counter()
+    media_warnings = materialize_report_images(
+        report,
+        index,
+        data_dir,
+        media_config or MediaConfig(),
+    )
+    media_seconds = time.perf_counter() - media_started
+    errors, final_validation_warnings = validate_report_data(
+        report,
+        index,
+        existing_events,
+        coverage_targets=coverage_targets,
+    )
+    warnings = list(
+        dict.fromkeys(
+            [
+                *compile_warnings,
+                *media_warnings,
+                *pre_media_validation_warnings,
+                *final_validation_warnings,
+            ]
+        )
+    )
+    if errors:
+        raise ValueError(
+            "Report validation failed after media binding: " + "; ".join(errors)
+        )
+
+    persistence_started = time.perf_counter()
     json_path = report_dir / f"{edition}-r{revision}.json"
     markdown_path = report_dir / f"{edition}-r{revision}.md"
     write_immutable_json(json_path, report)
-    write_text_atomic(markdown_path, render_report_markdown(report))
-    write_json(data_dir / "reports" / f"latest-{edition}.json", report)
-    local_outputs = write_local_outputs(report, data_dir, output_config or OutputConfig())
-    warnings.extend(local_outputs.pop("warnings", []))
-    semantic_cache_path = update_semantic_cache_from_report(report, index, data_dir)
-    state_paths = (
-        update_continuity_state(report, data_dir)
-        if report.get("quality_evaluation") or report.get("schema_version") != "1.5"
-        else {}
+    write_text_atomic(
+        markdown_path,
+        render_report_markdown(report, media_path_prefix="../.."),
     )
+    write_json(data_dir / "reports" / f"latest-{edition}.json", report)
+    persistence_seconds = time.perf_counter() - persistence_started
+
+    local_output_started = time.perf_counter()
+    try:
+        local_outputs = write_local_outputs(
+            report,
+            data_dir,
+            output_config or OutputConfig(),
+        )
+    except Exception as exc:
+        warning = (
+            "Local HTML/PDF projection failed after JSON/Markdown persistence: "
+            f"{type(exc).__name__}: {exc}"
+        )
+        local_outputs = {"local_output_error": warning, "warnings": [warning]}
+    local_output_seconds = time.perf_counter() - local_output_started
+    warnings.extend(local_outputs.pop("warnings", []))
+
+    state_started = time.perf_counter()
+    semantic_cache_path = None
+    state_paths: dict[str, Any] = {}
+    try:
+        semantic_cache_path = update_semantic_cache_from_report(report, index, data_dir)
+        state_paths = (
+            update_continuity_state(report, data_dir)
+            if (
+                report.get("quality_evaluation")
+                or report.get("schema_version") not in BRIEF_REPORT_SCHEMAS
+            )
+            else {}
+        )
+    except Exception as exc:
+        warnings.append(
+            "Derived semantic/continuity state update failed after report persistence: "
+            f"{type(exc).__name__}: {exc}"
+        )
+    state_seconds = time.perf_counter() - state_started
+    save_metrics = {
+        "compile_and_validation_seconds": round(compile_validation_seconds, 3),
+        "media_seconds": round(media_seconds, 3),
+        "persistence_seconds": round(persistence_seconds, 3),
+        "local_output_seconds": round(local_output_seconds, 3),
+        "state_update_seconds": round(state_seconds, 3),
+        "total_seconds": round(time.perf_counter() - save_started, 3),
+    }
 
     return {
         "report_id": report["report_id"],
@@ -447,7 +618,12 @@ def save_report(
         "state_paths": state_paths,
         "content_hash": report_content_hash(report),
         "evaluation_status": report.get("evaluation_status", "completed"),
-        "semantic_cache_path": str(semantic_cache_path),
+        **(
+            {"semantic_cache_path": str(semantic_cache_path)}
+            if semantic_cache_path is not None
+            else {}
+        ),
+        "save_metrics": save_metrics,
     }
 
 

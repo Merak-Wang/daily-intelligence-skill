@@ -3,6 +3,7 @@ from __future__ import annotations
 
 import html
 import json
+import os
 import webbrowser
 from pathlib import Path
 from typing import Any
@@ -52,6 +53,19 @@ def _safe_url(value: object) -> str:
     if parsed.scheme in {"http", "https"} and parsed.netloc:
         return _escape(url)
     return "#"
+
+
+def _image_src(image: dict[str, Any], media_path_prefix: str | None) -> str:
+    local_path = str(image.get("local_path") or "").replace("\\", "/")
+    local_parts = [part for part in local_path.split("/") if part]
+    if (
+        media_path_prefix
+        and local_parts
+        and local_parts[0] == "media"
+        and ".." not in local_parts
+    ):
+        return _escape(f"{media_path_prefix.rstrip('/')}/{local_path}")
+    return _safe_url(image.get("source_url") or image.get("url"))
 
 
 def _external_link(label: object, url: object, *, css_class: str = "") -> str:
@@ -115,7 +129,11 @@ def _item_ref(item: dict[str, Any]) -> dict[str, Any]:
     return refs[0] if refs and isinstance(refs[0], dict) else {}
 
 
-def _brief_html(item: dict[str, Any], rank: int) -> str:
+def _brief_html(
+    item: dict[str, Any],
+    rank: int,
+    media_path_prefix: str | None = None,
+) -> str:
     ref = _item_ref(item)
     status = STATUS_LABELS.get(str(item.get("status")), str(item.get("status") or ""))
     source_rank = item.get("source_rank_label")
@@ -135,26 +153,36 @@ def _brief_html(item: dict[str, Any], rank: int) -> str:
         time_html = f'<p class="story-time">{_escape(label)}：{_escape(value)}</p>'
     image = item.get("image")
     figure = ""
-    if isinstance(image, dict) and image.get("url"):
+    if isinstance(image, dict) and (
+        image.get("local_path") or image.get("source_url") or image.get("url")
+    ):
         figure = (
             '<figure><img loading="lazy" referrerpolicy="no-referrer" '
-            f'src="{_safe_url(image.get("url"))}" alt="{_escape(image.get("caption"))}">'
+            f'src="{_image_src(image, media_path_prefix)}" '
+            f'alt="{_escape(image.get("caption"))}">'
             f'<figcaption>{_escape(image.get("caption"))} · '
             f'{_escape(image.get("credit"))}</figcaption></figure>'
         )
     return (
         f'<article class="brief"{anchor} data-search="{_escape(item.get("title"))} '
         f'{_escape(title_zh)} {_escape(item.get("tldr"))}">'
-        '<div class="brief-heading">'
+        f'{figure}<div class="brief-heading">'
         f'<span class="ordinal">{rank:02d}</span><div><h4>{title}</h4>{translation}{time_html}</div>'
         f'<div class="badges">{"".join(badges)}</div></div>'
-        f'<p class="tldr"><span>TL;DR</span>{_escape(item.get("tldr"))}</p>{figure}</article>'
+        f'<p class="tldr"><span>TL;DR</span>{_escape(item.get("tldr"))}</p></article>'
     )
 
 
-def _source_section_html(source: dict[str, Any], items: list[dict[str, Any]]) -> str:
+def _source_section_html(
+    source: dict[str, Any],
+    items: list[dict[str, Any]],
+    media_path_prefix: str | None = None,
+) -> str:
     source_name = source.get("name") or "未知来源"
-    stories = "".join(_brief_html(item, rank) for rank, item in enumerate(items, start=1))
+    stories = "".join(
+        _brief_html(item, rank, media_path_prefix)
+        for rank, item in enumerate(items, start=1)
+    )
     return (
         f'<section class="source-group" data-search="{_escape(source_name)}">'
         '<div class="source-heading">'
@@ -186,6 +214,13 @@ def _analysis_html(analysis: dict[str, Any]) -> str:
         ("建议行动", _list_html(analysis.get("actions", []))),
         ("后续观察信号", _list_html(analysis.get("watch_signals", []))),
         ("观点失效信号", _list_html(analysis.get("invalidation_signals", []))),
+        ("因果传导链", _list_html(analysis.get("causal_chain", []))),
+        ("关键假设", _list_html(analysis.get("assumptions", []))),
+        ("证据缺口", _list_html(analysis.get("evidence_gaps", []))),
+        ("时间跨度", f'<p>{_escape(analysis.get("time_horizon"))}</p>'),
+        ("置信度依据", f'<p>{_escape(analysis.get("confidence_rationale"))}</p>'),
+        ("相对上一版", f'<p>{_escape(analysis.get("change_from_prior"))}</p>'),
+        ("决策相关性", f'<p>{_escape(analysis.get("decision_relevance"))}</p>'),
     ]
     body = "".join(
         f'<section class="analysis-part"><h5>{title}</h5>{content}</section>'
@@ -205,6 +240,81 @@ def _analysis_html(analysis: dict[str, Any]) -> str:
         '<div class="analysis-meta">'
         f'<span>置信度 {confidence_text}</span>'
         f'<span>证据 {" · ".join(event_links) or "未绑定"}</span></div>{body}</article>'
+    )
+
+
+def _synthesis_html(synthesis: dict[str, Any] | None) -> str:
+    if not isinstance(synthesis, dict):
+        return ""
+    tensions = "".join(
+        "<li><strong>"
+        f"{_escape(row.get('issue'))}</strong>（"
+        f"{_escape('、'.join(row.get('perspectives', [])))}）："
+        f"{_escape(row.get('source_of_difference'))}</li>"
+        for row in synthesis.get("tensions", [])
+        if isinstance(row, dict)
+    )
+    sections = [
+        ("共同结论", _list_html(synthesis.get("consensus", []))),
+        ("关键分歧", f"<ul>{tensions}</ul>" if tensions else ""),
+        ("地缘—技术—市场传导链", _list_html(synthesis.get("transmission_chain", []))),
+        ("共同观察信号", _list_html(synthesis.get("shared_watch_signals", []))),
+        ("修正判断的触发条件", _list_html(synthesis.get("revision_triggers", []))),
+    ]
+    body = "".join(
+        f'<section class="analysis-part"><h5>{title}</h5>{content}</section>'
+        for title, content in sections
+        if content and content != '<p class="muted">无</p>'
+    )
+    evidence = " · ".join(
+        _escape(value) for value in synthesis.get("evidence_event_ids", [])
+    )
+    return (
+        '<section class="analysis-domain synthesis" id="analysis-synthesis">'
+        '<h3>跨视角综合</h3>'
+        '<article class="analysis-card synthesis-card">'
+        f'<h4>{_escape(synthesis.get("overall_judgment"))}</h4>'
+        f'<div class="analysis-meta"><span>综合证据 {evidence or "未绑定"}</span></div>'
+        f"{body}</article></section>"
+    )
+
+
+def _toc_html(report: dict[str, Any]) -> str:
+    entries: list[tuple[str, str, int]] = [("summary", "今日摘要", 0)]
+    for module in ("information", "technology"):
+        entries.append((f"module-{module}", MODULE_LABELS[module], 0))
+        entries.extend(
+            (
+                str(section.get("id") or ""),
+                str(section.get("title") or section.get("id") or ""),
+                1,
+            )
+            for section in _ordered_sections(report, module)
+            if section.get("id")
+        )
+    entries.append(("analysis", "研判", 0))
+    entries.extend(
+        (f"analysis-{domain}", label, 1)
+        for domain, label in ANALYSIS_LABELS.items()
+    )
+    if isinstance(report.get("cross_perspective_synthesis"), dict):
+        entries.append(("analysis-synthesis", "跨视角综合", 1))
+    entries.extend((("evaluation", "质量评估", 0), ("feedback", "用户反馈", 0)))
+    links = "".join(
+        f'<a class="toc-link toc-level-{level}" href="#{_escape(anchor)}">'
+        f"{_escape(label)}</a>"
+        for anchor, label, level in entries
+    )
+    return (
+        '<button class="toc-toggle" id="toc-toggle" type="button" '
+        'aria-controls="report-toc" aria-expanded="false">'
+        '<span aria-hidden="true">☰</span><span>目录</span></button>'
+        '<div class="toc-scrim" id="toc-scrim" aria-hidden="true"></div>'
+        '<aside class="report-toc" id="report-toc" aria-label="报告目录" aria-hidden="true">'
+        '<div class="toc-heading"><strong>定位目录</strong>'
+        '<button class="toc-close" id="toc-close" type="button" aria-label="收起目录">'
+        '收起</button></div>'
+        f'<nav class="toc-nav">{links}</nav></aside>'
     )
 
 
@@ -243,6 +353,9 @@ def render_report_html(
     evaluation: dict[str, Any] | None = None,
     *,
     include_pdf_link: bool = True,
+    media_path_prefix: str | None = None,
+    archive_href: str | None = "../index.html",
+    pdf_href: str | None = None,
 ) -> str:
     evaluation = evaluation or (
         report.get("quality_evaluation")
@@ -254,7 +367,7 @@ def render_report_html(
         section_blocks = []
         for section in _ordered_sections(report, module):
             source_groups = "".join(
-                _source_section_html(source, items)
+                _source_section_html(source, items, media_path_prefix)
                 for source, items in _group_items(section)
             )
             empty_note = ""
@@ -292,8 +405,10 @@ def render_report_html(
         if not cards:
             cards = '<div class="empty-note">本版没有形成达到证据门槛的该领域研判。</div>'
         analysis_groups.append(
-            f'<section class="analysis-domain"><h3>{ANALYSIS_LABELS[domain]}</h3>{cards}</section>'
+            f'<section class="analysis-domain" id="analysis-{domain}">'
+            f"<h3>{ANALYSIS_LABELS[domain]}</h3>{cards}</section>"
         )
+    synthesis_block = _synthesis_html(report.get("cross_perspective_synthesis"))
 
     changes = report.get("changes", [])
     changes_block = (
@@ -316,10 +431,16 @@ def render_report_html(
     ).replace("</", "<\\/")
     pdf_link = ""
     if include_pdf_link:
-        pdf_link = (
-            f'<a href="{_escape(str(report.get("edition")))}-r'
-            f'{_escape(report.get("revision"))}.pdf">PDF</a>'
+        resolved_pdf_href = pdf_href or (
+            f"{report.get('edition')}-r{report.get('revision')}.pdf"
         )
+        pdf_link = (
+            f'<a href="{_escape(resolved_pdf_href)}">PDF</a>'
+        )
+    archive_link = (
+        f'<a href="{_escape(archive_href)}">日报中心</a>' if archive_href else ""
+    )
+    toc_block = _toc_html(report)
     return f"""<!doctype html>
 <html lang="zh-CN">
 <head>
@@ -331,16 +452,40 @@ def render_report_html(
 :root{{--ink:#18202a;--muted:#637083;--paper:#f5f2eb;--card:#fff;--line:#dfe3e8;--blue:#234a70;--red:#a53b2e;--gold:#a67424;--soft:#eef3f7}}
 *{{box-sizing:border-box}}html{{scroll-behavior:smooth}}body{{margin:0;color:var(--ink);background:var(--paper);font-family:"Microsoft YaHei","PingFang SC","Noto Sans CJK SC",sans-serif;line-height:1.72}}
 a{{color:var(--blue);text-decoration:none}}a:hover{{text-decoration:underline}}.shell{{width:min(1120px,calc(100% - 32px));margin:0 auto}}.masthead{{padding:56px 0 38px;background:linear-gradient(135deg,#172a3d,#254f6f);color:#fff;border-bottom:5px solid #bd8a39}}.eyebrow{{letter-spacing:.16em;text-transform:uppercase;color:#e5c98e;font-size:13px}}h1{{font-family:Georgia,"Noto Serif CJK SC",serif;font-size:clamp(34px,5vw,60px);line-height:1.14;margin:10px 0 16px;max-width:900px}}.metadata{{display:flex;gap:10px 24px;flex-wrap:wrap;color:#d9e3ec;font-size:14px}}.toolbar{{position:sticky;top:0;z-index:10;background:rgba(255,255,255,.96);border-bottom:1px solid var(--line);backdrop-filter:blur(12px)}}.toolbar-inner{{display:flex;align-items:center;gap:16px;padding:12px 0}}.toolbar nav{{display:flex;gap:18px;font-weight:700}}.toolbar input{{margin-left:auto;min-width:260px;padding:9px 12px;border:1px solid var(--line);border-radius:8px}}.tools{{display:flex;gap:10px;white-space:nowrap}}main{{padding:34px 0 70px}}.summary,.module,.analysis-module,.evaluation,.feedback,.pending{{background:var(--card);border:1px solid var(--line);border-radius:14px;box-shadow:0 8px 24px rgba(25,36,48,.05);margin:0 0 24px;padding:28px}}.summary h2,.module-label,.analysis-module>h2,.evaluation>h2,.feedback>h2{{font-family:Georgia,"Noto Serif CJK SC",serif;color:var(--blue);font-size:28px;margin:0 0 16px}}.summary ul{{margin:0;padding-left:24px}}.module-label{{font-size:34px;border-bottom:3px solid var(--gold);padding-bottom:10px}}.content-section{{padding:24px 0 6px;border-bottom:1px solid var(--line)}}.content-section:last-child{{border:0}}.content-section>h2{{font-size:24px;margin:0 0 16px}}.source-group{{margin:18px 0 28px}}.source-heading{{display:flex;align-items:center;justify-content:space-between;background:var(--soft);border-left:5px solid var(--blue);padding:10px 14px;margin-bottom:4px}}.source-heading h3{{font-size:19px;margin:0}}.source-heading span{{font-size:13px;color:var(--muted)}}.brief{{padding:18px 6px;border-bottom:1px dashed var(--line);break-inside:avoid}}.brief-heading{{display:grid;grid-template-columns:38px minmax(0,1fr) auto;gap:12px;align-items:start}}.ordinal{{font:700 18px Georgia;color:var(--gold);padding-top:2px}}.brief h4{{font-size:17px;line-height:1.5;margin:0}}.translated-title{{font-weight:700;margin:5px 0 0;color:#35465a}}.story-time{{margin:5px 0 0;color:var(--muted);font-size:12px}}.badges{{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}}.badge{{display:inline-block;padding:2px 7px;border-radius:999px;font-size:11px;background:#eef2f5;color:#4d5a67}}.badge.status{{background:#f5e8e2;color:var(--red)}}.badge.rank{{background:#f6edd8;color:#7a581c}}.tldr{{margin:10px 0 0 50px;color:#344150}}.tldr span{{font-size:11px;font-weight:800;letter-spacing:.08em;color:var(--red);margin-right:9px}}figure{{margin:16px 0 0 50px}}figure img{{max-width:100%;max-height:420px;border-radius:8px}}figcaption{{font-size:12px;color:var(--muted)}}.empty-note,.evaluation-pending{{padding:18px;background:#f7f8f9;border:1px dashed #c9d0d7;border-radius:8px;color:var(--muted)}}.pending li{{display:flex;gap:10px;justify-content:space-between;border-bottom:1px solid var(--line);padding:8px 0}}.pending li span{{color:var(--muted);font-size:13px}}.analysis-domain>h3{{font-size:23px;margin:30px 0 14px;border-left:5px solid var(--red);padding-left:12px}}.analysis-card{{border:1px solid var(--line);border-radius:12px;margin:0 0 20px;padding:24px;break-inside:avoid}}.analysis-card>h4{{font-family:Georgia,"Noto Serif CJK SC",serif;font-size:23px;line-height:1.5;margin:0 0 10px}}.analysis-meta{{display:flex;gap:14px;flex-wrap:wrap;color:var(--muted);font-size:13px;padding-bottom:15px;border-bottom:1px solid var(--line)}}.analysis-part{{margin-top:18px}}.analysis-part h5{{font-size:15px;color:var(--red);margin:0 0 6px}}.analysis-part p,.analysis-part ul{{margin-top:0}}.stakeholder-grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px}}.stakeholder{{background:#f7f5ef;border-radius:8px;padding:14px}}.stakeholder p{{margin:4px 0}}.stakeholder small{{color:var(--muted)}}.follow-up{{border-top:1px solid var(--line);margin-top:24px;padding-top:18px}}.evaluation-score{{display:flex;align-items:baseline;gap:6px;margin:4px 0 18px}}.evaluation-score strong{{font:700 52px Georgia;color:var(--red)}}.evaluation-score span{{color:var(--muted)}}.table-wrap{{overflow:auto}}table{{width:100%;border-collapse:collapse}}th,td{{text-align:left;border-bottom:1px solid var(--line);padding:10px;vertical-align:top}}th{{background:var(--soft)}}.score{{font-weight:800;color:var(--red);white-space:nowrap}}.feedback-grid{{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}}label{{font-size:13px;color:var(--muted)}}select,textarea{{width:100%;margin-top:5px;padding:9px;border:1px solid var(--line);border-radius:7px;background:#fff}}textarea{{min-height:100px}}.feedback .comment{{display:block;margin-top:16px}}button{{margin-top:14px;background:var(--blue);color:#fff;border:0;border-radius:8px;padding:10px 16px;font-weight:700;cursor:pointer}}.feedback-note{{color:var(--muted);font-size:12px}}.feedback-print{{display:none}}footer{{color:var(--muted);font-size:12px;padding:0 0 34px;text-align:center}}.hidden-by-search{{display:none!important}}
-@media(max-width:720px){{.toolbar-inner{{align-items:flex-start;flex-wrap:wrap}}.toolbar input{{order:3;margin:0;width:100%;min-width:0}}.tools{{margin-left:auto}}.summary,.module,.analysis-module,.evaluation,.feedback,.pending{{padding:20px}}.brief-heading{{grid-template-columns:32px 1fr}}.badges{{grid-column:2;justify-content:flex-start}}.tldr,figure{{margin-left:44px}}.feedback-grid{{grid-template-columns:1fr 1fr}}}}
-@media print{{body{{background:#fff;font-size:10.5pt}}.masthead{{padding:28px 0;background:#fff!important;color:#172a3d;border-bottom:3px solid #a67424}}.eyebrow{{color:#7a581c}}.metadata{{color:#536273}}.toolbar,.feedback button,.feedback-note,.feedback-grid,.feedback .comment{{display:none}}.feedback-print{{display:block}}.shell{{width:auto;margin:0 14mm}}main{{padding:12px 0}}.summary,.module,.analysis-module,.evaluation,.feedback,.pending{{box-shadow:none;border:0;border-radius:0;padding:10px 0;margin:0 0 12px}}.source-group,.brief,.analysis-card,table,figure{{break-inside:avoid}}a{{color:#18202a}}.content-section{{break-before:auto}}}}
+.brief>figure{{margin-top:0;margin-bottom:14px}}
+.summary,.module,.content-section,.analysis-module,.analysis-domain,.evaluation,.feedback{{scroll-margin-top:88px}}.toc-toggle{{position:fixed;z-index:32;left:14px;top:50%;display:flex;flex-direction:column;align-items:center;gap:6px;width:42px;margin:0;padding:13px 8px;transform:translateY(-50%);border:1px solid rgba(35,74,112,.2);border-radius:10px;background:rgba(255,255,255,.96);box-shadow:0 8px 24px rgba(25,36,48,.14);color:var(--blue);font-size:12px;letter-spacing:.12em;backdrop-filter:blur(12px);transition:opacity .2s,transform .2s}}.toc-toggle span:first-child{{font-size:17px;line-height:1}}body.toc-open .toc-toggle{{opacity:0;pointer-events:none;transform:translate(-12px,-50%)}}.report-toc{{position:fixed;z-index:31;left:14px;top:84px;bottom:18px;width:286px;display:flex;flex-direction:column;overflow:hidden;border:1px solid rgba(35,74,112,.16);border-radius:14px;background:rgba(255,255,255,.97);box-shadow:0 16px 42px rgba(22,42,61,.18);backdrop-filter:blur(16px);transform:translateX(calc(-100% - 30px));transition:transform .24s ease}}body.toc-open .report-toc{{transform:translateX(0)}}.toc-heading{{display:flex;align-items:center;justify-content:space-between;padding:16px 16px 12px;border-bottom:1px solid var(--line);color:var(--blue)}}.toc-heading strong{{font:700 18px Georgia,"Noto Serif CJK SC",serif}}.toc-close{{margin:0;padding:5px 9px;border:1px solid var(--line);border-radius:7px;background:var(--soft);color:var(--blue);font-size:12px}}.toc-nav{{overflow-y:auto;padding:10px}}.toc-link{{display:block;margin:2px 0;padding:7px 10px;border-left:3px solid transparent;border-radius:6px;color:#35465a;font-size:14px;line-height:1.4}}.toc-link:hover{{background:var(--soft);text-decoration:none}}.toc-link.toc-level-0{{margin-top:7px;font-weight:800;color:var(--blue)}}.toc-link.toc-level-1{{padding-left:22px;font-size:13px}}.toc-link.active{{border-left-color:var(--gold);background:#f6edd8;color:#634718}}.toc-scrim{{position:fixed;z-index:30;inset:0;visibility:hidden;background:rgba(18,30,42,.22);opacity:0;transition:opacity .2s,visibility .2s}}body.toc-open .toc-scrim{{visibility:visible;opacity:1}}
+@media(min-width:1500px){{.toc-scrim{{display:none}}}}
+@media(max-width:720px){{.toolbar-inner{{align-items:flex-start;flex-wrap:wrap}}.toolbar input{{order:3;margin:0;width:100%;min-width:0}}.tools{{margin-left:auto}}.summary,.module,.analysis-module,.evaluation,.feedback,.pending{{padding:20px}}.brief-heading{{grid-template-columns:32px 1fr}}.badges{{grid-column:2;justify-content:flex-start}}.tldr,figure{{margin-left:44px}}.feedback-grid{{grid-template-columns:1fr 1fr}}.toc-toggle{{left:8px;width:38px}}.report-toc{{left:8px;top:72px;bottom:8px;width:min(300px,calc(100vw - 24px))}}}}
+@media print{{body{{background:#fff;font-size:10.5pt}}.masthead{{padding:28px 0;background:#fff!important;color:#172a3d;border-bottom:3px solid #a67424}}.eyebrow{{color:#7a581c}}.metadata{{color:#536273}}.toolbar,.toc-toggle,.report-toc,.toc-scrim,.feedback button,.feedback-note,.feedback-grid,.feedback .comment{{display:none}}.feedback-print{{display:block}}.shell{{width:auto;margin:0 14mm}}main{{padding:12px 0}}.summary,.module,.analysis-module,.evaluation,.feedback,.pending{{box-shadow:none;border:0;border-radius:0;padding:10px 0;margin:0 0 12px}}.source-group,.brief,.analysis-card,table,figure{{break-inside:avoid}}a{{color:#18202a}}.content-section{{break-before:auto}}}}
 </style>
 </head>
 <body>
+{toc_block}
 <header class="masthead"><div class="shell"><div class="eyebrow">Daily Intelligence · {EDITION_LABELS.get(str(report.get('edition')), _escape(report.get('edition')))}</div><h1>{_escape(report.get('title'))}</h1><div class="metadata"><span>{_escape(report.get('date'))}</span><span>修订 r{_escape(report.get('revision'))}</span><span>{_escape(report.get('generated_at'))}</span><span>{_escape(report_id)}</span></div></div></header>
-<div class="toolbar"><div class="shell toolbar-inner"><nav><a href="#module-information">资讯</a><a href="#module-technology">技术</a><a href="#analysis">研判</a><a href="#evaluation">评估</a></nav><input id="search" type="search" placeholder="筛选标题、摘要或来源"><div class="tools"><a href="../index.html">日报中心</a>{pdf_link}</div></div></div>
-<main class="shell"><section class="summary"><h2>今日摘要</h2>{_list_html(report.get('executive_summary', []))}</section>{''.join(module_blocks)}{pending_block}<section class="analysis-module" id="analysis"><h2>研判</h2>{''.join(analysis_groups)}{changes_block}{watch_block}</section><section class="evaluation" id="evaluation"><h2>质量评估</h2>{_evaluation_html(evaluation)}</section><section class="feedback"><h2>用户反馈</h2><div class="feedback-grid">{''.join(f'<label>{label}<select data-feedback="{key}"><option value="">未评分</option>{"".join(f"<option value={score}>{score}/5</option>" for score in range(1,6))}</select></label>' for label,key in (("相关性","relevance"),("准确性","accuracy"),("分析价值","analysis_value"),("整体满意度","satisfaction")))}</div><label class="comment">补充意见<textarea data-feedback="comment" placeholder="这些反馈可作为后续日报个性化输入。"></textarea></label><div class="feedback-print">相关性：__/5　准确性：__/5　分析价值：__/5　整体满意度：__/5<br>补充意见：________________________________</div><button id="download-feedback" type="button">下载反馈 JSON</button><p class="feedback-note">本地文件不会自动上传数据。请把下载的 JSON 交给 Hermes，作为下一版的人工反馈输入。</p></section></main><footer class="shell">本地 JSON/Markdown 为事实源；HTML/PDF 是可重新生成的阅读投影。</footer>
+<div class="toolbar"><div class="shell toolbar-inner"><nav><a href="#module-information">资讯</a><a href="#module-technology">技术</a><a href="#analysis">研判</a><a href="#evaluation">评估</a></nav><input id="search" type="search" placeholder="筛选标题、摘要或来源"><div class="tools">{archive_link}{pdf_link}</div></div></div>
+<main class="shell"><section class="summary" id="summary"><h2>今日摘要</h2>{_list_html(report.get('executive_summary', []))}</section>{''.join(module_blocks)}{pending_block}<section class="analysis-module" id="analysis"><h2>研判</h2>{''.join(analysis_groups)}{synthesis_block}{changes_block}{watch_block}</section><section class="evaluation" id="evaluation"><h2>质量评估</h2>{_evaluation_html(evaluation)}</section><section class="feedback" id="feedback"><h2>用户反馈</h2><div class="feedback-grid">{''.join(f'<label>{label}<select data-feedback="{key}"><option value="">未评分</option>{"".join(f"<option value={score}>{score}/5</option>" for score in range(1,6))}</select></label>' for label,key in (("相关性","relevance"),("准确性","accuracy"),("分析价值","analysis_value"),("整体满意度","satisfaction")))}</div><label class="comment">补充意见<textarea data-feedback="comment" placeholder="这些反馈可作为后续日报个性化输入。"></textarea></label><div class="feedback-print">相关性：__/5　准确性：__/5　分析价值：__/5　整体满意度：__/5<br>补充意见：________________________________</div><button id="download-feedback" type="button">下载反馈 JSON</button><p class="feedback-note">本地文件不会自动上传数据。请把下载的 JSON 交给 Hermes，作为下一版的人工反馈输入。</p></section></main><footer class="shell">本地 JSON/Markdown 为事实源；HTML/PDF 是可重新生成的阅读投影。</footer>
 <script>
 const reportMeta={feedback_data};
+const tocToggle=document.getElementById('toc-toggle');
+const tocPanel=document.getElementById('report-toc');
+const tocClose=document.getElementById('toc-close');
+const tocScrim=document.getElementById('toc-scrim');
+const tocLinks=[...document.querySelectorAll('.toc-link')];
+const tocStorageKey='daily-intelligence-toc-open';
+const setTocOpen=open=>{{document.body.classList.toggle('toc-open',open);tocToggle.setAttribute('aria-expanded',String(open));tocPanel.setAttribute('aria-hidden',String(!open));try{{localStorage.setItem(tocStorageKey,String(open));}}catch(_error){{}}}};
+let initialTocOpen=window.matchMedia('(min-width:1740px)').matches;
+try{{const savedTocState=localStorage.getItem(tocStorageKey);if(savedTocState!==null)initialTocOpen=savedTocState==='true';}}catch(_error){{}}
+setTocOpen(initialTocOpen);
+tocToggle.addEventListener('click',()=>setTocOpen(true));
+tocClose.addEventListener('click',()=>setTocOpen(false));
+tocScrim.addEventListener('click',()=>setTocOpen(false));
+tocLinks.forEach(link=>link.addEventListener('click',()=>{{if(window.matchMedia('(max-width:1499px)').matches)setTocOpen(false);}}));
+const tocTargets=tocLinks.map(link=>({{link,target:document.getElementById(link.getAttribute('href').slice(1))}})).filter(row=>row.target);
+let tocUpdatePending=false;
+const updateActiveToc=()=>{{tocUpdatePending=false;let active=tocTargets[0];for(const row of tocTargets){{if(row.target.getBoundingClientRect().top<=120)active=row;else break;}}for(const row of tocTargets){{const selected=row===active;row.link.classList.toggle('active',selected);if(selected)row.link.setAttribute('aria-current','location');else row.link.removeAttribute('aria-current');}}}};
+window.addEventListener('scroll',()=>{{if(!tocUpdatePending){{tocUpdatePending=true;requestAnimationFrame(updateActiveToc);}}}},{{passive:true}});
+window.addEventListener('resize',updateActiveToc);
+updateActiveToc();
 const search=document.getElementById('search');
 search.addEventListener('input',()=>{{const q=search.value.trim().toLowerCase();document.querySelectorAll('.source-group').forEach(group=>{{const groupMatch=!q||group.dataset.search.toLowerCase().includes(q);let any=groupMatch;group.querySelectorAll('.brief').forEach(brief=>{{const match=groupMatch||brief.dataset.search.toLowerCase().includes(q);brief.classList.toggle('hidden-by-search',!match);any=any||match;}});group.classList.toggle('hidden-by-search',!any);}});}});
 document.getElementById('download-feedback').addEventListener('click',()=>{{const feedback={{...reportMeta,created_at:new Date().toISOString()}};document.querySelectorAll('[data-feedback]').forEach(el=>feedback[el.dataset.feedback]=el.value);const blob=new Blob([JSON.stringify(feedback,null,2)],{{type:'application/json'}});const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=`feedback-${{reportMeta.report_id}}.json`;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),1000);}});
@@ -501,6 +646,13 @@ def _reportlab_pdf(
                 ("建议行动", "actions"),
                 ("后续观察信号", "watch_signals"),
                 ("观点失效信号", "invalidation_signals"),
+                ("因果传导链", "causal_chain"),
+                ("关键假设", "assumptions"),
+                ("证据缺口", "evidence_gaps"),
+                ("时间跨度", "time_horizon"),
+                ("置信度依据", "confidence_rationale"),
+                ("相对上一版", "change_from_prior"),
+                ("决策相关性", "decision_relevance"),
             ):
                 value = analysis.get(key)
                 if not value:
@@ -510,6 +662,29 @@ def _reportlab_pdf(
                     story.extend(bullet(row) for row in value)
                 else:
                     story.append(paragraph(value))
+    synthesis = report.get("cross_perspective_synthesis")
+    if isinstance(synthesis, dict):
+        story.append(paragraph("跨视角综合", h2))
+        story.append(paragraph(synthesis.get("overall_judgment"), h3))
+        for label, key in (
+            ("共同结论", "consensus"),
+            ("地缘—技术—市场传导链", "transmission_chain"),
+            ("共同观察信号", "shared_watch_signals"),
+            ("修正判断的触发条件", "revision_triggers"),
+        ):
+            story.append(paragraph(label, h3))
+            story.extend(bullet(value) for value in synthesis.get(key, []))
+        story.append(paragraph("关键分歧", h3))
+        for tension in synthesis.get("tensions", []):
+            if not isinstance(tension, dict):
+                continue
+            perspectives = "、".join(tension.get("perspectives", []))
+            story.append(
+                bullet(
+                    f"{tension.get('issue', '')}（{perspectives}）："
+                    f"{tension.get('source_of_difference', '')}"
+                )
+            )
     story.extend([PageBreak(), paragraph("质量评估与用户反馈", h1)])
     effective_evaluation = evaluation or report.get("quality_evaluation")
     if isinstance(effective_evaluation, dict):
@@ -709,6 +884,44 @@ def render_archive_index(data_dir: Path) -> Path:
     return write_text_atomic(reports_root / "index.html", document)
 
 
+def resolve_desktop_directory(config: OutputConfig) -> Path:
+    if config.desktop_dir:
+        return Path(config.desktop_dir).expanduser().resolve()
+    if os.name == "nt":
+        user_profile = os.getenv("USERPROFILE")
+        if user_profile:
+            return (Path(user_profile) / "Desktop").resolve()
+    return (Path.home() / "Desktop").resolve()
+
+
+def write_desktop_html(
+    report: dict[str, Any],
+    data_dir: Path,
+    config: OutputConfig,
+    *,
+    evaluation: dict[str, Any] | None = None,
+) -> Path:
+    desktop_dir = resolve_desktop_directory(config)
+    stem = (
+        f"daily-intelligence-{report['date']}-{report['edition']}"
+        f"-r{report['revision']}"
+    )
+    destination = desktop_dir / f"{stem}.html"
+    report_dir = data_dir / "reports" / str(report["date"])
+    pdf_path = report_dir / f"{report['edition']}-r{report['revision']}.pdf"
+    return write_text_atomic(
+        destination,
+        render_report_html(
+            report,
+            evaluation,
+            include_pdf_link="pdf" in config.formats,
+            media_path_prefix=data_dir.resolve().as_uri(),
+            archive_href=(data_dir / "reports" / "index.html").resolve().as_uri(),
+            pdf_href=pdf_path.resolve().as_uri(),
+        ),
+    )
+
+
 def write_local_outputs(
     report: dict[str, Any],
     data_dir: Path,
@@ -731,9 +944,28 @@ def write_local_outputs(
                 report,
                 evaluation,
                 include_pdf_link="pdf" in config.formats,
+                media_path_prefix="../..",
             ),
         )
         result["html_path"] = str(html_path)
+        if config.copy_html_to_desktop:
+            try:
+                result["desktop_html_path"] = str(
+                    write_desktop_html(
+                        report,
+                        data_dir,
+                        config,
+                        evaluation=evaluation,
+                    )
+                )
+            except Exception as exc:
+                warning = (
+                    "Desktop HTML delivery failed: "
+                    f"{type(exc).__name__}: {exc}. "
+                    "Set output.desktop_dir to an accessible absolute directory."
+                )
+                warnings.append(warning)
+                result["desktop_html_error"] = warning
     if "pdf" in config.formats:
         try:
             engine, warning = render_pdf_from_html(

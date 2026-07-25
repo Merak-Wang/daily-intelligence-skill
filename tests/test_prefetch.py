@@ -6,6 +6,7 @@ from pathlib import Path
 
 import httpx
 
+from daily_intelligence.adapters import browser_items_from_rows
 from daily_intelligence.collector import collect_source
 from daily_intelligence.config import AppConfig, BrowserConfig, SourceConfig
 from daily_intelligence.models import ArticleItem, SourceResult, SourceStatus
@@ -36,6 +37,7 @@ def test_public_html_rows_preserve_title_link_and_time_context():
         <html><head><title>Example News</title></head><body>
           <article><time datetime="2026-07-17T05:00:00+08:00"></time>
             <a href="/articles/one"><h2>A sufficiently long public headline</h2></a>
+            <img data-src="/images/one.jpg" alt="">
           </article>
         </body></html>
         """
@@ -45,6 +47,32 @@ def test_public_html_rows_preserve_title_link_and_time_context():
     assert rows[0]["href"] == "/articles/one"
     assert rows[0]["title"] == "A sufficiently long public headline"
     assert "2026-07-17" in rows[0]["context"]
+    assert rows[0]["image_url"] == "/images/one.jpg"
+    items = browser_items_from_rows(
+        rows,
+        _source(),
+        "2026-07-17T06:00:00+08:00",
+        "https://example.com/news",
+    )
+    assert items[0].image_url == "https://example.com/images/one.jpg"
+
+
+def test_missing_card_image_does_not_turn_the_index_page_into_an_image():
+    items = browser_items_from_rows(
+        [
+            {
+                "title": "A sufficiently long public headline",
+                "href": "/articles/one",
+                "context": "",
+                "image_url": "",
+            }
+        ],
+        _source(),
+        "2026-07-17T06:00:00+08:00",
+        "https://example.com/news",
+    )
+
+    assert items[0].image_url is None
 
 
 def test_parallel_prefetch_obeys_global_and_per_domain_limits(tmp_path: Path):

@@ -4,14 +4,18 @@ import asyncio
 import contextlib
 import html
 import json
+import time
 from pathlib import Path
 from typing import Any
-from urllib.parse import urlsplit
+from urllib.parse import urljoin, urlsplit
 
+import httpx
+from bs4 import BeautifulSoup
 from playwright.async_api import BrowserContext, Page, async_playwright
 
+from .access import classify_access_text
 from .collector import CHALLENGE_TEXTS
-from .config import AppConfig, resolve_browser_channel, resolve_profile_dir
+from .config import AppConfig, SourceConfig, resolve_browser_channel, resolve_profile_dir
 from .models import ContentStatus
 from .storage import next_revision, write_immutable_json, write_text_atomic
 from .utils import now_iso, read_json, timestamp_slug, write_json
@@ -28,6 +32,11 @@ NOISE_SELECTORS = [
     '[class*="cookie" i]',
     '[class*="newsletter" i]',
 ]
+_MAX_CONTENT_BYTES = 4 * 1024 * 1024
+_HTTP_USER_AGENT = (
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) "
+    "AppleWebKit/537.36 (KHTML, like Gecko) Edg/131.0 Safari/537.36"
+)
 
 
 def synchronize_nested_items(payload: dict[str, Any]) -> None:
@@ -90,6 +99,236 @@ def save_markdown(path: Path, item: dict[str, Any], body: str, retrieved_at: str
     write_text_atomic(path, "\n".join(lines))
 
 
+def _html_meta(soup: BeautifulSoup, selectors: list[str]) -> str:
+    for selector in selectors:
+        node = soup.select_one(selector)
+        if node is None:
+            continue
+        value = node.get("content") or node.get("datetime") or node.get_text(" ", strip=True)
+        if value:
+            return str(value).strip()
+    return ""
+
+
+def _static_visible_text(
+    soup: BeautifulSoup,
+    selectors: list[str],
+) -> tuple[str, str | None]:
+    for node in soup.select(",".join(NOISE_SELECTORS)):
+        node.decompose()
+    best_text = ""
+    best_selector = None
+    for selector in [*selectors, "article", "main", "body"]:
+        try:
+            nodes = soup.select(selector)
+        except Exception:
+            continue
+        for node in nodes:
+            text = " ".join(node.get_text("\n", strip=True).split())
+            if len(text) > len(best_text):
+                best_text = text
+                best_selector = selector
+            if len(text) >= 1500:
+                return text, selector
+    return best_text, best_selector
+
+
+def _content_output_path(
+    data_dir: Path,
+    source_id: str,
+    item_id: object,
+    timezone: str,
+) -> Path:
+    return (
+        data_dir
+        / "content"
+        / source_id
+        / str(item_id)
+        / f"{timestamp_slug(timezone)}.md"
+    )
+
+
+def _apply_http_document(
+    item: dict[str, Any],
+    source: SourceConfig,
+    body_html: str,
+    final_url: str,
+    http_status: int,
+    config: AppConfig,
+    data_dir: Path,
+) -> bool:
+    """Apply inert HTTP content and return whether a browser can still add value."""
+    metadata = item.setdefault("metadata", {})
+    if not isinstance(metadata, dict):
+        metadata = {}
+        item["metadata"] = metadata
+    soup = BeautifulSoup(body_html, "html.parser")
+    page_title = soup.title.get_text(" ", strip=True) if soup.title else ""
+    challenge = classify_access_text(http_status, page_title, body_html[:30000])
+    metadata["content_http_status"] = http_status
+    metadata["content_http_final_url"] = final_url
+    metadata["content_acquisition"] = "http"
+    if challenge["required"] or challenge["rate_limited"]:
+        item["content_status"] = ContentStatus.VERIFICATION_REQUIRED
+        metadata["content_challenge"] = challenge
+        return False
+    if http_status >= 400:
+        item["content_status"] = ContentStatus.FAILED
+        metadata["content_error"] = f"HTTP {http_status}"
+        return False
+
+    title = _html_meta(
+        soup,
+        ['meta[property="og:title"]', 'meta[name="twitter:title"]'],
+    )
+    if title:
+        item["title"] = html.unescape(title)
+    description = _html_meta(
+        soup,
+        ['meta[name="description"]', 'meta[property="og:description"]'],
+    )
+    if description:
+        item["description"] = html.unescape(description)
+    published = _html_meta(
+        soup,
+        [
+            'meta[property="article:published_time"]',
+            'meta[name="article:published_time"]',
+            "time[datetime]",
+        ],
+    )
+    if published:
+        item["published_at"] = published
+    image_url = _html_meta(
+        soup,
+        ['meta[property="og:image"]', 'meta[name="twitter:image"]'],
+    )
+    resolved_image_url = urljoin(final_url, image_url) if image_url else ""
+    if resolved_image_url.startswith(("http://", "https://")):
+        item["image_url"] = resolved_image_url
+
+    body, selector = _static_visible_text(soup, source.content_selectors)
+    if len(body) >= 1500:
+        status = ContentStatus.FULL_TEXT
+    elif len(body) >= 500:
+        status = ContentStatus.PARTIAL
+    else:
+        item["content_status"] = ContentStatus.METADATA_ONLY
+        item["content_characters"] = len(body)
+        metadata["content_selector"] = selector
+        return True
+    item["content_status"] = status
+    item["content_characters"] = len(body)
+    metadata["content_selector"] = selector
+    output = _content_output_path(
+        data_dir,
+        source.id,
+        item.get("item_id"),
+        config.timezone,
+    )
+    item["content_path"] = str(output)
+    save_markdown(output, item, body, now_iso(config.timezone))
+    return False
+
+
+async def _read_bounded_html(
+    response: httpx.Response,
+    max_bytes: int = _MAX_CONTENT_BYTES,
+) -> bytes:
+    chunks: list[bytes] = []
+    total = 0
+    async for chunk in response.aiter_bytes():
+        total += len(chunk)
+        if total > max_bytes:
+            allowed = len(chunk) - (total - max_bytes)
+            if allowed > 0:
+                chunks.append(chunk[:allowed])
+            break
+        chunks.append(chunk)
+    return b"".join(chunks)
+
+
+async def _extract_http_one(
+    client: httpx.AsyncClient,
+    item: dict[str, Any],
+    config: AppConfig,
+    data_dir: Path,
+) -> bool:
+    """Try a bounded no-script fetch; return True only when Edge may add value."""
+    source = config.source_by_id(str(item["source_id"]))
+    metadata = item.setdefault("metadata", {})
+    if not isinstance(metadata, dict):
+        metadata = {}
+        item["metadata"] = metadata
+    try:
+        async with client.stream("GET", str(item["url"])) as response:
+            content_type = response.headers.get("content-type", "").casefold()
+            if content_type and not any(
+                marker in content_type
+                for marker in ("text/html", "application/xhtml+xml", "text/plain")
+            ):
+                item["content_status"] = ContentStatus.METADATA_ONLY
+                metadata["content_http_status"] = response.status_code
+                metadata["content_error"] = (
+                    f"unsupported content type {content_type.split(';', 1)[0]}"
+                )
+                metadata["content_acquisition"] = "http"
+                return False
+            content = await _read_bounded_html(response)
+            encoding = response.encoding or "utf-8"
+            body_html = content.decode(encoding, errors="replace")
+            return _apply_http_document(
+                item,
+                source,
+                body_html,
+                str(response.url),
+                response.status_code,
+                config,
+                data_dir,
+            )
+    except (httpx.HTTPError, UnicodeError) as exc:
+        item["content_status"] = ContentStatus.FAILED
+        metadata["content_http_error"] = f"{type(exc).__name__}: {exc}"
+        metadata["content_acquisition"] = "http_failed"
+        return True
+
+
+async def _run_http_extraction(
+    targets: list[dict[str, Any]],
+    config: AppConfig,
+    data_dir: Path,
+    *,
+    transport: httpx.AsyncBaseTransport | None = None,
+) -> list[dict[str, Any]]:
+    global_limit = asyncio.Semaphore(
+        max(1, config.browser.collection_global_concurrency)
+    )
+    per_domain = max(1, config.browser.collection_per_domain_concurrency)
+    domain_semaphores: dict[str, asyncio.Semaphore] = {}
+
+    async with httpx.AsyncClient(
+        follow_redirects=True,
+        timeout=max(1, config.browser.http_prefetch_timeout_ms) / 1000,
+        headers={
+            "User-Agent": _HTTP_USER_AGENT,
+            "Accept": "text/html,application/xhtml+xml,text/plain;q=0.8",
+        },
+        transport=transport,
+    ) as client:
+
+        async def guarded(item: dict[str, Any]) -> tuple[dict[str, Any], bool]:
+            domain = _domain_key(str(item.get("url", "")))
+            domain_limit = domain_semaphores.setdefault(
+                domain,
+                asyncio.Semaphore(per_domain),
+            )
+            async with domain_limit, global_limit:
+                return item, await _extract_http_one(client, item, config, data_dir)
+
+        results = await asyncio.gather(*(guarded(item) for item in targets))
+    return [item for item, needs_browser in results if needs_browser]
+
+
 async def detect_challenge(page: Page, http_status: int | None) -> dict[str, Any]:
     title = ""
     body = ""
@@ -148,8 +387,14 @@ async def _extract_one(
             wait_until="domcontentloaded",
             timeout=config.browser.navigation_timeout_ms,
         )
-        await page.wait_for_timeout(source.wait_ms or config.browser.default_wait_ms)
+        wait_ms = source.wait_ms or min(config.browser.default_wait_ms, 1000)
+        with contextlib.suppress(Exception):
+            await page.locator(",".join(source.content_selectors)).first.wait_for(
+                state="attached",
+                timeout=wait_ms,
+            )
         http_status = response.status if response else None
+        metadata["content_acquisition"] = "browser"
         challenge = await detect_challenge(page, http_status)
         if challenge["required"]:
             item["content_status"] = ContentStatus.VERIFICATION_REQUIRED
@@ -189,8 +434,9 @@ async def _extract_one(
             page,
             ['meta[property="og:image"]', 'meta[name="twitter:image"]'],
         )
-        if image_url.startswith(("http://", "https://")):
-            item["image_url"] = image_url
+        resolved_image_url = urljoin(page.url, image_url) if image_url else ""
+        if resolved_image_url.startswith(("http://", "https://")):
+            item["image_url"] = resolved_image_url
         body, selector = await extract_visible_text(page, source.content_selectors)
         if len(body) >= 1500:
             status = ContentStatus.FULL_TEXT
@@ -203,12 +449,11 @@ async def _extract_one(
         metadata["content_selector"] = selector
         metadata["content_http_status"] = http_status
         if body:
-            output = (
-                data_dir
-                / "content"
-                / source.id
-                / str(item["item_id"])
-                / f"{timestamp_slug(config.timezone)}.md"
+            output = _content_output_path(
+                data_dir,
+                source.id,
+                item.get("item_id"),
+                config.timezone,
             )
             item["content_path"] = str(output)
             save_markdown(output, item, body, now_iso(config.timezone))
@@ -270,6 +515,81 @@ async def _extract_with_browser(
             await context.close()
 
 
+def _has_reusable_content(item: dict[str, Any], data_dir: Path) -> bool:
+    if item.get("content_status") not in {
+        ContentStatus.FULL_TEXT,
+        ContentStatus.PARTIAL,
+    }:
+        return False
+    value = item.get("content_path")
+    if not value:
+        return False
+    path = Path(str(value))
+    candidate = path if path.is_absolute() else data_dir / path
+    try:
+        candidate.resolve().relative_to(data_dir.resolve())
+    except ValueError:
+        return False
+    return candidate.is_file()
+
+
+async def _extract_pipeline(
+    targets: list[dict[str, Any]],
+    config: AppConfig,
+    data_dir: Path,
+    headed: bool,
+    profile: Path,
+    channel: str | None,
+) -> dict[str, Any]:
+    started = time.perf_counter()
+    reusable = [item for item in targets if _has_reusable_content(item, data_dir)]
+    for item in reusable:
+        metadata = item.setdefault("metadata", {})
+        if isinstance(metadata, dict):
+            metadata["content_acquisition"] = "cache"
+    reusable_ids = {id(item) for item in reusable}
+    pending = [item for item in targets if id(item) not in reusable_ids]
+
+    http_started = time.perf_counter()
+    browser_targets = (
+        await _run_http_extraction(pending, config, data_dir) if pending else []
+    )
+    http_seconds = time.perf_counter() - http_started
+    browser_started = time.perf_counter()
+    if browser_targets:
+        await _extract_with_browser(
+            browser_targets,
+            config,
+            data_dir,
+            headed,
+            profile,
+            channel,
+        )
+    browser_seconds = time.perf_counter() - browser_started
+    return {
+        "selected": len(targets),
+        "cache_hits": len(reusable),
+        "http_attempted": len(pending),
+        "http_successful": sum(
+            item.get("metadata", {}).get("content_acquisition") == "http"
+            and item.get("content_status")
+            in {ContentStatus.FULL_TEXT, ContentStatus.PARTIAL}
+            for item in pending
+            if isinstance(item.get("metadata"), dict)
+        ),
+        "browser_fallback": len(browser_targets),
+        "successful": sum(
+            item.get("content_status")
+            in {ContentStatus.FULL_TEXT, ContentStatus.PARTIAL}
+            and bool(item.get("content_path"))
+            for item in targets
+        ),
+        "http_seconds": round(http_seconds, 3),
+        "browser_seconds": round(browser_seconds, 3),
+        "total_seconds": round(time.perf_counter() - started, 3),
+    }
+
+
 def extract_content(
     index_path: Path,
     config: AppConfig,
@@ -296,9 +616,19 @@ def extract_content(
     profile = resolve_profile_dir(config, profile_dir)
     profile.mkdir(parents=True, exist_ok=True)
     channel = resolve_browser_channel(config, browser_channel)
-    asyncio.run(_extract_with_browser(targets, config, data_dir, headed, profile, channel))
+    content_metrics = asyncio.run(
+        _extract_pipeline(
+            targets,
+            config,
+            data_dir,
+            headed,
+            profile,
+            channel,
+        )
+    )
     synchronize_nested_items(payload)
     payload["content_updated_at"] = now_iso(config.timezone)
+    payload["content_metrics"] = content_metrics
     payload["derived_from"] = str(index_path.resolve())
     date = str(payload.get("date"))
     edition = str(payload.get("edition"))

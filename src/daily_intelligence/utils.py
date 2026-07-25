@@ -38,6 +38,19 @@ def canonicalize_url(url: str) -> str:
     return urlunsplit((scheme, netloc, path, urlencode(query), ""))
 
 
+def url_for_source_filter(url: str) -> str:
+    """Remove tracking data without changing the URL shape used by source rules."""
+    parts = urlsplit(url.strip())
+    query = [
+        (key, value)
+        for key, value in parse_qsl(parts.query, keep_blank_values=True)
+        if not key.lower().startswith(TRACKING_QUERY_PREFIXES)
+    ]
+    return urlunsplit(
+        (parts.scheme, parts.netloc, parts.path, urlencode(query), "")
+    )
+
+
 def item_id(source_id: str, canonical_url: str) -> str:
     digest = hashlib.sha256(f"{source_id}|{canonical_url}".encode()).hexdigest()[:12]
     return f"{source_id}-{digest}"

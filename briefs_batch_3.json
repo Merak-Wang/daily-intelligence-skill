@@ -1,0 +1,255 @@
+{
+  "batch_id": "brief-batch-3",
+  "briefs": [
+    {
+      "item_id": "bbc_world-43f3192da8f8",
+      "title_zh": "印尼婴儿被贩卖至新加坡，他们的未来何去何从？",
+      "tldr": "至少12名婴儿被从印度尼西亚贩卖至新加坡，但目前他们的去向和安置仍不明确。"
+    },
+    {
+      "item_id": "bbc_world-469b5937cd90",
+      "title_zh": "约旦河西岸枪击事件致四名巴勒斯坦人和两名以色列人死亡",
+      "tldr": "巴勒斯坦方面称村民遭以色列定居者袭击，而以军则表示一名巴勒斯坦人偷走武器并向徒步旅行者开枪，事件共造成4名巴勒斯坦人和2名以色列人死亡。"
+    },
+    {
+      "item_id": "bbc_world-b2b83c4f7a7c",
+      "title_zh": "坦桑尼亚讲师因反政府抗议被捕，被控恐怖主义罪名",
+      "tldr": "该讲师是130多名因策划要求民主改革的抗议活动而被拘留的人员之一，现被指控恐怖主义。"
+    },
+    {
+      "item_id": "bbc_world-3eeb05f3828b",
+      "title_zh": "美国对数十个国家发起新一轮关税措施",
+      "tldr": "美国以强迫劳动担忧为由对多国加征新关税，这些关税取代了此前美国最高法院2月推翻旧关税后实施的临时全球关税。"
+    },
+    {
+      "item_id": "bbc_world-185b68c0bf9b",
+      "title_zh": "南非总统拉马福萨获暂时中止“农场门”弹劾调查",
+      "tldr": "拉马福萨因2020年其私人农场大量现金被盗事件面临审查，现成功争取到暂时中止弹劾调查。"
+    },
+    {
+      "item_id": "bbc_world-e66d399e7c7b",
+      "title_zh": "法国旅游胜地和马德里附近山火蔓延，数万人被疏散",
+      "tldr": "大火已在该地区肆虐数日，当局下令疏散整个费雷角半岛，西班牙马德里附近同样受山火影响，数万名居民和游客被转移。"
+    },
+    {
+      "item_id": "bbc_world-b4382d7a7017",
+      "title_zh": "印度“蟑螂”抗议者与政府举行会谈，僵局仍在持续",
+      "tldr": "会谈发生在活动人士索南·旺楚克宣布结束持续26天的绝食抗议数小时后，抗议活动与政府之间的僵局仍在继续。"
+    },
+    {
+      "item_id": "bbc_world-136727918007",
+      "title_zh": "美伊在海湾地区再次相互打击，局势升级担忧加剧",
+      "tldr": "伊朗谴责美国计划使用冻结的伊朗资产支付战争赔偿，与此同时美国和伊朗在海湾地区进一步发动打击，外界对冲突升级的担忧加剧。"
+    },
+    {
+      "item_id": "bbc_world-f63f7891e681",
+      "title_zh": "韩国科技巨头董事长被判处向前妻支付6.44亿美元离婚赔偿",
+      "tldr": "这起涉及韩国最大企业之一董事长的高调离婚案引发全国广泛关注，法院裁定其向前妻支付6.44亿美元赔偿金。"
+    },
+    {
+      "item_id": "bbc_world-91a1d1e4dc3e",
+      "title_zh": "胡塞武装袭击引发中东冲突扩大担忧及全球经济损害加剧",
+      "tldr": "伊朗支持的也门胡塞武装威胁要在一处重要航运航线上袭击沙特船只，引发外界对更广泛中东冲突以及全球经济进一步受损的担忧。"
+    },
+    {
+      "item_id": "github_trending-d7b09fdf327e",
+      "title_zh": "Harper：离线隐私优先的语法检查工具",
+      "tldr": "Harper是由Automattic开发的离线、隐私优先的语法检查工具，基于Rust构建，速度快且完全开源。"
+    },
+    {
+      "item_id": "hacker_news-209f28bb9d25",
+      "title_zh": "Kaizen #4：全面改造家庭实验室",
+      "tldr": "一篇关于全面改造和优化家庭实验室设置的博客文章，分享了硬件升级与架构调整的经验。"
+    },
+    {
+      "item_id": "hacker_news-1d89616cb0b5",
+      "title_zh": "甲骨文裁员2.1万人以筹集AI投入资金",
+      "tldr": "甲骨文公司宣布裁员2.1万名员工，以释放资金用于加大对人工智能领域的投资。"
+    },
+    {
+      "item_id": "hacker_news-a2a4438385f4",
+      "title_zh": "Patreon宣布裁员20%",
+      "tldr": "创作者赞助平台Patreon宣布将裁减约20%的员工，以调整运营结构。"
+    },
+    {
+      "item_id": "hacker_news-ca2b2c3c92d1",
+      "title_zh": "破折号（em dash）为何令人惊叹",
+      "tldr": "一篇探讨英文破折号（em dash）在写作中独特魅力与用法的文章，展示了这一标点符号不可替代的表达价值。"
+    },
+    {
+      "item_id": "hacker_news-60638c7e5c77",
+      "title_zh": "那些与ISO国家代码重合的编程语言文件扩展名",
+      "tldr": "一篇探讨编程语言文件扩展名恰好与ISO 3166-1二位字母国家代码相重合的有趣现象的文章。"
+    },
+    {
+      "item_id": "hacker_news-eee15cce16e6",
+      "title_zh": "编程为何既令人着迷又令人痛苦？",
+      "tldr": "探讨编程这一职业和爱好的矛盾本质——为何它既带来极致的创造乐趣，又伴随着无尽的挫败感。"
+    },
+    {
+      "item_id": "hacker_news-8a22404bf52c",
+      "title_zh": "我尝试用AI构建一个真正的应用——花了一年时间",
+      "tldr": "作者分享用AI辅助开发真实应用的全过程，揭示AI编程工具在实践中的真实局限与成效，整个过程历时一年。"
+    },
+    {
+      "item_id": "hacker_news-7df9a03257c3",
+      "title_zh": "我的安全摄像头登录页面竟内置了GitHub管理员令牌",
+      "tldr": "安全研究人员发现某品牌安防摄像头的登录页面中嵌入了GitHub管理员访问令牌，暴露出严重的安全隐患。"
+    },
+    {
+      "item_id": "hacker_news-d9789ad96cfa",
+      "title_zh": "IBM PC历史系列（一）：问世",
+      "tldr": "回顾IBM个人电脑诞生历史的首篇专题文章，追溯这款标志性计算机的诞生背景与早期发展。"
+    },
+    {
+      "item_id": "hacker_news-d483fd4a3276",
+      "title_zh": "Game of Trees：OpenBSD团队打造的基于Git的版本控制系统",
+      "tldr": "由OpenBSD社区开发的基于Git的版本控制系统，专注于代码审查和工作树管理。"
+    },
+    {
+      "item_id": "hacker_news-0c59206bf662",
+      "title_zh": "如何阻止“氛围编程”（Vibe Coding）？",
+      "tldr": "探讨当下流行的AI辅助编程方式“Vibe Coding”可能带来的问题，以及如何回归更严谨的软件开发实践。"
+    },
+    {
+      "item_id": "hacker_news-b519f72c0d1d",
+      "title_zh": "伊朗伊斯兰革命卫队声称摧毁了亚马逊巴林数据中心",
+      "tldr": "伊朗伊斯兰革命卫队宣称摧毁了亚马逊位于巴林的数据中心，中东网络与基础设施冲突风险进一步升级。"
+    },
+    {
+      "item_id": "hacker_news-32dae65de560",
+      "title_zh": "Flux 3 X Mimic：下一代视频动作生成模型",
+      "tldr": "Black Forest Labs发布Flux 3 Mimic模型，这是新一代视频动作生成模型，在视频理解和动作生成方面取得重大突破。"
+    },
+    {
+      "item_id": "hacker_news-b2710e520e79",
+      "title_zh": "Buz：基于现代Zig的Bun分支，实现亚秒级增量构建",
+      "tldr": "Buz是JavaScript运行时Bun的一个分支，使用现代Zig语言重写，实现了不到1秒的增量构建速度。"
+    },
+    {
+      "item_id": "hacker_news-b789fda66de5",
+      "title_zh": "德国云服务商Hetzner正在布局LLM推理服务",
+      "tldr": "知名云服务提供商Hetzner正在开发大语言模型推理服务，可能为AI推理市场带来更具性价比的选择。"
+    },
+    {
+      "item_id": "huggingface_papers-036cf36bb350",
+      "title_zh": "AREX：迈向递归自我改进的深度研究智能体",
+      "tldr": "该论文提出AREX框架，旨在构建能够递归地自我改进的AI智能体，用于执行深度研究任务。"
+    },
+    {
+      "item_id": "huggingface_papers-b5397283fed8",
+      "title_zh": "ReferTrack：先指认后跟踪的具身视觉追踪方法",
+      "tldr": "提出ReferTrack框架，通过先指认目标物体再执行跟踪的两阶段策略，解决具身智能体在视觉追踪中的挑战。"
+    },
+    {
+      "item_id": "huggingface_papers-ce299886afc7",
+      "title_zh": "K12-KGraph：面向教育大模型评测与训练的课程对齐知识图谱",
+      "tldr": "该论文构建了与K12课程对齐的知识图谱，用于教育领域大语言模型的基准测试和训练。"
+    },
+    {
+      "item_id": "huggingface_papers-1034144d0218",
+      "title_zh": "视觉对比自蒸馏：一种新的视觉表示学习方法",
+      "tldr": "提出视觉对比自蒸馏方法，结合对比学习和自蒸馏技术以改进视觉模型的表征学习效果。"
+    },
+    {
+      "item_id": "huggingface_papers-a462e8e8773a",
+      "title_zh": "Show, Don’t Tell：通过生成像素而非LLM文本来评估空间认知",
+      "tldr": "该论文提出通过分析生成图像而非文本输出来评估AI模型的空间认知能力，为视觉智能评测提供新思路。"
+    },
+    {
+      "item_id": "nbs_china_releases-390cc3ebbce7",
+      "title_zh": "2026年7月11-20日流通领域重要生产资料市场价格变动情况",
+      "tldr": "国家统计局发布2026年7月中旬流通领域重要生产资料市场价格数据，反映各类生产资料价格波动情况。"
+    },
+    {
+      "item_id": "nvidia_research_publications-fd6787273b97",
+      "title_zh": "GPUArmor：面向GPU的高效可扩展内存安全软硬件协同设计方案",
+      "tldr": "提出GPUArmor框架，通过软硬件协同设计在GPU上实现高效且可扩展的内存安全保障。"
+    },
+    {
+      "item_id": "nvidia_research_publications-d4828d6727b7",
+      "title_zh": "基于文本模型预测控制的大语言模型测试时对齐方法",
+      "tldr": "提出在测试阶段通过文本模型预测控制技术对LLM输出进行对齐的方法，无需重新训练即可优化模型行为。"
+    },
+    {
+      "item_id": "nvidia_research_publications-d18d52d7a833",
+      "title_zh": "SALAD：自适应链路调整技术",
+      "tldr": "提出SALAD（自适应链路调整）方法，用于在无线通信系统中根据实时信道条件动态优化链路参数。"
+    },
+    {
+      "item_id": "nvidia_research_publications-cbdbef5e3420",
+      "title_zh": "RLP：将强化学习作为预训练目标",
+      "tldr": "提出将强化学习目标融入模型预训练阶段的方法，以增强基础模型的决策和推理能力。"
+    },
+    {
+      "item_id": "nvidia_research_publications-ca6b29b4b65e",
+      "title_zh": "TimeOmni-1：利用时间序列激励大语言模型的复杂推理能力",
+      "tldr": "提出TimeOmni-1方法，通过引入时间序列数据来激发和增强大语言模型处理复杂推理任务的能力。"
+    },
+    {
+      "item_id": "nvidia_research_publications-c9eae4715969",
+      "title_zh": "Nemotron-Labs-Diffusion：融合自回归、扩散与自推测解码的三模态语言模型",
+      "tldr": "提出Nemotron-Labs-Diffusion模型，创新性地将自回归、扩散生成和自推测解码三种模式统一在单一语言模型中。"
+    },
+    {
+      "item_id": "the_aviationist-4cf0de2eee21",
+      "title_zh": "意大利空军力挺喷气式教练机作为下一代战斗机飞行员基础训练必备装备",
+      "tldr": "意大利空军在范堡罗航展上表示，其M-345喷气式教练机提供了涡桨教练机无法匹敌的能力，已累计飞行2000小时，全部18架已交付，并在北约演习中成功模拟巡航导弹执行假想敌任务。"
+    },
+    {
+      "item_id": "the_aviationist-85b7add531c9",
+      "title_zh": "美国国会提出“BRRRRT法案”要求保留A-10攻击机至合格替代机型就绪",
+      "tldr": "美国两党议员联合提出“BRRRRT法案”，要求空军在2033财年之前保持A-10机队并维持其基础设施，禁止在获得完全合格的替代机型前退役该机型。"
+    },
+    {
+      "item_id": "the_aviationist-8baa2a939ecc",
+      "title_zh": "西科斯基完成Nomad 100无人机初始飞行测试",
+      "tldr": "西科斯基公司已完成Nomad 100旋翼吹翼垂直起降无人机的初期地面和飞行测试，该项目隶属于DARPA的EVADE（早期垂直起降飞行器演示）计划。"
+    },
+    {
+      "item_id": "the_aviationist-255aef83c7ca",
+      "title_zh": "疑似俄军苏-57战机在莫斯科郊区坠毁",
+      "tldr": "一架军机在莫斯科郊区坠毁，俄罗斯媒体和国防评论员称其为苏-57隐身战斗机，但截至发稿时官方尚未正式确认。坠机现场图片显示浓烟滚滚，但未见明显残骸。"
+    },
+    {
+      "item_id": "yicai_economy-a16e3ecd3faf",
+      "title_zh": null,
+      "tldr": "浙江多家银行近期密集下调存款利率，引发市场对货币政策走向和银行负债成本变化的广泛关注。"
+    },
+    {
+      "item_id": "yicai_economy-3accc7d575c5",
+      "title_zh": null,
+      "tldr": "数百万外卖骑手即将用上“等灯停表”功能，探讨算法计时能否通过技术手段为骑手减轻配送时间压力。"
+    },
+    {
+      "item_id": "yicai_economy-084c03e98feb",
+      "title_zh": null,
+      "tldr": "湖北入境旅游外籍人员同比增长20%，该省文旅部门正加速推进国际旅游推广和文化“出海”战略。"
+    },
+    {
+      "item_id": "yicai_economy-c6fe8f3fde0b",
+      "title_zh": null,
+      "tldr": "报告显示中国算力总规模位居全球第二，互联网、运营商等领域对AI服务器需求强劲，五大细分赛道增势明确。"
+    },
+    {
+      "item_id": "yicai_economy-045ecec4cc91",
+      "title_zh": null,
+      "tldr": "已卸任中国证监会副主席两年的方星海被有关部门调查，引发资本市场广泛关注。"
+    },
+    {
+      "item_id": "yicai_economy-16368bea72db",
+      "title_zh": null,
+      "tldr": "上海十二届市委九次全会审议通过重磅文件，贯彻落实习近平总书记考察上海重要讲话精神和重要指示要求。"
+    },
+    {
+      "item_id": "yicai_economy-3e44fa0c0b6d",
+      "title_zh": null,
+      "tldr": "小鹏汽车旗下人形机器人已开启小批量试生产阶段，标志着其在具身智能领域的商业化进程迈出重要一步。"
+    },
+    {
+      "item_id": "yicai_economy-d2ac5ef3827c",
+      "title_zh": null,
+      "tldr": "今年高考中，有考生以695分放弃清华北大选择上海交通大学，多所“小而精”特色大学录取分数线超过传统985高校。"
+    }
+  ]
+}

@@ -35,6 +35,14 @@ def write_text_atomic(path: Path, text: str) -> Path:
     return path
 
 
+def write_bytes_atomic(path: Path, content: bytes) -> Path:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix(path.suffix + ".tmp")
+    tmp.write_bytes(content)
+    tmp.replace(path)
+    return path
+
+
 @contextmanager
 def exclusive_lock(path: Path, payload: dict) -> Iterator[None]:
     path.parent.mkdir(parents=True, exist_ok=True)
