@@ -93,7 +93,7 @@ Hermes 运行时也会读取 Hermes Home 下的 `.env`。仓库内的 `.env` 已
 - 晨报创建或复用当日页面，并追加晨报内容。
 - 晚报复用同一日期页面，追加晚报内容并更新属性。
 - 本地发布登记用于断点续传和避免重复追加。
-- 每条新闻按“链接标题 → 图片（若有）→ 中文标题 → 发布时间/采集时间 → TL;DR”纵向排列。
+- 每条新闻按“链接原题 → 图片（若有）→ 目标语言译题（需要时）→ 发布时间/采集时间 → TL;DR”纵向排列；栏目、标签和反馈区跟随报告的 `zh-CN` 或 `en`。
 - 本地图片通过 File Upload API 以 `multipart/form-data` 上传，再用 `file_upload` ID 写入图片块；同一 SHA-256 在断点续传时复用。项目单图上限 8 MiB，低于 Notion 单段直传的 20 MB 上限。
 - 图片上传失败时在 `publishing/notion-registry.json` 记录错误，并使用已经验证过的公开原图 URL 作为视觉降级；文字、链接与时间仍照常发布。Notion 完整发布失败不会修改本地报告。
 - 若旧版已发布为纯文字而新 revision 已补齐本地图片，运行 `daily-intel --data-dir DATA_DIR backfill-notion-images REPORT.json`。该命令按原文链接匹配当版新闻块，只追加缺失图片并可重复执行，不会复制整份晨报或改写用户编辑的文字。

@@ -14,13 +14,22 @@ from zoneinfo import ZoneInfo
 from jsonschema import Draft202012Validator, FormatChecker
 
 from .config import canonical_source_page_url, project_root
+from .localization import (
+    OUTPUT_LANGUAGES,
+    is_chinese_output,
+    localized,
+    source_matches_output_language,
+    text_matches_output_language,
+    translated_title,
+    translated_title_field,
+)
 from .semantics import reusable_semantic_brief, semantic_fingerprint
 from .taxonomy import (
     SECTION_ID_ALIASES_V15,
     SECTION_ORDER_V13,
-    SECTION_TITLES_V13,
     canonical_section_id,
     required_section_ids,
+    section_titles,
     validate_content_taxonomy,
 )
 from .utils import canonicalize_url, now_iso, read_json
@@ -66,7 +75,7 @@ _NUMERIC_SCENARIO_PATTERN = re.compile(
     r"(?:\d+(?:\.\d+)?\s*%|[$¥￥]\s*\d|\d+(?:\.\d+)?\s*(?:美元|元|亿|万亿)|"
     r"\d+(?:\.\d+)?\s*[-—–至]\s*\d+(?:\.\d+)?)"
 )
-_LANGUAGE_MARKER_PATTERN = re.compile(r"^\s*\[(?:英|英文|EN)\]\s*", re.I)
+_LANGUAGE_MARKER_PATTERN = re.compile(r"^\s*\[(?:英|英文|EN|中|中文|ZH)\]\s*", re.I)
 _TRANSLATION_PREFIX_PATTERN = re.compile(
     r"^\s*(?:\[[^\]\r\n]{1,40}\]|【[^】\r\n]{1,40}】)\s*[:：-]?\s*"
 )
@@ -81,8 +90,21 @@ _TLDR_BOILERPLATE_PATTERNS = (
     re.compile(r"正文尚未读取.{0,80}(?:原文链接|完整内容)"),
     re.compile(r"仅依据标题(?:和|与)?(?:来源信息|元数据)?.*记录"),
     re.compile(r"关于.{0,100}(?:详细报道|相关报道)"),
+    re.compile(r"^\s*source\s*:", re.I),
+    re.compile(r"^\s*(?:see|read)\s+(?:the\s+)?(?:original|source|link)", re.I),
+    re.compile(r"^\s*(?:summary|article body)\s+(?:is\s+)?(?:unavailable|not fetched)", re.I),
+    re.compile(r"^\s*based only on (?:the )?(?:title|metadata)", re.I),
 )
-_UNREAD_BODY_MARKERS = ("未读取正文", "正文尚未读取", "仅依据标题", "仅依据元数据")
+_UNREAD_BODY_MARKERS = (
+    "未读取正文",
+    "正文尚未读取",
+    "仅依据标题",
+    "仅依据元数据",
+    "body was not read",
+    "body not fetched",
+    "based only on the title",
+    "based only on metadata",
+)
 _REPORT_REVISION_PATTERN = re.compile(r"^(.+)-r\d+$")
 EVALUATION_DIMENSIONS = {
     "coverage",
@@ -201,56 +223,90 @@ def reference_time_fields(
     return {"collected_at": collected_at} if collected_at else {}
 
 
-def reference_time_label(ref: dict[str, Any]) -> tuple[str, str] | None:
+def reference_time_label(
+    ref: dict[str, Any],
+    output_language: object = "zh-CN",
+) -> tuple[str, str] | None:
     """Select the user-facing timestamp label, preferring actual publication time."""
     published_at = str(ref.get("published_at") or "").strip()
     if published_at:
-        return "发布时间", published_at
+        return localized(output_language, "发布时间", "Published"), published_at
     collected_at = str(ref.get("collected_at") or "").strip()
     if collected_at:
-        return "采集时间", collected_at
+        return localized(output_language, "采集时间", "Collected"), collected_at
     return None
 
 
-def _require_chinese(value: object, location: str, errors: list[str]) -> None:
-    if isinstance(value, str) and value.strip() and not _CJK_PATTERN.search(value):
-        errors.append(f"{location}: published user-facing text must contain Chinese")
+def _require_output_language(
+    value: object,
+    location: str,
+    errors: list[str],
+    language: object = "zh-CN",
+) -> None:
+    if isinstance(value, str) and value.strip() and not text_matches_output_language(
+        value, language
+    ):
+        name = localized(language, "Chinese", "English")
+        errors.append(f"{location}: published user-facing text must contain {name}")
 
 
-def _normalize_brief_title(brief: dict[str, Any], indexed: dict[str, Any]) -> None:
-    """Keep the indexed headline verbatim and preserve an authored Chinese translation."""
+def _normalize_brief_title(
+    brief: dict[str, Any],
+    indexed: dict[str, Any],
+    output_language: object,
+) -> None:
+    """Keep the indexed headline verbatim and one target-language translation."""
     original_title = str(indexed.get("title") or "").strip()
     if not original_title:
         return
+    translation_field = translated_title_field(output_language)
+    other_field = "title_en" if translation_field == "title_zh" else "title_zh"
     drafted_title = _LANGUAGE_MARKER_PATTERN.sub(
         "", str(brief.get("title") or "").strip()
     )
     drafted_translation = _TRANSLATION_PREFIX_PATTERN.sub(
-        "", str(brief.get("title_zh") or "").strip()
+        "", str(brief.get(translation_field) or "").strip()
     )
     brief["title"] = original_title
-    if _CJK_PATTERN.search(original_title):
-        brief.pop("title_zh", None)
+    brief.pop(other_field, None)
+    source_language = (
+        indexed.get("metadata", {}).get("language")
+        if isinstance(indexed.get("metadata"), dict)
+        else None
+    )
+    if source_matches_output_language(
+        source_language, original_title, output_language
+    ):
+        brief.pop(translation_field, None)
         return
-    if not _CJK_PATTERN.search(drafted_translation) and _CJK_PATTERN.search(drafted_title):
+    if not text_matches_output_language(
+        drafted_translation, output_language
+    ) and text_matches_output_language(drafted_title, output_language):
         drafted_translation = drafted_title
-    if _CJK_PATTERN.search(drafted_translation):
-        brief["title_zh"] = drafted_translation
+    if text_matches_output_language(drafted_translation, output_language):
+        brief[translation_field] = drafted_translation
     else:
-        brief.pop("title_zh", None)
+        brief.pop(translation_field, None)
 
 
-def _tldr_quality_issue(value: object, title: str) -> str | None:
+def _tldr_quality_issue(
+    value: object,
+    title: str,
+    output_language: object = "zh-CN",
+) -> str | None:
     if not isinstance(value, str) or not value.strip():
         return "TL;DR is empty"
     text = value.strip()
     for pattern in _TLDR_BOILERPLATE_PATTERNS:
         if pattern.search(text):
-            return "TL;DR is boilerplate instead of a Chinese summary of observed content"
-    if len(_CJK_PATTERN.findall(text)) < 4:
+            return (
+                "TL;DR is boilerplate instead of a "
+                f"{localized(output_language, 'Chinese', 'English')} summary of observed content"
+            )
+    if not text_matches_output_language(text, output_language, minimum_units=4):
         return (
-            "TL;DR must contain a substantive Chinese sentence, not an English abstract "
-            "with a Chinese prefix"
+            "TL;DR must contain a substantive "
+            f"{localized(output_language, 'Chinese', 'English')} sentence"
         )
     normalized_text = re.sub(r"[\s\W_]+", "", text)
     normalized_title = re.sub(r"[\s\W_]+", "", title)
@@ -316,7 +372,9 @@ def hydrate_report_evidence(report: dict, index: dict | None) -> None:
             indexed = items.get(brief.get("item_id"), {})
             if not indexed:
                 continue
-            _normalize_brief_title(brief, indexed)
+            _normalize_brief_title(
+                brief, indexed, report.get("language") or "zh-CN"
+            )
             source = sources.get(indexed.get("source_id"), {})
             ref = brief.setdefault("source_ref", {})
             for key, value in (
@@ -399,7 +457,13 @@ def _allocate_importance(total: int, freshness_cap: int) -> tuple[int, dict[str,
     return total, result
 
 
-def _source_rank_label(source_id: str, rank: int) -> str:
+def _source_rank_label(source_id: str, rank: int, output_language: object) -> str:
+    if not is_chinese_output(output_language):
+        if source_id == "weibo_hot":
+            return f"Trending #{rank}"
+        if source_id in {"hacker_news", "lobsters", "github_trending"}:
+            return f"List #{rank}"
+        return f"Source #{rank}"
     if source_id == "weibo_hot":
         return f"热搜Top{rank}"
     if source_id in {"hacker_news", "lobsters", "github_trending"}:
@@ -407,7 +471,10 @@ def _source_rank_label(source_id: str, rank: int) -> str:
     return f"来源Top{rank}"
 
 
-def _pending_from_index(index: dict) -> list[dict[str, str]]:
+def _pending_from_index(
+    index: dict,
+    output_language: object = "zh-CN",
+) -> list[dict[str, str]]:
     pending: list[dict[str, str]] = []
     seen: set[tuple[str, str]] = set()
     for source in index.get("sources", []):
@@ -456,11 +523,23 @@ def _pending_from_index(index: dict) -> list[dict[str, str]]:
             seen.add((source_id, url))
             status = str(page.get("status"))
             if status == "rate_limited":
-                note = "来源暂时限制访问；本版保留链接，停止自动重试并等待后续时段"
+                note = localized(
+                    output_language,
+                    "来源暂时限制访问；本版保留链接，停止自动重试并等待后续时段",
+                    "The source is rate-limiting access; the link is retained for a later run.",
+                )
             elif status == "verification_required":
-                note = "需要人工验证；可从验证链接队列打开"
+                note = localized(
+                    output_language,
+                    "需要人工验证；可从验证链接队列打开",
+                    "Manual verification is required; open it from the verification queue.",
+                )
             else:
-                note = "采集失败；保留链接供人工打开"
+                note = localized(
+                    output_language,
+                    "采集失败；保留链接供人工打开",
+                    "Collection failed; the link is retained for manual review.",
+                )
             pending.append(
                 {
                     "source_id": source_id,
@@ -564,16 +643,34 @@ def compile_report_data(
         return warnings
     report.setdefault("date", index.get("date"))
     report.setdefault("edition", index.get("edition"))
-    edition_label = "晚报" if report.get("edition") == "evening" else "晨报"
+    output_language = str(
+        report.get("language") or index.get("output_language") or "zh-CN"
+    )
+    report["language"] = output_language
+    edition_label = localized(
+        output_language,
+        "晚报" if report.get("edition") == "evening" else "晨报",
+        "Evening Brief" if report.get("edition") == "evening" else "Morning Brief",
+    )
     if not report.get("title"):
-        report["title"] = f"每日情报{edition_label} — {report.get('date', '')}"
+        report["title"] = localized(
+            output_language,
+            f"每日情报{edition_label} — {report.get('date', '')}",
+            f"Daily Intelligence {edition_label} — {report.get('date', '')}",
+        )
         warnings.append("missing draft title was filled with the deterministic report title")
     summary = report.get("executive_summary")
     if isinstance(summary, str):
         report["executive_summary"] = [summary]
         warnings.append("executive_summary string was normalized to an array")
     elif not isinstance(summary, list):
-        report["executive_summary"] = ["本版重点见以下资讯、技术与研判。"]
+        report["executive_summary"] = [
+            localized(
+                output_language,
+                "本版重点见以下资讯、技术与研判。",
+                "This edition's key developments and analysis follow.",
+            )
+        ]
         warnings.append("missing executive_summary was filled with a neutral fallback")
     report["analyses"], analysis_warnings = _normalize_draft_analyses(
         report.get("analyses")
@@ -581,7 +678,6 @@ def compile_report_data(
     warnings.extend(analysis_warnings)
     provided_sections, section_warnings = _normalize_draft_sections(report.get("sections"))
     warnings.extend(section_warnings)
-    report["language"] = "zh-CN"
     report["generated_at"] = now_iso(str(index.get("timezone", "Asia/Shanghai")))
     report["evaluation_status"] = "pending"
     if report.get("schema_version") == "2.0":
@@ -589,7 +685,7 @@ def compile_report_data(
     report.pop("quality_evaluation", None)
     report.setdefault("changes", [])
     report.setdefault("tomorrow_watch_items", [])
-    report["pending_verifications"] = _pending_from_index(index)
+    report["pending_verifications"] = _pending_from_index(index, output_language)
 
     sources = {
         str(row.get("source_id")): row
@@ -623,7 +719,9 @@ def compile_report_data(
             target = int(policy.get("report_target", 0)) if isinstance(policy, dict) else 0
             if item_id in existing_ids or source_counts[source_id] >= target:
                 continue
-            cached = reusable_semantic_brief(indexed, semantic_cache)
+            cached = reusable_semantic_brief(
+                indexed, semantic_cache, output_language
+            )
             if not cached:
                 continue
             section_id = canonical_section_id(
@@ -765,7 +863,7 @@ def compile_report_data(
                 "id": section_id,
                 "module": module,
                 "category": category,
-                "title": SECTION_TITLES_V13[section_id],
+                "title": section_titles(output_language)[section_id],
             }
         )
         section.setdefault("briefs", [])
@@ -789,7 +887,7 @@ def compile_report_data(
             if not ref:
                 continue
             indexed = indexed_items[item_id]
-            _normalize_brief_title(brief, indexed)
+            _normalize_brief_title(brief, indexed, output_language)
             source_id = str(indexed.get("source_id", ""))
             source = sources.get(source_id, {})
             brief["source_ref"] = ref
@@ -801,7 +899,9 @@ def compile_report_data(
             }
             rank = item_ranks.get(item_id, 1)
             brief["source_rank"] = rank
-            brief["source_rank_label"] = _source_rank_label(source_id, rank)
+            brief["source_rank_label"] = _source_rank_label(
+                source_id, rank, output_language
+            )
             published = _publication_date(
                 indexed.get("published_at"),
                 str(index.get("timezone", "Asia/Shanghai")),
@@ -866,7 +966,12 @@ def compile_report_data(
             event["importance_breakdown"] = breakdown
             event.setdefault(
                 "importance_reason",
-                "内部相对排序由生成 Agent 给出，分项由 Python 按约束归一化。",
+                localized(
+                    output_language,
+                    "内部相对排序由生成 Agent 给出，分项由 Python 按约束归一化。",
+                    "The authoring model supplied the relative rank; Python normalized the "
+                    "component scores under the report constraints.",
+                ),
             )
             event.setdefault("evidence_notes", [])
             event.setdefault("tags", [])
@@ -877,10 +982,14 @@ def compile_report_data(
             ):
                 confidence = min(confidence, 0.65)
                 disclosure = " ".join(str(note) for note in event["evidence_notes"])
-                markers = ("未读取正文", "公开摘要", "仅依据标题", "仅依据元数据")
-                if not any(marker in disclosure for marker in markers):
+                if not any(marker in disclosure for marker in _UNREAD_BODY_MARKERS):
                     event["evidence_notes"].append(
-                        "未读取正文，仅依据索引标题或公开摘要；未补写不可见内容。"
+                        localized(
+                            output_language,
+                            "未读取正文，仅依据索引标题或公开摘要；未补写不可见内容。",
+                            "The article body was not read; this item uses only the indexed "
+                            "headline or public abstract and adds no unseen details.",
+                        )
                     )
             event["confidence"] = confidence
             if event.get("status") == "NEW" and raw_newest_age not in {0, 1}:
@@ -894,7 +1003,14 @@ def compile_report_data(
             reverse=True,
         )
         if not section["items"] and not section["briefs"]:
-            section.setdefault("coverage_note", "本时段未收集到可展示内容。")
+            section.setdefault(
+                "coverage_note",
+                localized(
+                    output_language,
+                    "本时段未收集到可展示内容。",
+                    "No publishable items were collected in this window.",
+                ),
+            )
         compiled_sections.append(section)
     report["sections"] = compiled_sections
 
@@ -1077,10 +1193,11 @@ def validate_report_data(
     source_group_contract = schema_version in {"1.4", "1.5", "2.0"}
     brief_contract = schema_version in BRIEF_REPORT_SCHEMAS
     analysis_v2_contract = schema_version == "2.0"
+    output_language = str(report.get("language") or "zh-CN")
 
-    def require_chinese(value: object, location: str) -> None:
+    def require_output_language(value: object, location: str) -> None:
         if strict_contract:
-            _require_chinese(value, location, errors)
+            _require_output_language(value, location, errors, output_language)
 
     def require_reference_time(ref: dict[str, Any], location: str) -> None:
         if not brief_contract:
@@ -1096,11 +1213,14 @@ def validate_report_data(
                 f"{location}: keep published_at only when available; collected_at is fallback-only"
             )
 
-    if strict_contract and report.get("language") != "zh-CN":
-        errors.append(f"language: schema_version {schema_version} requires 'zh-CN'")
-    require_chinese(report.get("title"), "title")
+    if strict_contract and output_language not in OUTPUT_LANGUAGES:
+        errors.append(
+            f"language: schema_version {schema_version} requires one of "
+            f"{list(OUTPUT_LANGUAGES)}"
+        )
+    require_output_language(report.get("title"), "title")
     for summary_index, summary in enumerate(report.get("executive_summary", [])):
-        require_chinese(summary, f"executive_summary[{summary_index}]")
+        require_output_language(summary, f"executive_summary[{summary_index}]")
     known_items: dict[str, dict] = {}
     source_aliases: dict[str, set[str]] = {}
     if isinstance(index, dict):
@@ -1169,11 +1289,14 @@ def validate_report_data(
         if section["id"] in section_ids:
             errors.append(f"{prefix}: duplicate section id {section['id']!r}")
         section_ids.add(section["id"])
-        require_chinese(section.get("title"), f"{prefix}.title")
-        if daily_contract and section.get("title") != SECTION_TITLES_V13.get(section["id"]):
+        require_output_language(section.get("title"), f"{prefix}.title")
+        expected_section_titles = section_titles(output_language)
+        if daily_contract and section.get("title") != expected_section_titles.get(
+            section["id"]
+        ):
             errors.append(
                 f"{prefix}.title: schema {schema_version} requires "
-                f"{SECTION_TITLES_V13.get(section['id'])!r} for {section['id']!r}"
+                f"{expected_section_titles.get(section['id'])!r} for {section['id']!r}"
             )
         briefs = section.get("briefs", []) if brief_contract else []
         if brief_contract and "briefs" not in section:
@@ -1185,7 +1308,7 @@ def validate_report_data(
             if not note:
                 errors.append(f"{prefix}: empty section requires coverage_note")
             else:
-                require_chinese(note, f"{prefix}.coverage_note")
+                require_output_language(note, f"{prefix}.coverage_note")
 
         importance_values = [item["importance"] for item in section["items"]]
         if importance_values != sorted(importance_values, reverse=True):
@@ -1201,8 +1324,12 @@ def validate_report_data(
             if item_id in brief_item_ids:
                 errors.append(f"{brief_prefix}: duplicate item_id {item_id}")
             brief_item_ids.add(item_id)
-            require_chinese(brief.get("tldr"), f"{brief_prefix}.tldr")
-            if issue := _tldr_quality_issue(brief.get("tldr"), str(brief.get("title", ""))):
+            require_output_language(brief.get("tldr"), f"{brief_prefix}.tldr")
+            if issue := _tldr_quality_issue(
+                brief.get("tldr"),
+                str(brief.get("title", "")),
+                output_language,
+            ):
                 errors.append(f"{brief_prefix}.tldr: {issue}; item_id={item_id}")
             primary = brief.get("primary_source", {})
             source_id = str(primary.get("id", ""))
@@ -1229,19 +1356,41 @@ def validate_report_data(
             indexed_title = str(indexed.get("title") or "")
             if indexed_title and brief.get("title") != indexed_title:
                 errors.append(f"{brief_prefix}.title must preserve the indexed original headline")
-            title_zh = str(brief.get("title_zh") or "").strip()
-            if indexed_title and not _CJK_PATTERN.search(indexed_title):
-                if not title_zh or not _CJK_PATTERN.search(title_zh):
+            translation_field = translated_title_field(output_language)
+            translated = translated_title(brief, output_language)
+            other_translation_field = (
+                "title_en" if translation_field == "title_zh" else "title_zh"
+            )
+            source_language = (
+                indexed.get("metadata", {}).get("language")
+                if isinstance(indexed.get("metadata"), dict)
+                else None
+            )
+            original_matches_target = source_matches_output_language(
+                source_language, indexed_title, output_language
+            )
+            if indexed_title and not original_matches_target:
+                if not text_matches_output_language(
+                    translated, output_language, minimum_units=2
+                ):
                     errors.append(
-                        f"{brief_prefix}.title_zh: non-Chinese headline requires a Chinese "
+                        f"{brief_prefix}.{translation_field}: headline outside the output "
+                        f"language requires a {localized(output_language, 'Chinese', 'English')} "
                         f"translation on the following line; item_id={item_id}"
                     )
-                elif _LANGUAGE_MARKER_PATTERN.match(title_zh):
-                    errors.append(f"{brief_prefix}.title_zh: remove the [英]/[EN] marker")
-            elif indexed_title and title_zh:
+                elif _LANGUAGE_MARKER_PATTERN.match(translated):
+                    errors.append(
+                        f"{brief_prefix}.{translation_field}: remove the language marker"
+                    )
+            elif indexed_title and translated:
                 errors.append(
-                    f"{brief_prefix}.title_zh: omit the redundant translation for a "
-                    "Chinese headline"
+                    f"{brief_prefix}.{translation_field}: omit the redundant translation "
+                    "when the original headline already matches the output language"
+                )
+            if brief.get(other_translation_field):
+                errors.append(
+                    f"{brief_prefix}.{other_translation_field}: remove the translation for "
+                    "the inactive output language"
                 )
             if indexed.get("source_id") and source_id != str(indexed.get("source_id", "")):
                 errors.append(f"{brief_prefix}.primary_source.id does not match indexed source")
@@ -1280,10 +1429,14 @@ def validate_report_data(
                 errors.append(f"{item_prefix}: duplicate event_id {event_id}")
             event_ids.add(event_id)
             for field in ("title", "tldr", "why_it_matters", "importance_reason"):
-                require_chinese(item.get(field), f"{item_prefix}.{field}")
+                require_output_language(item.get(field), f"{item_prefix}.{field}")
             if _LANGUAGE_MARKER_PATTERN.match(str(item.get("title", ""))):
                 errors.append(f"{item_prefix}.title: remove the [英]/[EN] marker")
-            if issue := _tldr_quality_issue(item.get("tldr"), str(item.get("title", ""))):
+            if issue := _tldr_quality_issue(
+                item.get("tldr"),
+                str(item.get("title", "")),
+                output_language,
+            ):
                 errors.append(f"{item_prefix}.tldr: {issue}")
             if source_group_contract:
                 primary = item.get("primary_source")
@@ -1299,9 +1452,13 @@ def validate_report_data(
                         errors.append(f"{item_prefix}.primary_source.url: invalid URL")
                 image = item.get("image")
                 if isinstance(image, dict):
-                    require_chinese(image.get("caption"), f"{item_prefix}.image.caption")
+                    require_output_language(
+                        image.get("caption"), f"{item_prefix}.image.caption"
+                    )
             for note_index, note in enumerate(item.get("evidence_notes", [])):
-                require_chinese(note, f"{item_prefix}.evidence_notes[{note_index}]")
+                require_output_language(
+                    note, f"{item_prefix}.evidence_notes[{note_index}]"
+                )
 
             score = item["importance_breakdown"]
             calculated = sum(score.values())
@@ -1402,8 +1559,7 @@ def validate_report_data(
                 access in {"metadata_only", "verification_required"} for access in access_levels
             ):
                 disclosure = " ".join(str(note) for note in item.get("evidence_notes", []))
-                markers = ("未读取正文", "公开摘要", "仅依据标题", "仅依据元数据")
-                if not any(marker in disclosure for marker in markers):
+                if not any(marker in disclosure for marker in _UNREAD_BODY_MARKERS):
                     errors.append(
                         f"{item_prefix}.evidence_notes: metadata-only evidence must disclose "
                         "that the body was not read or that only a public abstract/title was used"
@@ -1558,11 +1714,15 @@ def validate_report_data(
     analyzed_event_ids: set[str] = set()
     for analysis_index, analysis in enumerate(report["analyses"]):
         analysis_prefix = f"analyses[{analysis_index}]"
-        require_chinese(analysis.get("claim"), f"{analysis_prefix}.claim")
-        require_chinese(analysis.get("reasoning"), f"{analysis_prefix}.reasoning")
+        require_output_language(analysis.get("claim"), f"{analysis_prefix}.claim")
+        require_output_language(
+            analysis.get("reasoning"), f"{analysis_prefix}.reasoning"
+        )
         if source_group_contract:
             for field in ("narrative", "dialectical_analysis", "historical_context"):
-                require_chinese(analysis.get(field), f"{analysis_prefix}.{field}")
+                require_output_language(
+                    analysis.get(field), f"{analysis_prefix}.{field}"
+                )
                 if not analysis.get(field):
                     errors.append(
                         f"{analysis_prefix}.{field}: required by schema_version {schema_version}"
@@ -1580,7 +1740,7 @@ def validate_report_data(
                 )
             for position_index, position in enumerate(positions):
                 for field in ("stakeholder", "position", "interests"):
-                    require_chinese(
+                    require_output_language(
                         position.get(field),
                         f"{analysis_prefix}.stakeholder_positions[{position_index}].{field}",
                     )
@@ -1594,7 +1754,9 @@ def validate_report_data(
             "invalidation_signals",
         ):
             for value_index, value in enumerate(analysis.get(field, [])):
-                require_chinese(value, f"{analysis_prefix}.{field}[{value_index}]")
+                require_output_language(
+                    value, f"{analysis_prefix}.{field}[{value_index}]"
+                )
         if strict_contract:
             for field in ("facts", "reasoning", "scenarios", "actions", "invalidation_signals"):
                 if not analysis.get(field):
@@ -1614,7 +1776,7 @@ def validate_report_data(
                         f"{analysis_prefix}.{field}: required by analysis protocol 2.0"
                     )
                 else:
-                    require_chinese(value, f"{analysis_prefix}.{field}")
+                    require_output_language(value, f"{analysis_prefix}.{field}")
             for field in ("causal_chain", "assumptions", "evidence_gaps"):
                 values = analysis.get(field, [])
                 minimum = 2 if field == "causal_chain" else 1
@@ -1625,7 +1787,7 @@ def validate_report_data(
                     )
                     continue
                 for value_index, value in enumerate(values):
-                    require_chinese(
+                    require_output_language(
                         value, f"{analysis_prefix}.{field}[{value_index}]"
                     )
         if daily_contract:
@@ -1676,7 +1838,9 @@ def validate_report_data(
                     "must state their source or explicitly identify them as scenario assumptions"
                 )
             else:
-                require_chinese(scenario_basis, f"{analysis_prefix}.scenario_basis")
+                require_output_language(
+                    scenario_basis, f"{analysis_prefix}.scenario_basis"
+                )
         analyzed_event_ids.update(analysis["evidence_event_ids"])
         if not analysis["watch_signals"]:
             warnings.append(f"analyses[{analysis_index}] has no watch_signals")
@@ -1730,7 +1894,7 @@ def validate_report_data(
                     "cross_perspective_synthesis.overall_judgment: required"
                 )
             else:
-                require_chinese(
+                require_output_language(
                     overall, "cross_perspective_synthesis.overall_judgment"
                 )
             for field, minimum in (
@@ -1747,7 +1911,7 @@ def validate_report_data(
                     )
                     continue
                 for value_index, value in enumerate(values):
-                    require_chinese(
+                    require_output_language(
                         value,
                         f"cross_perspective_synthesis.{field}[{value_index}]",
                     )
@@ -1769,7 +1933,7 @@ def validate_report_data(
                         if not tension.get(field):
                             errors.append(f"{prefix}.{field}: required")
                         else:
-                            require_chinese(
+                            require_output_language(
                                 tension[field], f"{prefix}.{field}"
                             )
                     tension_perspectives = tension.get("perspectives", [])
@@ -1784,7 +1948,7 @@ def validate_report_data(
                         for perspective_index, perspective in enumerate(
                             tension_perspectives
                         ):
-                            require_chinese(
+                            require_output_language(
                                 perspective,
                                 f"{prefix}.perspectives[{perspective_index}]",
                             )
@@ -1805,9 +1969,9 @@ def validate_report_data(
                     f"{unknown_synthesis_events}"
                 )
     for change_index, change in enumerate(report.get("changes", [])):
-        require_chinese(change, f"changes[{change_index}]")
+        require_output_language(change, f"changes[{change_index}]")
     for watch_index, watch in enumerate(report.get("tomorrow_watch_items", [])):
-        require_chinese(watch, f"tomorrow_watch_items[{watch_index}]")
+        require_output_language(watch, f"tomorrow_watch_items[{watch_index}]")
     if daily_contract and report["edition"] == "evening":
         if not report.get("changes"):
             errors.append(
@@ -1821,7 +1985,9 @@ def validate_report_data(
                 "next-day watch items"
             )
     for pending_index, pending in enumerate(report.get("pending_verifications", [])):
-        require_chinese(pending.get("note"), f"pending_verifications[{pending_index}].note")
+        require_output_language(
+            pending.get("note"), f"pending_verifications[{pending_index}].note"
+        )
         if source_group_contract and urlsplit(str(pending.get("url", ""))).scheme not in {
             "http",
             "https",
@@ -1845,13 +2011,15 @@ def validate_report_data(
             if len(scores) == 9 and evaluation.get("total_score") != sum(scores):
                 errors.append("quality_evaluation.total_score: must equal dimension score sum")
             for dimension_index, dimension in enumerate(dimensions):
-                require_chinese(
+                require_output_language(
                     dimension.get("finding"),
                     f"quality_evaluation.dimensions[{dimension_index}].finding",
                 )
             for field in ("main_defects", "insufficient_evidence", "improvements"):
                 for value_index, value in enumerate(evaluation.get(field, [])):
-                    require_chinese(value, f"quality_evaluation.{field}[{value_index}]")
+                    require_output_language(
+                        value, f"quality_evaluation.{field}[{value_index}]"
+                    )
             if evaluation.get("evaluated_report_id") != report.get("report_id"):
                 errors.append("quality_evaluation.evaluated_report_id must match report_id")
             if (
@@ -1927,14 +2095,24 @@ def validate_evaluation_data(evaluation: object, report: object) -> list[str]:
     elif evaluation.get("total_score") != sum(scores):
         errors.append("total_score must equal the sum of all dimension scores")
     for position, dimension in enumerate(dimensions):
-        _require_chinese(dimension.get("finding"), f"dimensions[{position}].finding", errors)
+        _require_output_language(
+            dimension.get("finding"),
+            f"dimensions[{position}].finding",
+            errors,
+            report.get("language") or "zh-CN",
+        )
     for field in ("main_defects", "insufficient_evidence", "improvements"):
         values = evaluation.get(field)
         if not isinstance(values, list):
             errors.append(f"{field} must be an array")
             continue
         for position, value in enumerate(values):
-            _require_chinese(value, f"{field}[{position}]", errors)
+            _require_output_language(
+                value,
+                f"{field}[{position}]",
+                errors,
+                report.get("language") or "zh-CN",
+            )
     if evaluation.get("continuity_decision") not in {"accept", "selective", "reject"}:
         errors.append("continuity_decision must be accept, selective, or reject")
     excluded = evaluation.get("exclude_from_continuity", [])

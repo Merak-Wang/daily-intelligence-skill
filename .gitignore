@@ -16,6 +16,7 @@ htmlcov/
 playwright-report/
 test-results/
 blob-report/
+/output/
 
 # Virtual environments and packaging
 .venv/
@@ -57,6 +58,7 @@ raw_html/
 
 # Local agent and editor state
 /.agents/
+/.code-review-graph/
 /.codex/
 .idea/
 .vscode/
@@ -76,5 +78,3 @@ Desktop.ini
 
 # Local build audit; release history belongs in CHANGELOG.md
 /BUILD_REPORT.md
-# Added by code-review-graph
-.code-review-graph/

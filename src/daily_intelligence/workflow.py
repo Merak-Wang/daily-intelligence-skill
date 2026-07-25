@@ -26,6 +26,7 @@ from .config import AppConfig, MediaConfig, OutputConfig, project_root
 from .content import extract_content
 from .context import build_context
 from .local_output import write_local_outputs
+from .localization import localized
 from .media import prefetch_index_images
 from .monitor import fresh_monitor_snapshot_path, refresh_monitor
 from .notion import publish_report, sync_user_feedback
@@ -67,16 +68,40 @@ def schedule_independent_evaluation(
     """Create a bounded evaluator job after local delivery; remote publishing is optional."""
     draft_path = data_dir / "evaluations" / "drafts" / f"{report_id}.json"
     notion_flag = " --publish" if publish_notion else ""
-    prompt = (
-        "你是发布后独立评估 Agent，不参与日报生成，也不得修改主报告。"
-        f"只读不可变报告 {report_path}、索引 {index_path} 和技能中的 "
-        "templates/report-contract.md；按九个固定维度各给 1—5 分，总分必须等于"
-        "九项之和，简洁指出主要缺陷、证据不足和改进建议。"
-        f"被评报告 ID 是 {report_id}，内容 SHA-256 是 {content_hash}。"
-        f"把评估 JSON 写到 {draft_path}，然后执行：daily-intel --data-dir \"{data_dir}\" "
-        f"finalize-evaluation --report \"{report_path}\" --evaluation \"{draft_path}\" "
-        f"{notion_flag}。若该 report_id 已有 completed 评估则直接退出；不得要求用户点击。"
-        "该任务最多由调度器尝试三次，以容忍临时模型/API 连接失败。"
+    report = read_json(report_path) if report_path.is_file() else None
+    language = (
+        report.get("language")
+        if isinstance(report, dict)
+        else "zh-CN"
+    ) or "zh-CN"
+    prompt = localized(
+        language,
+        (
+            "你是发布后独立评估 Agent，不参与日报生成，也不得修改主报告。"
+            f"只读不可变报告 {report_path}、索引 {index_path} 和技能中的 "
+            "templates/report-contract.md；按九个固定维度各给 1—5 分，总分必须等于"
+            "九项之和，简洁指出主要缺陷、证据不足和改进建议。"
+            f"被评报告 ID 是 {report_id}，内容 SHA-256 是 {content_hash}。"
+            f"把评估 JSON 写到 {draft_path}，然后执行：daily-intel --data-dir "
+            f"\"{data_dir}\" finalize-evaluation --report \"{report_path}\" "
+            f"--evaluation \"{draft_path}\" {notion_flag}。若该 report_id 已有 "
+            "completed 评估则直接退出；不得要求用户点击。该任务最多由调度器尝试"
+            "三次，以容忍临时模型/API 连接失败。"
+        ),
+        (
+            "You are an independent post-publication evaluator. You did not author the "
+            "report and must not modify it. Read only the immutable report "
+            f"{report_path}, index {index_path}, and templates/report-contract.md. "
+            "Score each of the nine fixed dimensions from 1 to 5; total_score must equal "
+            "their sum. Write concise findings, main defects, evidence gaps, and "
+            f"improvements in English. The report ID is {report_id}; its SHA-256 is "
+            f"{content_hash}. Write the evaluation JSON to {draft_path}, then run: "
+            f"daily-intel --data-dir \"{data_dir}\" finalize-evaluation --report "
+            f"\"{report_path}\" --evaluation \"{draft_path}\" {notion_flag}. Exit if a "
+            "completed evaluation already exists for this report_id. Do not ask the user "
+            "to click anything. The scheduler may attempt this job up to three times to "
+            "tolerate temporary model or API failures."
+        ),
     )
     command = [
         "hermes",
@@ -291,9 +316,16 @@ def adopt_index_for_run(config: AppConfig, data_dir: Path, index_path: Path) -> 
     if not isinstance(run, dict):
         raise ValueError("Run manifest must be a JSON object")
     validate_run_data_root(run, run_path, data_dir)
+    context_config = replace(
+        config,
+        output=replace(
+            config.output,
+            language=str(run.get("output_language") or "zh-CN"),
+        ),
+    )
     context_path = build_context(
         index_path,
-        config,
+        context_config,
         data_dir,
         str(index["edition"]),
         collection_window=run.get("collection_window"),
@@ -608,6 +640,13 @@ def prepare_edition(
     ):
         existing = read_json(run_path) if run_path.exists() else None
         if isinstance(existing, dict) and not restart:
+            existing_language = str(existing.get("output_language") or "zh-CN")
+            if existing_language != config.output.language:
+                raise RuntimeError(
+                    f"Existing {edition} run uses output language "
+                    f"{existing_language!r}; rerun with --restart to create a "
+                    f"{config.output.language!r} revision"
+                )
             if existing.get("status") not in {status.value for status in TERMINAL_STATUSES}:
                 return run_path
             if existing.get("status") in {
@@ -623,6 +662,7 @@ def prepare_edition(
             "run_id": f"run-{date}-{edition}",
             "date": date,
             "edition": edition,
+            "output_language": config.output.language,
             "timezone": config.timezone,
             "data_root": str(data_dir.resolve()),
             "attempt": attempt,
@@ -843,9 +883,18 @@ def enrich_edition(
                 profile_dir=profile_dir,
                 browser_channel=browser_channel,
             )
+        context_config = replace(
+            config,
+            output=replace(
+                config.output,
+                language=str(
+                    run.get("output_language") or config.output.language
+                ),
+            ),
+        )
         context_path = build_context(
             index_path,
-            config,
+            context_config,
             data_dir,
             edition,
             collection_window=run["collection_window"],

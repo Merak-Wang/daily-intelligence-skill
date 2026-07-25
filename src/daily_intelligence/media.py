@@ -16,9 +16,10 @@ from typing import Any
 from urllib.parse import urljoin, urlsplit
 
 import httpx
-from PIL import Image, UnidentifiedImageError
+from PIL import Image, ImageStat, UnidentifiedImageError
 
 from .config import MediaConfig
+from .image_policy import is_placeholder_image_url, normalize_image_candidates
 from .storage import write_bytes_atomic
 from .utils import read_json, write_json
 
@@ -32,7 +33,7 @@ _REDIRECT_STATUSES = {301, 302, 303, 307, 308}
 _USER_AGENT = "DailyIntelligenceMedia/1.0 (+public-news-image-fetcher)"
 _PROXY_FAKE_IP_NETWORK = ipaddress.ip_network("198.18.0.0/15")
 _PUBLIC_DNS_ENDPOINT = "https://dns.google/resolve"
-_IMAGE_CACHE_SCHEMA_VERSION = "1.0"
+_IMAGE_CACHE_SCHEMA_VERSION = "1.1"
 
 
 class ImageDownloadError(ValueError):
@@ -88,7 +89,11 @@ def _load_image_cache(data_dir: Path) -> dict[str, Any]:
         payload = read_json(path)
     except (OSError, ValueError):
         payload = {}
-    if not isinstance(payload, dict) or not isinstance(payload.get("entries"), dict):
+    if (
+        not isinstance(payload, dict)
+        or payload.get("schema_version") != _IMAGE_CACHE_SCHEMA_VERSION
+        or not isinstance(payload.get("entries"), dict)
+    ):
         payload = {}
     return {
         "schema_version": _IMAGE_CACHE_SCHEMA_VERSION,
@@ -283,6 +288,8 @@ def assert_public_image_url(url: str) -> None:
         raise ImageDownloadError("image URL contains an invalid port") from exc
     if port not in {None, 80, 443}:
         raise ImageDownloadError("image URL must use port 80 or 443")
+    if is_placeholder_image_url(url):
+        raise ImageDownloadError("image URL is a known placeholder")
 
     hostname = parsed.hostname.rstrip(".").casefold()
     if hostname == "localhost" or hostname.endswith((".localhost", ".local")):
@@ -330,6 +337,26 @@ def _inspect_raster(content: bytes, max_pixels: int) -> tuple[str, str, int, int
                     f"image dimensions exceed the {max_pixels:,}-pixel safety limit"
                 )
             image.verify()
+        with Image.open(BytesIO(content)) as image:
+            sample = image.convert("RGB")
+            sample.thumbnail((64, 64))
+            pixel_count = sample.width * sample.height
+            statistics = ImageStat.Stat(sample)
+            colors = sample.getcolors(maxcolors=pixel_count)
+            dominant_ratio = (
+                max(count for count, _color in colors) / pixel_count
+                if colors and pixel_count
+                else 0.0
+            )
+            channel_spans = [
+                maximum - minimum for minimum, maximum in sample.getextrema()
+            ]
+            if max(statistics.stddev, default=0.0) < 1.0 or (
+                dominant_ratio >= 0.985 and max(channel_spans, default=0) <= 24
+            ):
+                raise ImageDownloadError(
+                    "downloaded image is a low-information placeholder"
+                )
     except ImageDownloadError:
         raise
     except (
@@ -577,6 +604,19 @@ def _download_image_batch(
     return results
 
 
+def _indexed_image_candidates(indexed: dict[str, Any]) -> list[str]:
+    values: list[object] = [indexed.get("image_url")]
+    direct_candidates = indexed.get("image_candidates")
+    if isinstance(direct_candidates, list):
+        values.extend(direct_candidates)
+    metadata = indexed.get("metadata")
+    if isinstance(metadata, dict):
+        metadata_candidates = metadata.get("image_candidates")
+        if isinstance(metadata_candidates, list):
+            values.extend(metadata_candidates)
+    return normalize_image_candidates(values)
+
+
 def materialize_report_images(
     report: dict[str, Any],
     index: dict[str, Any],
@@ -594,15 +634,17 @@ def materialize_report_images(
         for item in index.get("items", [])
         if isinstance(item, dict) and item.get("item_id")
     }
-    candidates: list[tuple[int, dict[str, Any], dict[str, Any]]] = []
+    candidates: list[
+        tuple[int, dict[str, Any], dict[str, Any], list[str]]
+    ] = []
     for order, brief in enumerate(briefs):
         indexed = indexed_items.get(str(brief.get("item_id")))
-        if not indexed or not isinstance(indexed.get("image_url"), str):
+        if not indexed:
             continue
-        image_url = str(indexed["image_url"]).strip()
-        if not image_url:
+        image_candidates = _indexed_image_candidates(indexed)
+        if not image_candidates:
             continue
-        candidates.append((order, brief, indexed))
+        candidates.append((order, brief, indexed, image_candidates))
     candidates.sort(
         key=lambda row: (
             -int(row[1].get("importance", 0)),
@@ -632,6 +674,64 @@ def materialize_report_images(
     cache = _load_image_cache(data_dir) if cache_enabled else {"entries": {}}
     cache_entries = cache["entries"]
     cache_warning_emitted = False
+
+    def resolve_rows(
+        rows: list[tuple[str, str | None]],
+        max_bytes: int,
+    ) -> None:
+        nonlocal cache_warning_emitted
+        batch: list[tuple[str, str | None]] = []
+        batch_urls: set[str] = set()
+        for image_url, referer in rows:
+            if image_url in resolved_by_url or image_url in batch_urls:
+                continue
+            if cache_enabled:
+                try:
+                    cache_key = _serialized_http_url(image_url)
+                except ImageDownloadError as exc:
+                    resolved_by_url[image_url] = exc
+                    continue
+                cached = _cached_download(
+                    image_url,
+                    cache_entries.get(cache_key),
+                    data_dir,
+                    config,
+                )
+                if cached is not None:
+                    resolved_by_url[image_url] = cached
+                    continue
+            batch.append((image_url, referer))
+            batch_urls.add(image_url)
+        if not batch:
+            return
+
+        batch_results = _download_image_batch(
+            batch,
+            data_dir,
+            config,
+            max_bytes,
+            downloader,
+        )
+        resolved_by_url.update(batch_results)
+        if not cache_enabled:
+            return
+        for image_url, result in batch_results.items():
+            cache_key = _serialized_http_url(image_url)
+            cache_entries[cache_key] = (
+                _cache_success(result)
+                if isinstance(result, DownloadedImage)
+                else _cache_failure(result, config)
+            )
+        try:
+            _write_image_cache(data_dir, cache)
+        except OSError as exc:
+            if not cache_warning_emitted:
+                warnings.append(
+                    "image cache checkpoint failed: "
+                    f"{type(exc).__name__}: {exc}"
+                )
+                cache_warning_emitted = True
+
     cursor = 0
     while cursor < len(candidates):
         if int(metrics["attached"]) >= config.max_images_per_report:
@@ -642,77 +742,50 @@ def materialize_report_images(
             metrics["skipped_budget"] += len(candidates) - cursor
             break
 
-        current_url = str(candidates[cursor][2]["image_url"]).strip()
-        if current_url not in resolved_by_url:
-            batch_limit = config.global_concurrency if cache_enabled else 1
-            batch: list[tuple[str, str | None]] = []
-            batch_urls: set[str] = set()
-            for _order, _brief, indexed in candidates[cursor:]:
-                image_url = str(indexed["image_url"]).strip()
-                if image_url in resolved_by_url or image_url in batch_urls:
-                    continue
-                if cache_enabled:
-                    try:
-                        cache_key = _serialized_http_url(image_url)
-                    except ImageDownloadError as exc:
-                        resolved_by_url[image_url] = exc
-                        continue
-                    cached = _cached_download(
-                        image_url,
-                        cache_entries.get(cache_key),
-                        data_dir,
-                        config,
-                    )
-                    if cached is not None:
-                        resolved_by_url[image_url] = cached
-                        continue
-                batch.append(
-                    (image_url, str(indexed.get("url") or "") or None)
-                )
-                batch_urls.add(image_url)
-                if len(batch) >= batch_limit:
-                    break
+        batch_limit = config.global_concurrency if cache_enabled else 1
+        primary_rows = [
+            (
+                image_candidates[0],
+                str(indexed.get("url") or "") or None,
+            )
+            for _order, _brief, indexed, image_candidates
+            in candidates[cursor : cursor + batch_limit]
+        ]
+        resolve_rows(
+            primary_rows,
+            min(config.max_image_bytes, remaining_bytes),
+        )
 
-            if batch:
-                batch_results = _download_image_batch(
-                    batch,
-                    data_dir,
-                    config,
-                    min(config.max_image_bytes, remaining_bytes),
-                    downloader,
-                )
-                resolved_by_url.update(batch_results)
-                if cache_enabled:
-                    for image_url, result in batch_results.items():
-                        cache_key = _serialized_http_url(image_url)
-                        cache_entries[cache_key] = (
-                            _cache_success(result)
-                            if isinstance(result, DownloadedImage)
-                            else _cache_failure(result, config)
-                        )
-                    try:
-                        _write_image_cache(data_dir, cache)
-                    except OSError as exc:
-                        if not cache_warning_emitted:
-                            warnings.append(
-                                "image cache checkpoint failed: "
-                                f"{type(exc).__name__}: {exc}"
-                            )
-                            cache_warning_emitted = True
-
-        _order, brief, indexed = candidates[cursor]
+        _order, brief, indexed, image_candidates = candidates[cursor]
         cursor += 1
         item_id = str(brief.get("item_id") or "")
-        image_url = str(indexed["image_url"]).strip()
-        result = resolved_by_url.get(image_url)
-        if not isinstance(result, DownloadedImage):
-            exc = result or ImageDownloadError("image download did not produce a result")
+        downloaded: DownloadedImage | None = None
+        failures: list[Exception] = []
+        referer = str(indexed.get("url") or "") or None
+        for image_url in image_candidates:
+            if image_url not in resolved_by_url:
+                remaining_bytes = config.max_total_bytes - int(metrics["total_bytes"])
+                resolve_rows(
+                    [(image_url, referer)],
+                    min(config.max_image_bytes, remaining_bytes),
+                )
+            result = resolved_by_url.get(image_url)
+            if isinstance(result, DownloadedImage):
+                downloaded = result
+                break
+            failures.append(
+                result
+                if isinstance(result, Exception)
+                else ImageDownloadError("image download did not produce a result")
+            )
+        if downloaded is None:
+            exc = failures[-1]
             metrics["failed"] += 1
             warnings.append(
-                f"image omitted for item_id={item_id!r}: {type(exc).__name__}: {exc}"
+                f"image omitted for item_id={item_id!r} after "
+                f"{len(failures)} candidate(s): {type(exc).__name__}: {exc}"
             )
             continue
-        downloaded = result
 
         if downloaded.sha256 not in unique_digests:
             remaining_bytes = config.max_total_bytes - int(metrics["total_bytes"])

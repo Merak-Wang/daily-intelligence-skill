@@ -17,6 +17,7 @@ budget:
   report_items_per_source: 15
   max_fulltext_per_run: 12
 output:
+  language: zh-CN
   formats:
   - html
   - pdf

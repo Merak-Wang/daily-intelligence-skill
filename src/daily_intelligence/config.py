@@ -8,6 +8,7 @@ from urllib.parse import urlsplit
 
 import yaml
 
+from .localization import validate_output_language
 from .taxonomy import validate_content_taxonomy
 from .utils import now_iso, read_json, write_json
 
@@ -78,6 +79,7 @@ class BudgetConfig:
 
 @dataclass(slots=True)
 class OutputConfig:
+    language: str = "zh-CN"
     formats: list[str] = field(default_factory=lambda: ["html", "pdf"])
     pdf_engine: str = "edge"
     open_after_finalize: bool = False
@@ -120,6 +122,7 @@ class MonitorConfig:
 
 
 def validate_output_config(output: OutputConfig) -> OutputConfig:
+    output.language = validate_output_language(output.language)
     allowed_formats = {"html", "pdf"}
     unknown_formats = set(output.formats) - allowed_formats
     if unknown_formats:

@@ -32,7 +32,8 @@ def test_http_first_content_extraction_avoids_browser_for_static_article(
         "<html><head>"
         '<meta property="og:title" content="Updated public headline">'
         '<meta property="article:published_time" content="2026-07-24T08:00:00Z">'
-        '<meta property="og:image" content="/image/story.png">'
+        '<meta property="og:image" content="/image/grey-placeholder.png">'
+        '<meta name="twitter:image" content="/image/story.png">'
         "</head><body><article>"
         f"{article_text}"
         "</article></body></html>"

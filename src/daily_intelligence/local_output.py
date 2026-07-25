@@ -10,13 +10,20 @@ from typing import Any
 from urllib.parse import urlsplit
 
 from .config import OutputConfig, validate_output_config
+from .localization import (
+    is_chinese_output,
+    localized,
+    translated_title,
+)
 from .reporting import reference_time_label
 from .storage import write_text_atomic
 from .taxonomy import SECTION_GROUPS_V13
 from .utils import read_json
 
 EDITION_LABELS = {"morning": "晨间版", "evening": "晚间版"}
+EDITION_LABELS_EN = {"morning": "Morning Edition", "evening": "Evening Edition"}
 MODULE_LABELS = {"information": "资讯", "technology": "技术"}
+MODULE_LABELS_EN = {"information": "News", "technology": "Technology"}
 STATUS_LABELS = {
     "NEW": "新增",
     "UPD": "更新",
@@ -25,10 +32,23 @@ STATUS_LABELS = {
     "WATCH": "观察",
     "CLOSED": "关闭",
 }
+STATUS_LABELS_EN = {
+    "NEW": "New",
+    "UPD": "Updated",
+    "CONF": "Confirmed",
+    "REV": "Revised",
+    "WATCH": "Watch",
+    "CLOSED": "Closed",
+}
 ANALYSIS_LABELS = {
     "geopolitics": "从地缘政治专家的角度",
     "ai_technology": "从 AI 研究/开发工程师的角度",
     "markets": "从股票分析师的角度",
+}
+ANALYSIS_LABELS_EN = {
+    "geopolitics": "Geopolitical Perspective",
+    "ai_technology": "AI Research and Engineering Perspective",
+    "markets": "Equity-Market Perspective",
 }
 EVALUATION_LABELS = {
     "coverage": "信息覆盖度",
@@ -41,6 +61,170 @@ EVALUATION_LABELS = {
     "timeliness": "时效性",
     "compliance_boundaries": "合规与边界",
 }
+EVALUATION_LABELS_EN = {
+    "coverage": "Coverage",
+    "importance_ordering": "Importance Ordering",
+    "factual_reliability": "Factual Reliability",
+    "summary_accuracy": "Summary Accuracy",
+    "analysis_traceability": "Analysis Traceability",
+    "historical_continuity": "Historical Continuity",
+    "readability": "Readability",
+    "timeliness": "Timeliness",
+    "compliance_boundaries": "Compliance and Boundaries",
+}
+
+UI_LABELS = {
+    "zh-CN": {
+        "none": "无",
+        "unknown_source": "未知来源",
+        "items": "条",
+        "facts": "事实基础",
+        "narrative": "综合论述",
+        "history": "历史脉络",
+        "dialectic": "辩证分析",
+        "reasoning": "推理链",
+        "counter": "反证与不确定性",
+        "scenarios": "可能情景",
+        "implications": "影响与启示",
+        "actions": "建议行动",
+        "watch": "后续观察信号",
+        "invalidation": "观点失效信号",
+        "causal": "因果传导链",
+        "assumptions": "关键假设",
+        "gaps": "证据缺口",
+        "horizon": "时间跨度",
+        "confidence_basis": "置信度依据",
+        "change_prior": "相对上一版",
+        "decision": "决策相关性",
+        "stakeholders": "不同立场与利益",
+        "interest_basis": "利益基础",
+        "confidence": "置信度",
+        "evidence": "证据",
+        "unbound": "未绑定",
+        "consensus": "共同结论",
+        "tensions": "关键分歧",
+        "transmission": "地缘—技术—市场传导链",
+        "shared_watch": "共同观察信号",
+        "revision_triggers": "修正判断的触发条件",
+        "synthesis": "跨视角综合",
+        "summary": "今日摘要",
+        "analysis": "研判",
+        "evaluation": "质量评估",
+        "feedback": "用户反馈",
+        "toc": "目录",
+        "report_toc": "报告目录",
+        "toc_heading": "定位目录",
+        "collapse": "收起",
+        "evaluation_pending": "独立评估处理中",
+        "evaluation_pending_detail": "日报已经交付，评估 Agent 将异步补充九维评分与修改意见。",
+        "main_defects": "主要缺陷",
+        "insufficient_evidence": "证据不足项",
+        "improvements": "改进建议",
+        "dimension": "维度",
+        "score": "得分",
+        "finding": "重点结论",
+        "empty": "本时段暂无可发布内容。",
+        "pending_sources": "待验证来源",
+        "analysis_empty": "本版没有形成达到证据门槛的该领域研判。",
+        "changes": "日间新增、确认与修正",
+        "next_watch": "次日观察项",
+        "archive": "日报中心",
+        "revision": "修订",
+        "filter": "筛选标题、摘要或来源",
+        "unrated": "未评分",
+        "relevance": "相关性",
+        "accuracy": "准确性",
+        "analysis_value": "分析价值",
+        "satisfaction": "整体满意度",
+        "comments": "补充意见",
+        "feedback_placeholder": "这些反馈可作为后续日报个性化输入。",
+        "download_feedback": "下载反馈 JSON",
+        "feedback_note": "本地文件不会自动上传数据。请把下载的 JSON 交给 Hermes，作为下一版的人工反馈输入。",
+        "footer": "本地 JSON/Markdown 为事实源；HTML/PDF 是可重新生成的阅读投影。",
+        "page": "第 {page} 页",
+        "evaluation_and_feedback": "质量评估与用户反馈",
+        "evaluation_total": "独立评估总分",
+        "delivery_without_score": "独立评估处理中，日报交付不等待评分。",
+        "image_source": "图片来源",
+    },
+    "en": {
+        "none": "None",
+        "unknown_source": "Unknown source",
+        "items": "items",
+        "facts": "Facts",
+        "narrative": "Narrative",
+        "history": "Historical Context",
+        "dialectic": "Dialectical Analysis",
+        "reasoning": "Reasoning Chain",
+        "counter": "Counterevidence and Uncertainty",
+        "scenarios": "Scenarios",
+        "implications": "Implications",
+        "actions": "Recommended Actions",
+        "watch": "Watch Signals",
+        "invalidation": "Invalidation Signals",
+        "causal": "Causal Chain",
+        "assumptions": "Key Assumptions",
+        "gaps": "Evidence Gaps",
+        "horizon": "Time Horizon",
+        "confidence_basis": "Confidence Rationale",
+        "change_prior": "Change From Prior",
+        "decision": "Decision Relevance",
+        "stakeholders": "Stakeholder Positions and Interests",
+        "interest_basis": "Interest basis",
+        "confidence": "Confidence",
+        "evidence": "Evidence",
+        "unbound": "Unbound",
+        "consensus": "Consensus",
+        "tensions": "Key Tensions",
+        "transmission": "Geopolitics–Technology–Markets Transmission Chain",
+        "shared_watch": "Shared Watch Signals",
+        "revision_triggers": "Revision Triggers",
+        "synthesis": "Cross-Perspective Synthesis",
+        "summary": "Executive Summary",
+        "analysis": "Analysis",
+        "evaluation": "Quality Evaluation",
+        "feedback": "Reader Feedback",
+        "toc": "Contents",
+        "report_toc": "Report contents",
+        "toc_heading": "Navigate",
+        "collapse": "Close",
+        "evaluation_pending": "Independent evaluation pending",
+        "evaluation_pending_detail": "The report is ready; a separate evaluator will add nine-dimension scores and recommendations.",
+        "main_defects": "Main Defects",
+        "insufficient_evidence": "Insufficient Evidence",
+        "improvements": "Recommended Improvements",
+        "dimension": "Dimension",
+        "score": "Score",
+        "finding": "Finding",
+        "empty": "No publishable items were available in this window.",
+        "pending_sources": "Sources Pending Verification",
+        "analysis_empty": "No analysis in this domain met the evidence threshold.",
+        "changes": "New, Confirmed, and Revised Since Morning",
+        "next_watch": "Next-Day Watch List",
+        "archive": "Report Archive",
+        "revision": "Revision",
+        "filter": "Filter titles, summaries, or sources",
+        "unrated": "Not rated",
+        "relevance": "Relevance",
+        "accuracy": "Accuracy",
+        "analysis_value": "Analysis value",
+        "satisfaction": "Overall satisfaction",
+        "comments": "Additional comments",
+        "feedback_placeholder": "This feedback can guide later editions.",
+        "download_feedback": "Download feedback JSON",
+        "feedback_note": "This local file does not upload data. Give the downloaded JSON to Hermes as feedback for the next edition.",
+        "footer": "Local JSON and Markdown are the source of truth; HTML and PDF are reproducible reading views.",
+        "page": "Page {page}",
+        "evaluation_and_feedback": "Quality Evaluation and Reader Feedback",
+        "evaluation_total": "Independent evaluation score",
+        "delivery_without_score": "Independent evaluation is pending; report delivery does not wait for scoring.",
+        "image_source": "Image source",
+    },
+}
+
+
+def _ui(language: object) -> dict[str, str]:
+    return UI_LABELS["zh-CN" if is_chinese_output(language) else "en"]
 
 
 def _escape(value: object) -> str:
@@ -84,7 +268,10 @@ def _ordered_sections(report: dict[str, Any], module: str) -> list[dict[str, Any
     return ordered
 
 
-def _group_items(section: dict[str, Any]) -> list[tuple[dict[str, Any], list[dict[str, Any]]]]:
+def _group_items(
+    section: dict[str, Any],
+    language: object = "zh-CN",
+) -> list[tuple[dict[str, Any], list[dict[str, Any]]]]:
     values = section.get("briefs") if "briefs" in section else section.get("items", [])
     groups: dict[str, tuple[dict[str, Any], list[dict[str, Any]]]] = {}
     for item in values or []:
@@ -93,7 +280,7 @@ def _group_items(section: dict[str, Any]) -> list[tuple[dict[str, Any], list[dic
             refs = item.get("source_refs") or [item.get("source_ref") or {}]
             source = {
                 "id": "unknown",
-                "name": "未知来源",
+                "name": _ui(language)["unknown_source"],
                 "url": refs[0].get("url", "#"),
             }
         key = str(source.get("id") or source.get("name") or "unknown")
@@ -114,9 +301,14 @@ def _group_items(section: dict[str, Any]) -> list[tuple[dict[str, Any], list[dic
     return ordered
 
 
-def _list_html(values: list[object], *, css_class: str = "") -> str:
+def _list_html(
+    values: list[object],
+    *,
+    css_class: str = "",
+    language: object = "zh-CN",
+) -> str:
     if not values:
-        return '<p class="muted">无</p>'
+        return f'<p class="muted">{_escape(_ui(language)["none"])}</p>'
     class_attr = f' class="{_escape(css_class)}"' if css_class else ""
     return f"<ul{class_attr}>" + "".join(f"<li>{_escape(value)}</li>" for value in values) + "</ul>"
 
@@ -133,22 +325,30 @@ def _brief_html(
     item: dict[str, Any],
     rank: int,
     media_path_prefix: str | None = None,
+    language: object = "zh-CN",
 ) -> str:
     ref = _item_ref(item)
-    status = STATUS_LABELS.get(str(item.get("status")), str(item.get("status") or ""))
+    status_labels = STATUS_LABELS if is_chinese_output(language) else STATUS_LABELS_EN
+    status = status_labels.get(str(item.get("status")), str(item.get("status") or ""))
     source_rank = item.get("source_rank_label")
     event_id = item.get("featured_event_id") or item.get("event_id")
     anchor = f' id="event-{_escape(event_id)}"' if event_id else ""
     badges = [f'<span class="badge status">{_escape(status)}</span>'] if status else []
     if source_rank:
         badges.append(f'<span class="badge rank">{_escape(source_rank)}</span>')
-    title = _external_link(item.get("title", "无标题"), ref.get("url"), css_class="story-link")
-    title_zh = item.get("title_zh")
+    title = _external_link(
+        item.get("title", localized(language, "无标题", "Untitled")),
+        ref.get("url"),
+        css_class="story-link",
+    )
+    localized_title = translated_title(item, language)
     translation = (
-        f'<p class="translated-title">{_escape(title_zh)}</p>' if title_zh else ""
+        f'<p class="translated-title">{_escape(localized_title)}</p>'
+        if localized_title
+        else ""
     )
     time_html = ""
-    if time_info := reference_time_label(ref):
+    if time_info := reference_time_label(ref, language):
         label, value = time_info
         time_html = f'<p class="story-time">{_escape(label)}：{_escape(value)}</p>'
     image = item.get("image")
@@ -163,13 +363,16 @@ def _brief_html(
             f'<figcaption>{_escape(image.get("caption"))} · '
             f'{_escape(image.get("credit"))}</figcaption></figure>'
         )
+    image_class = " has-image" if figure else ""
     return (
-        f'<article class="brief"{anchor} data-search="{_escape(item.get("title"))} '
-        f'{_escape(title_zh)} {_escape(item.get("tldr"))}">'
-        f'{figure}<div class="brief-heading">'
+        f'<article class="brief{image_class}"{anchor} '
+        f'data-search="{_escape(item.get("title"))} '
+        f'{_escape(localized_title)} {_escape(item.get("tldr"))}">'
+        '<div class="brief-heading">'
         f'<span class="ordinal">{rank:02d}</span><div><h4>{title}</h4>{translation}{time_html}</div>'
         f'<div class="badges">{"".join(badges)}</div></div>'
-        f'<p class="tldr"><span>TL;DR</span>{_escape(item.get("tldr"))}</p></article>'
+        f'{figure}<p class="tldr"><span>TL;DR</span>'
+        f'{_escape(item.get("tldr"))}</p></article>'
     )
 
 
@@ -177,50 +380,72 @@ def _source_section_html(
     source: dict[str, Any],
     items: list[dict[str, Any]],
     media_path_prefix: str | None = None,
+    language: object = "zh-CN",
 ) -> str:
-    source_name = source.get("name") or "未知来源"
+    source_name = source.get("name") or _ui(language)["unknown_source"]
     stories = "".join(
-        _brief_html(item, rank, media_path_prefix)
+        _brief_html(item, rank, media_path_prefix, language)
         for rank, item in enumerate(items, start=1)
     )
     return (
         f'<section class="source-group" data-search="{_escape(source_name)}">'
         '<div class="source-heading">'
         f'<h3>{_external_link(source_name, source.get("url"))}</h3>'
-        f'<span>{len(items)} 条</span></div>{stories}</section>'
+        f'<span>{len(items)} {_escape(_ui(language)["items"])}</span></div>'
+        f"{stories}</section>"
     )
 
 
-def _analysis_html(analysis: dict[str, Any]) -> str:
+def _analysis_html(
+    analysis: dict[str, Any],
+    language: object = "zh-CN",
+) -> str:
+    labels = _ui(language)
     event_links = []
     for event_id in analysis.get("evidence_event_ids", []):
         event_links.append(f'<a href="#event-{_escape(event_id)}">{_escape(event_id)}</a>')
     stakeholder_rows = "".join(
         '<div class="stakeholder"><strong>'
         f'{_escape(row.get("stakeholder"))}</strong><p>{_escape(row.get("position"))}</p>'
-        f'<small>利益基础：{_escape(row.get("interests"))}</small></div>'
+        f'<small>{_escape(labels["interest_basis"])}: '
+        f'{_escape(row.get("interests"))}</small></div>'
         for row in analysis.get("stakeholder_positions", [])
         if isinstance(row, dict)
     )
     sections = [
-        ("事实基础", _list_html(analysis.get("facts", []))),
-        ("综合论述", f'<p>{_escape(analysis.get("narrative"))}</p>'),
-        ("历史脉络", f'<p>{_escape(analysis.get("historical_context"))}</p>'),
-        ("辩证分析", f'<p>{_escape(analysis.get("dialectical_analysis"))}</p>'),
-        ("推理链", f'<p>{_escape(analysis.get("reasoning"))}</p>'),
-        ("反证与不确定性", _list_html(analysis.get("counter_evidence", []))),
-        ("可能情景", _list_html(analysis.get("scenarios", []))),
-        ("影响与启示", _list_html(analysis.get("implications", []))),
-        ("建议行动", _list_html(analysis.get("actions", []))),
-        ("后续观察信号", _list_html(analysis.get("watch_signals", []))),
-        ("观点失效信号", _list_html(analysis.get("invalidation_signals", []))),
-        ("因果传导链", _list_html(analysis.get("causal_chain", []))),
-        ("关键假设", _list_html(analysis.get("assumptions", []))),
-        ("证据缺口", _list_html(analysis.get("evidence_gaps", []))),
-        ("时间跨度", f'<p>{_escape(analysis.get("time_horizon"))}</p>'),
-        ("置信度依据", f'<p>{_escape(analysis.get("confidence_rationale"))}</p>'),
-        ("相对上一版", f'<p>{_escape(analysis.get("change_from_prior"))}</p>'),
-        ("决策相关性", f'<p>{_escape(analysis.get("decision_relevance"))}</p>'),
+        (labels["facts"], _list_html(analysis.get("facts", []), language=language)),
+        (labels["narrative"], f'<p>{_escape(analysis.get("narrative"))}</p>'),
+        (labels["history"], f'<p>{_escape(analysis.get("historical_context"))}</p>'),
+        (labels["dialectic"], f'<p>{_escape(analysis.get("dialectical_analysis"))}</p>'),
+        (labels["reasoning"], f'<p>{_escape(analysis.get("reasoning"))}</p>'),
+        (
+            labels["counter"],
+            _list_html(analysis.get("counter_evidence", []), language=language),
+        ),
+        (labels["scenarios"], _list_html(analysis.get("scenarios", []), language=language)),
+        (
+            labels["implications"],
+            _list_html(analysis.get("implications", []), language=language),
+        ),
+        (labels["actions"], _list_html(analysis.get("actions", []), language=language)),
+        (labels["watch"], _list_html(analysis.get("watch_signals", []), language=language)),
+        (
+            labels["invalidation"],
+            _list_html(analysis.get("invalidation_signals", []), language=language),
+        ),
+        (labels["causal"], _list_html(analysis.get("causal_chain", []), language=language)),
+        (
+            labels["assumptions"],
+            _list_html(analysis.get("assumptions", []), language=language),
+        ),
+        (labels["gaps"], _list_html(analysis.get("evidence_gaps", []), language=language)),
+        (labels["horizon"], f'<p>{_escape(analysis.get("time_horizon"))}</p>'),
+        (
+            labels["confidence_basis"],
+            f'<p>{_escape(analysis.get("confidence_rationale"))}</p>',
+        ),
+        (labels["change_prior"], f'<p>{_escape(analysis.get("change_from_prior"))}</p>'),
+        (labels["decision"], f'<p>{_escape(analysis.get("decision_relevance"))}</p>'),
     ]
     body = "".join(
         f'<section class="analysis-part"><h5>{title}</h5>{content}</section>'
@@ -229,7 +454,7 @@ def _analysis_html(analysis: dict[str, Any]) -> str:
     )
     if stakeholder_rows:
         body += (
-            '<section class="analysis-part"><h5>不同立场与利益</h5>'
+            f'<section class="analysis-part"><h5>{_escape(labels["stakeholders"])}</h5>'
             f'<div class="stakeholder-grid">{stakeholder_rows}</div></section>'
         )
     confidence = analysis.get("confidence")
@@ -238,28 +463,47 @@ def _analysis_html(analysis: dict[str, Any]) -> str:
         '<article class="analysis-card">'
         f'<h4>{_escape(analysis.get("claim"))}</h4>'
         '<div class="analysis-meta">'
-        f'<span>置信度 {confidence_text}</span>'
-        f'<span>证据 {" · ".join(event_links) or "未绑定"}</span></div>{body}</article>'
+        f'<span>{_escape(labels["confidence"])} {confidence_text}</span>'
+        f'<span>{_escape(labels["evidence"])} '
+        f'{" · ".join(event_links) or _escape(labels["unbound"])}</span></div>'
+        f"{body}</article>"
     )
 
 
-def _synthesis_html(synthesis: dict[str, Any] | None) -> str:
+def _synthesis_html(
+    synthesis: dict[str, Any] | None,
+    language: object = "zh-CN",
+) -> str:
     if not isinstance(synthesis, dict):
         return ""
+    labels = _ui(language)
+    separator = "、" if is_chinese_output(language) else ", "
     tensions = "".join(
         "<li><strong>"
-        f"{_escape(row.get('issue'))}</strong>（"
-        f"{_escape('、'.join(row.get('perspectives', [])))}）："
+        f"{_escape(row.get('issue'))}</strong> ("
+        f"{_escape(separator.join(row.get('perspectives', [])))}): "
         f"{_escape(row.get('source_of_difference'))}</li>"
         for row in synthesis.get("tensions", [])
         if isinstance(row, dict)
     )
     sections = [
-        ("共同结论", _list_html(synthesis.get("consensus", []))),
-        ("关键分歧", f"<ul>{tensions}</ul>" if tensions else ""),
-        ("地缘—技术—市场传导链", _list_html(synthesis.get("transmission_chain", []))),
-        ("共同观察信号", _list_html(synthesis.get("shared_watch_signals", []))),
-        ("修正判断的触发条件", _list_html(synthesis.get("revision_triggers", []))),
+        (
+            labels["consensus"],
+            _list_html(synthesis.get("consensus", []), language=language),
+        ),
+        (labels["tensions"], f"<ul>{tensions}</ul>" if tensions else ""),
+        (
+            labels["transmission"],
+            _list_html(synthesis.get("transmission_chain", []), language=language),
+        ),
+        (
+            labels["shared_watch"],
+            _list_html(synthesis.get("shared_watch_signals", []), language=language),
+        ),
+        (
+            labels["revision_triggers"],
+            _list_html(synthesis.get("revision_triggers", []), language=language),
+        ),
     ]
     body = "".join(
         f'<section class="analysis-part"><h5>{title}</h5>{content}</section>'
@@ -271,18 +515,23 @@ def _synthesis_html(synthesis: dict[str, Any] | None) -> str:
     )
     return (
         '<section class="analysis-domain synthesis" id="analysis-synthesis">'
-        '<h3>跨视角综合</h3>'
+        f'<h3>{_escape(labels["synthesis"])}</h3>'
         '<article class="analysis-card synthesis-card">'
         f'<h4>{_escape(synthesis.get("overall_judgment"))}</h4>'
-        f'<div class="analysis-meta"><span>综合证据 {evidence or "未绑定"}</span></div>'
+        f'<div class="analysis-meta"><span>{_escape(labels["evidence"])} '
+        f'{evidence or _escape(labels["unbound"])}</span></div>'
         f"{body}</article></section>"
     )
 
 
 def _toc_html(report: dict[str, Any]) -> str:
-    entries: list[tuple[str, str, int]] = [("summary", "今日摘要", 0)]
+    language = report.get("language") or "zh-CN"
+    labels = _ui(language)
+    modules = MODULE_LABELS if is_chinese_output(language) else MODULE_LABELS_EN
+    analyses = ANALYSIS_LABELS if is_chinese_output(language) else ANALYSIS_LABELS_EN
+    entries: list[tuple[str, str, int]] = [("summary", labels["summary"], 0)]
     for module in ("information", "technology"):
-        entries.append((f"module-{module}", MODULE_LABELS[module], 0))
+        entries.append((f"module-{module}", modules[module], 0))
         entries.extend(
             (
                 str(section.get("id") or ""),
@@ -292,14 +541,19 @@ def _toc_html(report: dict[str, Any]) -> str:
             for section in _ordered_sections(report, module)
             if section.get("id")
         )
-    entries.append(("analysis", "研判", 0))
+    entries.append(("analysis", labels["analysis"], 0))
     entries.extend(
         (f"analysis-{domain}", label, 1)
-        for domain, label in ANALYSIS_LABELS.items()
+        for domain, label in analyses.items()
     )
     if isinstance(report.get("cross_perspective_synthesis"), dict):
-        entries.append(("analysis-synthesis", "跨视角综合", 1))
-    entries.extend((("evaluation", "质量评估", 0), ("feedback", "用户反馈", 0)))
+        entries.append(("analysis-synthesis", labels["synthesis"], 1))
+    entries.extend(
+        (
+            ("evaluation", labels["evaluation"], 0),
+            ("feedback", labels["feedback"], 0),
+        )
+    )
     links = "".join(
         f'<a class="toc-link toc-level-{level}" href="#{_escape(anchor)}">'
         f"{_escape(label)}</a>"
@@ -308,25 +562,35 @@ def _toc_html(report: dict[str, Any]) -> str:
     return (
         '<button class="toc-toggle" id="toc-toggle" type="button" '
         'aria-controls="report-toc" aria-expanded="false">'
-        '<span aria-hidden="true">☰</span><span>目录</span></button>'
+        f'<span aria-hidden="true">☰</span><span>{_escape(labels["toc"])}</span></button>'
         '<div class="toc-scrim" id="toc-scrim" aria-hidden="true"></div>'
-        '<aside class="report-toc" id="report-toc" aria-label="报告目录" aria-hidden="true">'
-        '<div class="toc-heading"><strong>定位目录</strong>'
-        '<button class="toc-close" id="toc-close" type="button" aria-label="收起目录">'
-        '收起</button></div>'
+        f'<aside class="report-toc" id="report-toc" '
+        f'aria-label="{_escape(labels["report_toc"])}" aria-hidden="true">'
+        f'<div class="toc-heading"><strong>{_escape(labels["toc_heading"])}</strong>'
+        f'<button class="toc-close" id="toc-close" type="button" '
+        f'aria-label="{_escape(labels["collapse"])}">'
+        f'{_escape(labels["collapse"])}</button></div>'
         f'<nav class="toc-nav">{links}</nav></aside>'
     )
 
 
-def _evaluation_html(evaluation: dict[str, Any] | None) -> str:
+def _evaluation_html(
+    evaluation: dict[str, Any] | None,
+    language: object = "zh-CN",
+) -> str:
+    labels = _ui(language)
+    evaluation_labels = (
+        EVALUATION_LABELS if is_chinese_output(language) else EVALUATION_LABELS_EN
+    )
     if not evaluation:
         return (
-            '<div class="evaluation-pending"><strong>独立评估处理中</strong>'
-            '<p>日报已经交付，评估 Agent 将异步补充九维评分与修改意见。</p></div>'
+            f'<div class="evaluation-pending"><strong>'
+            f'{_escape(labels["evaluation_pending"])}</strong>'
+            f'<p>{_escape(labels["evaluation_pending_detail"])}</p></div>'
         )
     dimensions = "".join(
         '<tr><td>'
-        f'{_escape(EVALUATION_LABELS.get(str(row.get("id")), row.get("id")))}</td>'
+        f'{_escape(evaluation_labels.get(str(row.get("id")), row.get("id")))}</td>'
         f'<td><span class="score">{_escape(row.get("score"))}/5</span></td>'
         f'<td>{_escape(row.get("finding"))}</td></tr>'
         for row in evaluation.get("dimensions", [])
@@ -335,16 +599,18 @@ def _evaluation_html(evaluation: dict[str, Any] | None) -> str:
     notes = "".join(
         f'<section><h4>{title}</h4>{_list_html(evaluation.get(key, []))}</section>'
         for title, key in (
-            ("主要缺陷", "main_defects"),
-            ("证据不足项", "insufficient_evidence"),
-            ("改进建议", "improvements"),
+            (labels["main_defects"], "main_defects"),
+            (labels["insufficient_evidence"], "insufficient_evidence"),
+            (labels["improvements"], "improvements"),
         )
     )
     return (
         '<div class="evaluation-score">'
         f'<strong>{_escape(evaluation.get("total_score"))}</strong><span>/ 45</span></div>'
-        '<div class="table-wrap"><table><thead><tr><th>维度</th><th>得分</th>'
-        f'<th>重点结论</th></tr></thead><tbody>{dimensions}</tbody></table></div>{notes}'
+        f'<div class="table-wrap"><table><thead><tr><th>{_escape(labels["dimension"])}</th>'
+        f'<th>{_escape(labels["score"])}</th>'
+        f'<th>{_escape(labels["finding"])}</th></tr></thead>'
+        f"<tbody>{dimensions}</tbody></table></div>{notes}"
     )
 
 
@@ -357,6 +623,13 @@ def render_report_html(
     archive_href: str | None = "../index.html",
     pdf_href: str | None = None,
 ) -> str:
+    language = report.get("language") or "zh-CN"
+    labels = _ui(language)
+    module_labels = MODULE_LABELS if is_chinese_output(language) else MODULE_LABELS_EN
+    edition_labels = EDITION_LABELS if is_chinese_output(language) else EDITION_LABELS_EN
+    analysis_labels = (
+        ANALYSIS_LABELS if is_chinese_output(language) else ANALYSIS_LABELS_EN
+    )
     evaluation = evaluation or (
         report.get("quality_evaluation")
         if isinstance(report.get("quality_evaluation"), dict)
@@ -367,14 +640,14 @@ def render_report_html(
         section_blocks = []
         for section in _ordered_sections(report, module):
             source_groups = "".join(
-                _source_section_html(source, items, media_path_prefix)
-                for source, items in _group_items(section)
+                _source_section_html(source, items, media_path_prefix, language)
+                for source, items in _group_items(section, language)
             )
             empty_note = ""
             if not source_groups:
                 empty_note = (
                     '<div class="empty-note">'
-                    f'{_escape(section.get("coverage_note") or "本时段暂无可发布内容。")}</div>'
+                    f'{_escape(section.get("coverage_note") or labels["empty"])}</div>'
                 )
             section_blocks.append(
                 f'<section class="content-section" id="{_escape(section.get("id"))}">'
@@ -382,7 +655,7 @@ def render_report_html(
             )
         module_blocks.append(
             f'<section class="module" id="module-{module}"><div class="module-label">'
-            f'{MODULE_LABELS[module]}</div>{"".join(section_blocks)}</section>'
+            f'{module_labels[module]}</div>{"".join(section_blocks)}</section>'
         )
 
     pending = "".join(
@@ -393,7 +666,9 @@ def render_report_html(
         if isinstance(item, dict)
     )
     pending_block = (
-        '<aside class="pending"><h3>待验证来源</h3><ul>' + pending + "</ul></aside>"
+        f'<aside class="pending"><h3>{_escape(labels["pending_sources"])}</h3><ul>'
+        + pending
+        + "</ul></aside>"
         if pending
         else ""
     )
@@ -401,26 +676,28 @@ def render_report_html(
     analysis_groups = []
     for domain in ("geopolitics", "ai_technology", "markets"):
         analyses = [row for row in report.get("analyses", []) if row.get("domain") == domain]
-        cards = "".join(_analysis_html(row) for row in analyses)
+        cards = "".join(_analysis_html(row, language) for row in analyses)
         if not cards:
-            cards = '<div class="empty-note">本版没有形成达到证据门槛的该领域研判。</div>'
+            cards = f'<div class="empty-note">{_escape(labels["analysis_empty"])}</div>'
         analysis_groups.append(
             f'<section class="analysis-domain" id="analysis-{domain}">'
-            f"<h3>{ANALYSIS_LABELS[domain]}</h3>{cards}</section>"
+            f"<h3>{analysis_labels[domain]}</h3>{cards}</section>"
         )
-    synthesis_block = _synthesis_html(report.get("cross_perspective_synthesis"))
+    synthesis_block = _synthesis_html(
+        report.get("cross_perspective_synthesis"), language
+    )
 
     changes = report.get("changes", [])
     changes_block = (
-        '<section class="follow-up"><h3>日间新增、确认与修正</h3>'
-        f'{_list_html(changes)}</section>'
+        f'<section class="follow-up"><h3>{_escape(labels["changes"])}</h3>'
+        f'{_list_html(changes, language=language)}</section>'
         if changes
         else ""
     )
     watch = report.get("tomorrow_watch_items", [])
     watch_block = (
-        '<section class="follow-up"><h3>次日观察项</h3>'
-        f'{_list_html(watch)}</section>'
+        f'<section class="follow-up"><h3>{_escape(labels["next_watch"])}</h3>'
+        f'{_list_html(watch, language=language)}</section>'
         if watch
         else ""
     )
@@ -438,11 +715,31 @@ def render_report_html(
             f'<a href="{_escape(resolved_pdf_href)}">PDF</a>'
         )
     archive_link = (
-        f'<a href="{_escape(archive_href)}">日报中心</a>' if archive_href else ""
+        f'<a href="{_escape(archive_href)}">{_escape(labels["archive"])}</a>'
+        if archive_href
+        else ""
     )
     toc_block = _toc_html(report)
+    feedback_fields = (
+        (labels["relevance"], "relevance"),
+        (labels["accuracy"], "accuracy"),
+        (labels["analysis_value"], "analysis_value"),
+        (labels["satisfaction"], "satisfaction"),
+    )
+    feedback_controls = "".join(
+        f'<label>{_escape(label)}<select data-feedback="{key}">'
+        f'<option value="">{_escape(labels["unrated"])}</option>'
+        + "".join(
+            f"<option value={score}>{score}/5</option>" for score in range(1, 6)
+        )
+        + "</select></label>"
+        for label, key in feedback_fields
+    )
+    feedback_print = "　".join(
+        f"{label}: __/5" for label, _key in feedback_fields
+    )
     return f"""<!doctype html>
-<html lang="zh-CN">
+<html lang="{_escape(language)}">
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width,initial-scale=1">
@@ -451,19 +748,18 @@ def render_report_html(
 <style>
 :root{{--ink:#18202a;--muted:#637083;--paper:#f5f2eb;--card:#fff;--line:#dfe3e8;--blue:#234a70;--red:#a53b2e;--gold:#a67424;--soft:#eef3f7}}
 *{{box-sizing:border-box}}html{{scroll-behavior:smooth}}body{{margin:0;color:var(--ink);background:var(--paper);font-family:"Microsoft YaHei","PingFang SC","Noto Sans CJK SC",sans-serif;line-height:1.72}}
-a{{color:var(--blue);text-decoration:none}}a:hover{{text-decoration:underline}}.shell{{width:min(1120px,calc(100% - 32px));margin:0 auto}}.masthead{{padding:56px 0 38px;background:linear-gradient(135deg,#172a3d,#254f6f);color:#fff;border-bottom:5px solid #bd8a39}}.eyebrow{{letter-spacing:.16em;text-transform:uppercase;color:#e5c98e;font-size:13px}}h1{{font-family:Georgia,"Noto Serif CJK SC",serif;font-size:clamp(34px,5vw,60px);line-height:1.14;margin:10px 0 16px;max-width:900px}}.metadata{{display:flex;gap:10px 24px;flex-wrap:wrap;color:#d9e3ec;font-size:14px}}.toolbar{{position:sticky;top:0;z-index:10;background:rgba(255,255,255,.96);border-bottom:1px solid var(--line);backdrop-filter:blur(12px)}}.toolbar-inner{{display:flex;align-items:center;gap:16px;padding:12px 0}}.toolbar nav{{display:flex;gap:18px;font-weight:700}}.toolbar input{{margin-left:auto;min-width:260px;padding:9px 12px;border:1px solid var(--line);border-radius:8px}}.tools{{display:flex;gap:10px;white-space:nowrap}}main{{padding:34px 0 70px}}.summary,.module,.analysis-module,.evaluation,.feedback,.pending{{background:var(--card);border:1px solid var(--line);border-radius:14px;box-shadow:0 8px 24px rgba(25,36,48,.05);margin:0 0 24px;padding:28px}}.summary h2,.module-label,.analysis-module>h2,.evaluation>h2,.feedback>h2{{font-family:Georgia,"Noto Serif CJK SC",serif;color:var(--blue);font-size:28px;margin:0 0 16px}}.summary ul{{margin:0;padding-left:24px}}.module-label{{font-size:34px;border-bottom:3px solid var(--gold);padding-bottom:10px}}.content-section{{padding:24px 0 6px;border-bottom:1px solid var(--line)}}.content-section:last-child{{border:0}}.content-section>h2{{font-size:24px;margin:0 0 16px}}.source-group{{margin:18px 0 28px}}.source-heading{{display:flex;align-items:center;justify-content:space-between;background:var(--soft);border-left:5px solid var(--blue);padding:10px 14px;margin-bottom:4px}}.source-heading h3{{font-size:19px;margin:0}}.source-heading span{{font-size:13px;color:var(--muted)}}.brief{{padding:18px 6px;border-bottom:1px dashed var(--line);break-inside:avoid}}.brief-heading{{display:grid;grid-template-columns:38px minmax(0,1fr) auto;gap:12px;align-items:start}}.ordinal{{font:700 18px Georgia;color:var(--gold);padding-top:2px}}.brief h4{{font-size:17px;line-height:1.5;margin:0}}.translated-title{{font-weight:700;margin:5px 0 0;color:#35465a}}.story-time{{margin:5px 0 0;color:var(--muted);font-size:12px}}.badges{{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}}.badge{{display:inline-block;padding:2px 7px;border-radius:999px;font-size:11px;background:#eef2f5;color:#4d5a67}}.badge.status{{background:#f5e8e2;color:var(--red)}}.badge.rank{{background:#f6edd8;color:#7a581c}}.tldr{{margin:10px 0 0 50px;color:#344150}}.tldr span{{font-size:11px;font-weight:800;letter-spacing:.08em;color:var(--red);margin-right:9px}}figure{{margin:16px 0 0 50px}}figure img{{max-width:100%;max-height:420px;border-radius:8px}}figcaption{{font-size:12px;color:var(--muted)}}.empty-note,.evaluation-pending{{padding:18px;background:#f7f8f9;border:1px dashed #c9d0d7;border-radius:8px;color:var(--muted)}}.pending li{{display:flex;gap:10px;justify-content:space-between;border-bottom:1px solid var(--line);padding:8px 0}}.pending li span{{color:var(--muted);font-size:13px}}.analysis-domain>h3{{font-size:23px;margin:30px 0 14px;border-left:5px solid var(--red);padding-left:12px}}.analysis-card{{border:1px solid var(--line);border-radius:12px;margin:0 0 20px;padding:24px;break-inside:avoid}}.analysis-card>h4{{font-family:Georgia,"Noto Serif CJK SC",serif;font-size:23px;line-height:1.5;margin:0 0 10px}}.analysis-meta{{display:flex;gap:14px;flex-wrap:wrap;color:var(--muted);font-size:13px;padding-bottom:15px;border-bottom:1px solid var(--line)}}.analysis-part{{margin-top:18px}}.analysis-part h5{{font-size:15px;color:var(--red);margin:0 0 6px}}.analysis-part p,.analysis-part ul{{margin-top:0}}.stakeholder-grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px}}.stakeholder{{background:#f7f5ef;border-radius:8px;padding:14px}}.stakeholder p{{margin:4px 0}}.stakeholder small{{color:var(--muted)}}.follow-up{{border-top:1px solid var(--line);margin-top:24px;padding-top:18px}}.evaluation-score{{display:flex;align-items:baseline;gap:6px;margin:4px 0 18px}}.evaluation-score strong{{font:700 52px Georgia;color:var(--red)}}.evaluation-score span{{color:var(--muted)}}.table-wrap{{overflow:auto}}table{{width:100%;border-collapse:collapse}}th,td{{text-align:left;border-bottom:1px solid var(--line);padding:10px;vertical-align:top}}th{{background:var(--soft)}}.score{{font-weight:800;color:var(--red);white-space:nowrap}}.feedback-grid{{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}}label{{font-size:13px;color:var(--muted)}}select,textarea{{width:100%;margin-top:5px;padding:9px;border:1px solid var(--line);border-radius:7px;background:#fff}}textarea{{min-height:100px}}.feedback .comment{{display:block;margin-top:16px}}button{{margin-top:14px;background:var(--blue);color:#fff;border:0;border-radius:8px;padding:10px 16px;font-weight:700;cursor:pointer}}.feedback-note{{color:var(--muted);font-size:12px}}.feedback-print{{display:none}}footer{{color:var(--muted);font-size:12px;padding:0 0 34px;text-align:center}}.hidden-by-search{{display:none!important}}
-.brief>figure{{margin-top:0;margin-bottom:14px}}
+a{{color:var(--blue);text-decoration:none}}a:hover{{text-decoration:underline}}.shell{{width:min(1120px,calc(100% - 32px));margin:0 auto}}.masthead{{padding:56px 0 38px;background:linear-gradient(135deg,#172a3d,#254f6f);color:#fff;border-bottom:5px solid #bd8a39}}.eyebrow{{letter-spacing:.16em;text-transform:uppercase;color:#e5c98e;font-size:13px}}h1{{font-family:Georgia,"Noto Serif CJK SC",serif;font-size:clamp(34px,5vw,60px);line-height:1.14;margin:10px 0 16px;max-width:900px}}.metadata{{display:flex;gap:10px 24px;flex-wrap:wrap;color:#d9e3ec;font-size:14px}}.toolbar{{position:sticky;top:0;z-index:10;background:rgba(255,255,255,.96);border-bottom:1px solid var(--line);backdrop-filter:blur(12px)}}.toolbar-inner{{display:flex;align-items:center;gap:16px;padding:12px 0}}.toolbar nav{{display:flex;gap:18px;font-weight:700}}.toolbar input{{margin-left:auto;min-width:260px;padding:9px 12px;border:1px solid var(--line);border-radius:8px}}.tools{{display:flex;gap:10px;white-space:nowrap}}main{{padding:34px 0 70px}}.summary,.module,.analysis-module,.evaluation,.feedback,.pending{{background:var(--card);border:1px solid var(--line);border-radius:14px;box-shadow:0 8px 24px rgba(25,36,48,.05);margin:0 0 24px;padding:28px}}.summary h2,.module-label,.analysis-module>h2,.evaluation>h2,.feedback>h2{{font-family:Georgia,"Noto Serif CJK SC",serif;color:var(--blue);font-size:28px;margin:0 0 16px}}.summary ul{{margin:0;padding-left:24px}}.module-label{{font-size:34px;border-bottom:3px solid var(--gold);padding-bottom:10px}}.content-section{{padding:24px 0 6px;border-bottom:1px solid var(--line)}}.content-section:last-child{{border:0}}.content-section>h2{{font-size:24px;margin:0 0 16px}}.source-group{{margin:18px 0 28px}}.source-heading{{display:flex;align-items:center;justify-content:space-between;background:var(--soft);border-left:5px solid var(--blue);padding:10px 14px;margin-bottom:4px}}.source-heading h3{{font-size:19px;margin:0}}.source-heading span{{font-size:13px;color:var(--muted)}}.brief{{display:grid;grid-template-columns:38px minmax(220px,300px) minmax(0,1fr);gap:14px 18px;padding:18px 6px;border-bottom:1px dashed var(--line);break-inside:avoid}}.brief-heading{{grid-column:1/-1;grid-row:1;display:grid;grid-template-columns:38px minmax(0,1fr) auto;gap:12px;align-items:start}}.ordinal{{font:700 18px Georgia;color:var(--gold);padding-top:2px}}.brief h4{{font-size:17px;line-height:1.5;margin:0}}.translated-title{{font-weight:700;margin:5px 0 0;color:#35465a}}.story-time{{margin:5px 0 0;color:var(--muted);font-size:12px}}.badges{{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}}.badge{{display:inline-block;padding:2px 7px;border-radius:999px;font-size:11px;background:#eef2f5;color:#4d5a67}}.badge.status{{background:#f5e8e2;color:var(--red)}}.badge.rank{{background:#f6edd8;color:#7a581c}}.brief>.tldr{{grid-column:3;grid-row:2;margin:0;color:#344150}}.brief:not(.has-image)>.tldr{{grid-column:2/-1}}.tldr span{{font-size:11px;font-weight:800;letter-spacing:.08em;color:var(--red);margin-right:9px}}.brief>figure{{grid-column:2;grid-row:2;margin:0}}.brief figure img{{display:block;width:100%;max-width:300px;aspect-ratio:16/9;object-fit:cover;border-radius:8px}}.brief figcaption{{font-size:12px;color:var(--muted);line-height:1.45;margin-top:5px}}.empty-note,.evaluation-pending{{padding:18px;background:#f7f8f9;border:1px dashed #c9d0d7;border-radius:8px;color:var(--muted)}}.pending li{{display:flex;gap:10px;justify-content:space-between;border-bottom:1px solid var(--line);padding:8px 0}}.pending li span{{color:var(--muted);font-size:13px}}.analysis-domain>h3{{font-size:23px;margin:30px 0 14px;border-left:5px solid var(--red);padding-left:12px}}.analysis-card{{border:1px solid var(--line);border-radius:12px;margin:0 0 20px;padding:24px;break-inside:avoid}}.analysis-card>h4{{font-family:Georgia,"Noto Serif CJK SC",serif;font-size:23px;line-height:1.5;margin:0 0 10px}}.analysis-meta{{display:flex;gap:14px;flex-wrap:wrap;color:var(--muted);font-size:13px;padding-bottom:15px;border-bottom:1px solid var(--line)}}.analysis-part{{margin-top:18px}}.analysis-part h5{{font-size:15px;color:var(--red);margin:0 0 6px}}.analysis-part p,.analysis-part ul{{margin-top:0}}.stakeholder-grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px}}.stakeholder{{background:#f7f5ef;border-radius:8px;padding:14px}}.stakeholder p{{margin:4px 0}}.stakeholder small{{color:var(--muted)}}.follow-up{{border-top:1px solid var(--line);margin-top:24px;padding-top:18px}}.evaluation-score{{display:flex;align-items:baseline;gap:6px;margin:4px 0 18px}}.evaluation-score strong{{font:700 52px Georgia;color:var(--red)}}.evaluation-score span{{color:var(--muted)}}.table-wrap{{overflow:auto}}table{{width:100%;border-collapse:collapse}}th,td{{text-align:left;border-bottom:1px solid var(--line);padding:10px;vertical-align:top}}th{{background:var(--soft)}}.score{{font-weight:800;color:var(--red);white-space:nowrap}}.feedback-grid{{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}}label{{font-size:13px;color:var(--muted)}}select,textarea{{width:100%;margin-top:5px;padding:9px;border:1px solid var(--line);border-radius:7px;background:#fff}}textarea{{min-height:100px}}.feedback .comment{{display:block;margin-top:16px}}button{{margin-top:14px;background:var(--blue);color:#fff;border:0;border-radius:8px;padding:10px 16px;font-weight:700;cursor:pointer}}.feedback-note{{color:var(--muted);font-size:12px}}.feedback-print{{display:none}}footer{{color:var(--muted);font-size:12px;padding:0 0 34px;text-align:center}}.hidden-by-search{{display:none!important}}
 .summary,.module,.content-section,.analysis-module,.analysis-domain,.evaluation,.feedback{{scroll-margin-top:88px}}.toc-toggle{{position:fixed;z-index:32;left:14px;top:50%;display:flex;flex-direction:column;align-items:center;gap:6px;width:42px;margin:0;padding:13px 8px;transform:translateY(-50%);border:1px solid rgba(35,74,112,.2);border-radius:10px;background:rgba(255,255,255,.96);box-shadow:0 8px 24px rgba(25,36,48,.14);color:var(--blue);font-size:12px;letter-spacing:.12em;backdrop-filter:blur(12px);transition:opacity .2s,transform .2s}}.toc-toggle span:first-child{{font-size:17px;line-height:1}}body.toc-open .toc-toggle{{opacity:0;pointer-events:none;transform:translate(-12px,-50%)}}.report-toc{{position:fixed;z-index:31;left:14px;top:84px;bottom:18px;width:286px;display:flex;flex-direction:column;overflow:hidden;border:1px solid rgba(35,74,112,.16);border-radius:14px;background:rgba(255,255,255,.97);box-shadow:0 16px 42px rgba(22,42,61,.18);backdrop-filter:blur(16px);transform:translateX(calc(-100% - 30px));transition:transform .24s ease}}body.toc-open .report-toc{{transform:translateX(0)}}.toc-heading{{display:flex;align-items:center;justify-content:space-between;padding:16px 16px 12px;border-bottom:1px solid var(--line);color:var(--blue)}}.toc-heading strong{{font:700 18px Georgia,"Noto Serif CJK SC",serif}}.toc-close{{margin:0;padding:5px 9px;border:1px solid var(--line);border-radius:7px;background:var(--soft);color:var(--blue);font-size:12px}}.toc-nav{{overflow-y:auto;padding:10px}}.toc-link{{display:block;margin:2px 0;padding:7px 10px;border-left:3px solid transparent;border-radius:6px;color:#35465a;font-size:14px;line-height:1.4}}.toc-link:hover{{background:var(--soft);text-decoration:none}}.toc-link.toc-level-0{{margin-top:7px;font-weight:800;color:var(--blue)}}.toc-link.toc-level-1{{padding-left:22px;font-size:13px}}.toc-link.active{{border-left-color:var(--gold);background:#f6edd8;color:#634718}}.toc-scrim{{position:fixed;z-index:30;inset:0;visibility:hidden;background:rgba(18,30,42,.22);opacity:0;transition:opacity .2s,visibility .2s}}body.toc-open .toc-scrim{{visibility:visible;opacity:1}}
 @media(min-width:1500px){{.toc-scrim{{display:none}}}}
-@media(max-width:720px){{.toolbar-inner{{align-items:flex-start;flex-wrap:wrap}}.toolbar input{{order:3;margin:0;width:100%;min-width:0}}.tools{{margin-left:auto}}.summary,.module,.analysis-module,.evaluation,.feedback,.pending{{padding:20px}}.brief-heading{{grid-template-columns:32px 1fr}}.badges{{grid-column:2;justify-content:flex-start}}.tldr,figure{{margin-left:44px}}.feedback-grid{{grid-template-columns:1fr 1fr}}.toc-toggle{{left:8px;width:38px}}.report-toc{{left:8px;top:72px;bottom:8px;width:min(300px,calc(100vw - 24px))}}}}
+@media(max-width:720px){{.toolbar-inner{{align-items:flex-start;flex-wrap:wrap}}.toolbar input{{order:3;margin:0;width:100%;min-width:0}}.tools{{margin-left:auto}}.summary,.module,.analysis-module,.evaluation,.feedback,.pending{{padding:20px}}.brief{{grid-template-columns:32px minmax(0,1fr);gap:10px 12px}}.brief-heading{{grid-column:1/-1;grid-template-columns:32px 1fr}}.badges{{grid-column:2;justify-content:flex-start}}.brief>figure{{grid-column:2;grid-row:2}}.brief.has-image>.tldr{{grid-column:2;grid-row:3}}.brief:not(.has-image)>.tldr{{grid-column:2;grid-row:2}}.feedback-grid{{grid-template-columns:1fr 1fr}}.toc-toggle{{left:8px;width:38px}}.report-toc{{left:8px;top:72px;bottom:8px;width:min(300px,calc(100vw - 24px))}}}}
 @media print{{body{{background:#fff;font-size:10.5pt}}.masthead{{padding:28px 0;background:#fff!important;color:#172a3d;border-bottom:3px solid #a67424}}.eyebrow{{color:#7a581c}}.metadata{{color:#536273}}.toolbar,.toc-toggle,.report-toc,.toc-scrim,.feedback button,.feedback-note,.feedback-grid,.feedback .comment{{display:none}}.feedback-print{{display:block}}.shell{{width:auto;margin:0 14mm}}main{{padding:12px 0}}.summary,.module,.analysis-module,.evaluation,.feedback,.pending{{box-shadow:none;border:0;border-radius:0;padding:10px 0;margin:0 0 12px}}.source-group,.brief,.analysis-card,table,figure{{break-inside:avoid}}a{{color:#18202a}}.content-section{{break-before:auto}}}}
 </style>
 </head>
 <body>
 {toc_block}
-<header class="masthead"><div class="shell"><div class="eyebrow">Daily Intelligence · {EDITION_LABELS.get(str(report.get('edition')), _escape(report.get('edition')))}</div><h1>{_escape(report.get('title'))}</h1><div class="metadata"><span>{_escape(report.get('date'))}</span><span>修订 r{_escape(report.get('revision'))}</span><span>{_escape(report.get('generated_at'))}</span><span>{_escape(report_id)}</span></div></div></header>
-<div class="toolbar"><div class="shell toolbar-inner"><nav><a href="#module-information">资讯</a><a href="#module-technology">技术</a><a href="#analysis">研判</a><a href="#evaluation">评估</a></nav><input id="search" type="search" placeholder="筛选标题、摘要或来源"><div class="tools">{archive_link}{pdf_link}</div></div></div>
-<main class="shell"><section class="summary" id="summary"><h2>今日摘要</h2>{_list_html(report.get('executive_summary', []))}</section>{''.join(module_blocks)}{pending_block}<section class="analysis-module" id="analysis"><h2>研判</h2>{''.join(analysis_groups)}{synthesis_block}{changes_block}{watch_block}</section><section class="evaluation" id="evaluation"><h2>质量评估</h2>{_evaluation_html(evaluation)}</section><section class="feedback" id="feedback"><h2>用户反馈</h2><div class="feedback-grid">{''.join(f'<label>{label}<select data-feedback="{key}"><option value="">未评分</option>{"".join(f"<option value={score}>{score}/5</option>" for score in range(1,6))}</select></label>' for label,key in (("相关性","relevance"),("准确性","accuracy"),("分析价值","analysis_value"),("整体满意度","satisfaction")))}</div><label class="comment">补充意见<textarea data-feedback="comment" placeholder="这些反馈可作为后续日报个性化输入。"></textarea></label><div class="feedback-print">相关性：__/5　准确性：__/5　分析价值：__/5　整体满意度：__/5<br>补充意见：________________________________</div><button id="download-feedback" type="button">下载反馈 JSON</button><p class="feedback-note">本地文件不会自动上传数据。请把下载的 JSON 交给 Hermes，作为下一版的人工反馈输入。</p></section></main><footer class="shell">本地 JSON/Markdown 为事实源；HTML/PDF 是可重新生成的阅读投影。</footer>
+<header class="masthead"><div class="shell"><div class="eyebrow">Daily Intelligence · {edition_labels.get(str(report.get('edition')), _escape(report.get('edition')))}</div><h1>{_escape(report.get('title'))}</h1><div class="metadata"><span>{_escape(report.get('date'))}</span><span>{_escape(labels["revision"])} r{_escape(report.get('revision'))}</span><span>{_escape(report.get('generated_at'))}</span><span>{_escape(report_id)}</span></div></div></header>
+<div class="toolbar"><div class="shell toolbar-inner"><nav><a href="#module-information">{_escape(module_labels["information"])}</a><a href="#module-technology">{_escape(module_labels["technology"])}</a><a href="#analysis">{_escape(labels["analysis"])}</a><a href="#evaluation">{_escape(labels["evaluation"])}</a></nav><input id="search" type="search" placeholder="{_escape(labels["filter"])}"><div class="tools">{archive_link}{pdf_link}</div></div></div>
+<main class="shell"><section class="summary" id="summary"><h2>{_escape(labels["summary"])}</h2>{_list_html(report.get('executive_summary', []), language=language)}</section>{''.join(module_blocks)}{pending_block}<section class="analysis-module" id="analysis"><h2>{_escape(labels["analysis"])}</h2>{''.join(analysis_groups)}{synthesis_block}{changes_block}{watch_block}</section><section class="evaluation" id="evaluation"><h2>{_escape(labels["evaluation"])}</h2>{_evaluation_html(evaluation, language)}</section><section class="feedback" id="feedback"><h2>{_escape(labels["feedback"])}</h2><div class="feedback-grid">{feedback_controls}</div><label class="comment">{_escape(labels["comments"])}<textarea data-feedback="comment" placeholder="{_escape(labels["feedback_placeholder"])}"></textarea></label><div class="feedback-print">{_escape(feedback_print)}<br>{_escape(labels["comments"])}: ________________________________</div><button id="download-feedback" type="button">{_escape(labels["download_feedback"])}</button><p class="feedback-note">{_escape(labels["feedback_note"])}</p></section></main><footer class="shell">{_escape(labels["footer"])}</footer>
 <script>
 const reportMeta={feedback_data};
 const tocToggle=document.getElementById('toc-toggle');
@@ -522,20 +818,30 @@ def _reportlab_pdf(
         ) from exc
 
     font_name = "STSong-Light"
+    language = report.get("language") or "zh-CN"
+    labels = _ui(language)
+    module_labels = MODULE_LABELS if is_chinese_output(language) else MODULE_LABELS_EN
+    edition_labels = EDITION_LABELS if is_chinese_output(language) else EDITION_LABELS_EN
+    analysis_labels = (
+        ANALYSIS_LABELS if is_chinese_output(language) else ANALYSIS_LABELS_EN
+    )
+    evaluation_labels = (
+        EVALUATION_LABELS if is_chinese_output(language) else EVALUATION_LABELS_EN
+    )
     pdfmetrics.registerFont(UnicodeCIDFont(font_name))
     styles = getSampleStyleSheet()
     base = ParagraphStyle(
-        "ChineseBody",
+        "ReportBody",
         parent=styles["BodyText"],
         fontName=font_name,
         fontSize=9.5,
         leading=15,
         textColor=colors.HexColor("#253242"),
         spaceAfter=5,
-        wordWrap="CJK",
+        wordWrap="CJK" if is_chinese_output(language) else None,
     )
     title = ParagraphStyle(
-        "ChineseTitle",
+        "ReportTitle",
         parent=base,
         fontSize=24,
         leading=32,
@@ -544,7 +850,7 @@ def _reportlab_pdf(
         spaceAfter=12,
     )
     h1 = ParagraphStyle(
-        "ChineseH1",
+        "ReportH1",
         parent=base,
         fontSize=19,
         leading=25,
@@ -553,7 +859,7 @@ def _reportlab_pdf(
         spaceAfter=9,
     )
     h2 = ParagraphStyle(
-        "ChineseH2",
+        "ReportH2",
         parent=base,
         fontSize=14,
         leading=19,
@@ -562,7 +868,7 @@ def _reportlab_pdf(
         spaceAfter=6,
     )
     h3 = ParagraphStyle(
-        "ChineseH3",
+        "ReportH3",
         parent=base,
         fontSize=11.5,
         leading=17,
@@ -571,7 +877,7 @@ def _reportlab_pdf(
         spaceAfter=4,
     )
     small = ParagraphStyle(
-        "ChineseSmall",
+        "ReportSmall",
         parent=base,
         fontSize=8,
         leading=12,
@@ -588,29 +894,38 @@ def _reportlab_pdf(
         canvas.saveState()
         canvas.setFont(font_name, 8)
         canvas.setFillColor(colors.HexColor("#73808D"))
-        canvas.drawCentredString(A4[0] / 2, 10 * mm, f"第 {document.page} 页")
+        canvas.drawCentredString(
+            A4[0] / 2,
+            10 * mm,
+            labels["page"].format(page=document.page),
+        )
         canvas.restoreState()
 
     story: list[Any] = [
         paragraph(report.get("title"), title),
         paragraph(
-            f"{EDITION_LABELS.get(str(report.get('edition')), report.get('edition'))} · "
-            f"{report.get('date')} · 修订 r{report.get('revision')}",
+            f"{edition_labels.get(str(report.get('edition')), report.get('edition'))} · "
+            f"{report.get('date')} · {labels['revision']} r{report.get('revision')}",
             small,
         ),
         Spacer(1, 5 * mm),
-        paragraph("今日摘要", h1),
+        paragraph(labels["summary"], h1),
     ]
     story.extend(bullet(value) for value in report.get("executive_summary", []))
     for module in ("information", "technology"):
-        story.extend([Spacer(1, 4 * mm), paragraph(MODULE_LABELS[module], h1)])
+        story.extend([Spacer(1, 4 * mm), paragraph(module_labels[module], h1)])
         for section in _ordered_sections(report, module):
             story.append(paragraph(section.get("title"), h2))
-            groups = _group_items(section)
+            groups = _group_items(section, language)
             if not groups:
-                story.append(paragraph(section.get("coverage_note") or "本时段暂无内容。", small))
+                story.append(paragraph(section.get("coverage_note") or labels["empty"], small))
             for source, items in groups:
-                story.append(paragraph(source.get("name") or "未知来源", h3))
+                story.append(
+                    paragraph(
+                        source.get("name") or labels["unknown_source"],
+                        h3,
+                    )
+                )
                 for rank, item in enumerate(items, start=1):
                     ref = _item_ref(item)
                     source_rank = f" [{item.get('source_rank_label')}]" if item.get("source_rank_label") else ""
@@ -618,41 +933,41 @@ def _reportlab_pdf(
                     link = _safe_url(ref.get("url"))
                     linked_title = Paragraph(f'<link href="{link}">{_escape(label)}</link>', base)
                     blocks: list[Any] = [linked_title]
-                    if item.get("title_zh"):
-                        blocks.append(paragraph(item.get("title_zh"), h3))
-                    if time_info := reference_time_label(ref):
+                    if localized_title := translated_title(item, language):
+                        blocks.append(paragraph(localized_title, h3))
+                    if time_info := reference_time_label(ref, language):
                         time_label, time_value = time_info
                         blocks.append(paragraph(f"{time_label}：{time_value}", small))
                     blocks.append(paragraph(f"TL;DR：{item.get('tldr')}"))
                     story.append(KeepTogether(blocks))
                     story.append(Spacer(1, 2 * mm))
-    story.extend([PageBreak(), paragraph("研判", h1)])
+    story.extend([PageBreak(), paragraph(labels["analysis"], h1)])
     for domain in ("geopolitics", "ai_technology", "markets"):
-        story.append(paragraph(ANALYSIS_LABELS[domain], h2))
+        story.append(paragraph(analysis_labels[domain], h2))
         rows = [row for row in report.get("analyses", []) if row.get("domain") == domain]
         if not rows:
-            story.append(paragraph("本版没有形成达到证据门槛的该领域研判。", small))
+            story.append(paragraph(labels["analysis_empty"], small))
         for analysis in rows:
             story.append(paragraph(analysis.get("claim"), h3))
             for label, key in (
-                ("事实基础", "facts"),
-                ("综合论述", "narrative"),
-                ("历史脉络", "historical_context"),
-                ("辩证分析", "dialectical_analysis"),
-                ("推理链", "reasoning"),
-                ("反证与不确定性", "counter_evidence"),
-                ("可能情景", "scenarios"),
-                ("影响与启示", "implications"),
-                ("建议行动", "actions"),
-                ("后续观察信号", "watch_signals"),
-                ("观点失效信号", "invalidation_signals"),
-                ("因果传导链", "causal_chain"),
-                ("关键假设", "assumptions"),
-                ("证据缺口", "evidence_gaps"),
-                ("时间跨度", "time_horizon"),
-                ("置信度依据", "confidence_rationale"),
-                ("相对上一版", "change_from_prior"),
-                ("决策相关性", "decision_relevance"),
+                (labels["facts"], "facts"),
+                (labels["narrative"], "narrative"),
+                (labels["history"], "historical_context"),
+                (labels["dialectic"], "dialectical_analysis"),
+                (labels["reasoning"], "reasoning"),
+                (labels["counter"], "counter_evidence"),
+                (labels["scenarios"], "scenarios"),
+                (labels["implications"], "implications"),
+                (labels["actions"], "actions"),
+                (labels["watch"], "watch_signals"),
+                (labels["invalidation"], "invalidation_signals"),
+                (labels["causal"], "causal_chain"),
+                (labels["assumptions"], "assumptions"),
+                (labels["gaps"], "evidence_gaps"),
+                (labels["horizon"], "time_horizon"),
+                (labels["confidence_basis"], "confidence_rationale"),
+                (labels["change_prior"], "change_from_prior"),
+                (labels["decision"], "decision_relevance"),
             ):
                 value = analysis.get(key)
                 if not value:
@@ -664,36 +979,53 @@ def _reportlab_pdf(
                     story.append(paragraph(value))
     synthesis = report.get("cross_perspective_synthesis")
     if isinstance(synthesis, dict):
-        story.append(paragraph("跨视角综合", h2))
+        story.append(paragraph(labels["synthesis"], h2))
         story.append(paragraph(synthesis.get("overall_judgment"), h3))
         for label, key in (
-            ("共同结论", "consensus"),
-            ("地缘—技术—市场传导链", "transmission_chain"),
-            ("共同观察信号", "shared_watch_signals"),
-            ("修正判断的触发条件", "revision_triggers"),
+            (labels["consensus"], "consensus"),
+            (labels["transmission"], "transmission_chain"),
+            (labels["shared_watch"], "shared_watch_signals"),
+            (labels["revision_triggers"], "revision_triggers"),
         ):
             story.append(paragraph(label, h3))
             story.extend(bullet(value) for value in synthesis.get(key, []))
-        story.append(paragraph("关键分歧", h3))
+        story.append(paragraph(labels["tensions"], h3))
         for tension in synthesis.get("tensions", []):
             if not isinstance(tension, dict):
                 continue
-            perspectives = "、".join(tension.get("perspectives", []))
+            perspectives = (
+                "、" if is_chinese_output(language) else ", "
+            ).join(tension.get("perspectives", []))
             story.append(
                 bullet(
-                    f"{tension.get('issue', '')}（{perspectives}）："
+                    f"{tension.get('issue', '')} ({perspectives}): "
                     f"{tension.get('source_of_difference', '')}"
                 )
             )
-    story.extend([PageBreak(), paragraph("质量评估与用户反馈", h1)])
+    story.extend([PageBreak(), paragraph(labels["evaluation_and_feedback"], h1)])
     effective_evaluation = evaluation or report.get("quality_evaluation")
     if isinstance(effective_evaluation, dict):
-        story.append(paragraph(f"独立评估总分：{effective_evaluation.get('total_score')}/45", h2))
-        rows = [[paragraph("维度", small), paragraph("得分", small), paragraph("结论", small)]]
+        story.append(
+            paragraph(
+                f"{labels['evaluation_total']}: "
+                f"{effective_evaluation.get('total_score')}/45",
+                h2,
+            )
+        )
+        rows = [
+            [
+                paragraph(labels["dimension"], small),
+                paragraph(labels["score"], small),
+                paragraph(labels["finding"], small),
+            ]
+        ]
         for row in effective_evaluation.get("dimensions", []):
             rows.append(
                 [
-                    paragraph(EVALUATION_LABELS.get(str(row.get("id")), row.get("id")), small),
+                    paragraph(
+                        evaluation_labels.get(str(row.get("id")), row.get("id")),
+                        small,
+                    ),
                     paragraph(f"{row.get('score')}/5", small),
                     paragraph(row.get("finding"), small),
                 ]
@@ -712,13 +1044,22 @@ def _reportlab_pdf(
         )
         story.append(table)
     else:
-        story.append(paragraph("独立评估处理中，日报交付不等待评分。"))
+        story.append(paragraph(labels["delivery_without_score"]))
     story.extend(
         [
             Spacer(1, 6 * mm),
-            paragraph("用户反馈", h2),
-            paragraph("相关性：__/5　准确性：__/5　分析价值：__/5　整体满意度：__/5"),
-            paragraph("补充意见："),
+            paragraph(labels["feedback"], h2),
+            paragraph(
+                " · ".join(
+                    (
+                        f"{labels['relevance']}: __/5",
+                        f"{labels['accuracy']}: __/5",
+                        f"{labels['analysis_value']}: __/5",
+                        f"{labels['satisfaction']}: __/5",
+                    )
+                )
+            ),
+            paragraph(f"{labels['comments']}:"),
         ]
     )
     output_path.parent.mkdir(parents=True, exist_ok=True)
@@ -760,7 +1101,8 @@ def _edge_pdf(html_path: Path, output_path: Path) -> None:
                 header_template="<span></span>",
                 footer_template=(
                     '<div style="width:100%;font-size:8px;color:#6b7280;text-align:center">'
-                    '第 <span class="pageNumber"></span> / <span class="totalPages"></span> 页'
+                    '<span class="pageNumber"></span> / '
+                    '<span class="totalPages"></span>'
                     "</div>"
                 ),
                 margin={"top": "12mm", "right": "10mm", "bottom": "16mm", "left": "10mm"},
@@ -844,7 +1186,8 @@ def render_archive_index(data_dir: Path) -> Path:
                     int(report.get("revision", 0)),
                 ),
                 "date": report.get("date"),
-                "edition": EDITION_LABELS.get(str(report.get("edition")), report.get("edition")),
+                "language": report.get("language") or "zh-CN",
+                "edition_code": report.get("edition"),
                 "revision": report.get("revision"),
                 "title": report.get("title"),
                 "html": html_path.relative_to(reports_root).as_posix() if html_path.exists() else None,
@@ -860,27 +1203,46 @@ def render_archive_index(data_dir: Path) -> Path:
             }
         )
     entries.sort(key=lambda row: row["sort"], reverse=True)
+    interface_language = entries[0]["language"] if entries else "zh-CN"
+    labels = _ui(interface_language)
+    read_html = localized(interface_language, "阅读 HTML", "Read HTML")
+    open_pdf = localized(interface_language, "打开 PDF", "Open PDF")
+    evaluation_label = localized(interface_language, "独立评估", "Evaluation")
+    evaluation_pending = localized(interface_language, "评估中", "Evaluation pending")
     cards = "".join(
         '<article><div><span class="date">'
-        f'{_escape(row["date"])}</span><span class="edition">{_escape(row["edition"])} · '
+        f'{_escape(row["date"])}</span><span class="edition">'
+        f'{_escape((EDITION_LABELS if is_chinese_output(row["language"]) else EDITION_LABELS_EN).get(str(row["edition_code"]), row["edition_code"]))} · '
         f'r{_escape(row["revision"])}</span></div><h2>{_escape(row["title"])}</h2>'
         '<div class="links">'
         + "".join(
             f'<a href="{_escape(row[key])}">{label}</a>'
-            for key, label in (("html", "阅读 HTML"), ("pdf", "打开 PDF"), ("markdown", "Markdown"))
+            for key, label in (
+                ("html", read_html),
+                ("pdf", open_pdf),
+                ("markdown", "Markdown"),
+            )
             if row.get(key)
         )
         + (
-            f'<span class="score">独立评估 {row["score"]}/45</span>'
+            f'<span class="score">{_escape(evaluation_label)} {row["score"]}/45</span>'
             if row.get("score") is not None
-            else '<span class="pending">评估中</span>'
+            else f'<span class="pending">{_escape(evaluation_pending)}</span>'
         )
         + "</div></article>"
         for row in entries
     )
     if not cards:
-        cards = "<p class=empty>尚未生成本地日报。</p>"
-    document = f"""<!doctype html><html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'"><title>Daily Intelligence 日报中心</title><style>:root{{--ink:#17212b;--blue:#234a70;--line:#dfe3e8;--paper:#f3f0e9}}*{{box-sizing:border-box}}body{{margin:0;background:var(--paper);color:var(--ink);font-family:"Microsoft YaHei","Noto Sans CJK SC",sans-serif}}header{{background:#18324a;color:white;padding:52px 24px;border-bottom:5px solid #b8812f}}header div,main{{width:min(980px,100%);margin:auto}}h1{{font:700 clamp(34px,6vw,58px) Georgia,serif;margin:0 0 8px}}header p{{color:#dce7ef}}main{{padding:30px 20px 70px}}article{{background:#fff;border:1px solid var(--line);border-radius:12px;padding:22px;margin-bottom:15px;box-shadow:0 8px 20px rgba(20,30,40,.04)}}article>div:first-child{{display:flex;gap:10px;align-items:center}}.date{{font:700 17px Georgia;color:#8a3d32}}.edition{{font-size:13px;color:#657181}}h2{{font-size:20px;margin:8px 0 16px}}.links{{display:flex;gap:10px;align-items:center;flex-wrap:wrap}}a{{color:var(--blue);font-weight:700;text-decoration:none;border:1px solid #cbd5df;border-radius:7px;padding:7px 11px}}a:hover{{background:#eef3f7}}.score,.pending{{margin-left:auto;font-size:13px;color:#657181}}.empty{{background:white;padding:30px;border-radius:10px}}</style></head><body><header><div><h1>日报中心</h1><p>本地 HTML 与 PDF 阅读入口；JSON/Markdown 保持事实源。</p></div></header><main>{cards}</main></body></html>"""
+        cards = (
+            f'<p class="empty">{_escape(localized(interface_language, "尚未生成本地日报。", "No local reports have been generated yet."))}</p>'
+        )
+    archive_title = labels["archive"]
+    archive_detail = localized(
+        interface_language,
+        "本地 HTML 与 PDF 阅读入口；JSON/Markdown 保持事实源。",
+        "Open local HTML and PDF reports; JSON and Markdown remain the source of truth.",
+    )
+    document = f"""<!doctype html><html lang="{_escape(interface_language)}"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; style-src 'unsafe-inline'; base-uri 'none'"><title>Daily Intelligence · {_escape(archive_title)}</title><style>:root{{--ink:#17212b;--blue:#234a70;--line:#dfe3e8;--paper:#f3f0e9}}*{{box-sizing:border-box}}body{{margin:0;background:var(--paper);color:var(--ink);font-family:"Microsoft YaHei","Noto Sans CJK SC",sans-serif}}header{{background:#18324a;color:white;padding:52px 24px;border-bottom:5px solid #b8812f}}header div,main{{width:min(980px,100%);margin:auto}}h1{{font:700 clamp(34px,6vw,58px) Georgia,serif;margin:0 0 8px}}header p{{color:#dce7ef}}main{{padding:30px 20px 70px}}article{{background:#fff;border:1px solid var(--line);border-radius:12px;padding:22px;margin-bottom:15px;box-shadow:0 8px 20px rgba(20,30,40,.04)}}article>div:first-child{{display:flex;gap:10px;align-items:center}}.date{{font:700 17px Georgia;color:#8a3d32}}.edition{{font-size:13px;color:#657181}}h2{{font-size:20px;margin:8px 0 16px}}.links{{display:flex;gap:10px;align-items:center;flex-wrap:wrap}}a{{color:var(--blue);font-weight:700;text-decoration:none;border:1px solid #cbd5df;border-radius:7px;padding:7px 11px}}a:hover{{background:#eef3f7}}.score,.pending{{margin-left:auto;font-size:13px;color:#657181}}.empty{{background:white;padding:30px;border-radius:10px}}</style></head><body><header><div><h1>{_escape(archive_title)}</h1><p>{_escape(archive_detail)}</p></div></header><main>{cards}</main></body></html>"""
     return write_text_atomic(reports_root / "index.html", document)
 
 

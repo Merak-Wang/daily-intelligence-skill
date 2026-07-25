@@ -1,4 +1,5 @@
 import json
+import re
 from pathlib import Path
 
 from daily_intelligence.config import MediaConfig
@@ -13,6 +14,30 @@ from daily_intelligence.reporting import (
     validate_report_data,
 )
 from daily_intelligence.reports import render_report_markdown
+from daily_intelligence.taxonomy import section_titles
+
+_CJK = re.compile(r"[\u3400-\u9fff]")
+
+
+def _englishize(value, parent_key: str = ""):
+    if isinstance(value, dict):
+        return {
+            key: _englishize(item, key)
+            for key, item in value.items()
+        }
+    if isinstance(value, list):
+        return [_englishize(item, parent_key) for item in value]
+    if isinstance(value, str) and _CJK.search(value):
+        if parent_key == "evidence_notes":
+            return (
+                "The article body was not read; this item relies only on public "
+                "metadata and adds no unseen details."
+            )
+        return (
+            f"Substantive English {parent_key or 'report'} text for validation, "
+            "with enough detail to satisfy the report contract without adding claims."
+        )
+    return value
 
 
 def _first_report_item(report: dict) -> dict:
@@ -47,6 +72,60 @@ def test_user_facing_report_text_must_be_chinese():
 
     assert any(
         "title: published user-facing text must contain Chinese" in error for error in errors
+    )
+
+
+def test_english_report_contract_validates_and_renders_in_english():
+    root = Path(__file__).resolve().parents[1]
+    report = json.loads(
+        (root / "examples" / "sample_report.json").read_text(encoding="utf-8")
+    )
+    report = _englishize(report)
+    report["language"] = "en"
+    expected_titles = section_titles("en")
+    for section in report["sections"]:
+        section["title"] = expected_titles[section["id"]]
+
+    errors, _warnings = validate_report_data(report)
+    markdown = render_report_markdown(report)
+    html = render_report_html(report)
+    notion = json.dumps(report_to_blocks(report), ensure_ascii=False)
+
+    assert errors == []
+    assert '<html lang="en">' in html
+    assert "Executive Summary" in html
+    assert "## Analysis" in markdown
+    assert "**English title:**" not in markdown
+    assert "Quality Evaluation and Reader Feedback" in notion
+
+
+def test_english_compiler_uses_english_defaults_and_section_titles():
+    report = {
+        "schema_version": "2.0",
+        "language": "en",
+        "sections": [],
+        "analyses": [],
+    }
+    index = {
+        "date": "2026-07-25",
+        "edition": "morning",
+        "timezone": "Asia/Shanghai",
+        "sources": [],
+        "items": [],
+    }
+
+    compile_report_data(report, index)
+
+    assert report["title"] == "Daily Intelligence Morning Brief — 2026-07-25"
+    assert report["executive_summary"] == [
+        "This edition's key developments and analysis follow."
+    ]
+    assert [section["title"] for section in report["sections"]] == list(
+        section_titles("en").values()
+    )
+    assert all(
+        section["coverage_note"] == "No publishable items were collected in this window."
+        for section in report["sections"]
     )
 
 

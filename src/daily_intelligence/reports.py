@@ -8,6 +8,7 @@ from typing import Any
 
 from .config import MediaConfig, OutputConfig
 from .local_output import write_local_outputs
+from .localization import is_chinese_output, localized, translated_title
 from .media import materialize_report_images
 from .reporting import (
     compile_report_data,
@@ -28,6 +29,7 @@ from .taxonomy import SECTION_GROUPS_V13
 from .utils import read_json, write_json
 
 EDITION_LABELS = {"morning": "早报", "evening": "晚报"}
+EDITION_LABELS_EN = {"morning": "Morning Brief", "evening": "Evening Brief"}
 STATUS_LABELS = {
     "NEW": "新增",
     "UPD": "更新",
@@ -36,10 +38,23 @@ STATUS_LABELS = {
     "WATCH": "观察",
     "CLOSED": "关闭",
 }
+STATUS_LABELS_EN = {
+    "NEW": "New",
+    "UPD": "Updated",
+    "CONF": "Confirmed",
+    "REV": "Revised",
+    "WATCH": "Watch",
+    "CLOSED": "Closed",
+}
 DOMAIN_LABELS = {
     "geopolitics": "地缘政治",
     "markets": "市场与经济",
     "ai_technology": "人工智能与技术",
+}
+DOMAIN_LABELS_EN = {
+    "geopolitics": "Geopolitics",
+    "markets": "Markets and Economy",
+    "ai_technology": "Artificial Intelligence and Technology",
 }
 STATE_LABELS = {
     "new": "新观点",
@@ -50,18 +65,39 @@ STATE_LABELS = {
     "invalidated": "失效",
     "closed": "关闭",
 }
+STATE_LABELS_EN = {
+    "new": "New",
+    "strengthening": "Strengthening",
+    "unchanged": "Unchanged",
+    "weakening": "Weakening",
+    "revised": "Revised",
+    "invalidated": "Invalidated",
+    "closed": "Closed",
+}
 ACCESS_LABELS = {
     "full_text": "已读正文",
     "partial": "已读部分正文",
     "metadata_only": "仅元数据",
     "verification_required": "需要人工验证",
 }
+ACCESS_LABELS_EN = {
+    "full_text": "Full text read",
+    "partial": "Partial text read",
+    "metadata_only": "Metadata only",
+    "verification_required": "Manual verification required",
+}
 
 GROUP_LABELS = {"information": "资讯", "technology": "技术"}
+GROUP_LABELS_EN = {"information": "News", "technology": "Technology"}
 ASSESSMENT_LABELS = {
     "trend": "趋势判断",
     "risk": "风险分析",
     "learning_research": "学习与研究建议",
+}
+ASSESSMENT_LABELS_EN = {
+    "trend": "Trend",
+    "risk": "Risk",
+    "learning_research": "Learning and Research",
 }
 PERSPECTIVE_LABELS = {
     "geopolitics": "地缘政治专家",
@@ -70,10 +106,22 @@ PERSPECTIVE_LABELS = {
     "china_standpoint": "中国立场",
     "western_standpoint": "西方立场",
 }
+PERSPECTIVE_LABELS_EN = {
+    "geopolitics": "Geopolitical Expert",
+    "ai_research_engineering": "AI Research and Engineering",
+    "equity_analysis": "Equity Analyst",
+    "china_standpoint": "Chinese Perspective",
+    "western_standpoint": "Western Perspective",
+}
 ANALYSIS_SECTION_LABELS = {
     "geopolitics": "从地缘政治专家的角度",
     "ai_technology": "从 AI 研究/开发工程师的角度",
     "markets": "从股票分析师的角度",
+}
+ANALYSIS_SECTION_LABELS_EN = {
+    "geopolitics": "Geopolitical Perspective",
+    "ai_technology": "AI Research and Engineering Perspective",
+    "markets": "Equity-Market Perspective",
 }
 BRIEF_REPORT_SCHEMAS = {"1.5", "2.0"}
 EVALUATION_LABELS = {
@@ -87,6 +135,17 @@ EVALUATION_LABELS = {
     "timeliness": "时效性",
     "compliance_boundaries": "合规与边界",
 }
+EVALUATION_LABELS_EN = {
+    "coverage": "Coverage",
+    "importance_ordering": "Importance Ordering",
+    "factual_reliability": "Factual Reliability",
+    "summary_accuracy": "Summary Accuracy",
+    "analysis_traceability": "Analysis Traceability",
+    "historical_continuity": "Historical Continuity",
+    "readability": "Readability",
+    "timeliness": "Timeliness",
+    "compliance_boundaries": "Compliance and Boundaries",
+}
 
 
 def ordered_sections(report: dict[str, Any], module: str) -> list[dict[str, Any]]:
@@ -97,13 +156,16 @@ def ordered_sections(report: dict[str, Any], module: str) -> list[dict[str, Any]
     return [by_id[section_id] for section_id in SECTION_GROUPS_V13[module] if section_id in by_id]
 
 
-def group_items_by_source(section: dict[str, Any]) -> list[tuple[dict[str, str], list[dict]]]:
+def group_items_by_source(
+    section: dict[str, Any],
+    language: object = "zh-CN",
+) -> list[tuple[dict[str, str], list[dict]]]:
     groups: dict[str, tuple[dict[str, str], list[dict]]] = {}
     values = section.get("briefs") if "briefs" in section else section.get("items", [])
     for item in values or []:
         source = item.get("primary_source") or {
             "id": "unknown",
-            "name": "未知来源",
+            "name": localized(language, "未知来源", "Unknown source"),
             "url": (item.get("source_refs") or [item.get("source_ref", {})])[0]["url"],
         }
         key = str(source["id"])
@@ -138,9 +200,12 @@ def _brief_markdown(
     item: dict[str, Any],
     rank: int,
     media_path_prefix: str | None = None,
+    language: object = "zh-CN",
 ) -> list[str]:
+    colon = "：" if is_chinese_output(language) else ":"
     ref = item["source_ref"]
-    status = STATUS_LABELS.get(item["status"], item["status"])
+    status_labels = STATUS_LABELS if is_chinese_output(language) else STATUS_LABELS_EN
+    status = status_labels.get(item["status"], item["status"])
     source_rank = f" `{item['source_rank_label']}`" if item.get("source_rank_label") else ""
     lines: list[str] = []
     image = item.get("image")
@@ -151,52 +216,77 @@ def _brief_markdown(
                 [
                     f"![{image.get('caption', item['title'])}]({image_url})",
                     "",
-                    f"*图片来源：{image.get('credit', '原始来源')}*",
+                    f"*{localized(language, '图片来源', 'Image source')}{colon} "
+                    f"{image.get('credit', localized(language, '原始来源', 'Original source'))}*",
                     "",
                 ]
             )
     lines.append(
         f"**{rank}. [{item['title']}]({ref['url']})** `[{status}]`{source_rank}"
     )
-    if item.get("title_zh"):
-        lines.extend(["", f"**中文标题：** {item['title_zh']}"])
-    if time_info := reference_time_label(ref):
+    if localized_title := translated_title(item, language):
+        lines.extend(
+            [
+                "",
+                f"**{localized(language, '中文标题', 'English title')}{colon}** "
+                f"{localized_title}",
+            ]
+        )
+    if time_info := reference_time_label(ref, language):
         label, value = time_info
-        lines.extend(["", f"**{label}：** {value}"])
-    lines.extend(["", f"**TL;DR：** {item['tldr']}"])
+        lines.extend(["", f"**{label}{colon}** {value}"])
+    lines.extend(["", f"**TL;DR{colon}** {item['tldr']}"])
     lines.append("")
     return lines
 
 
-def _event_markdown(item: dict[str, Any], title: str) -> list[str]:
+def _event_markdown(
+    item: dict[str, Any],
+    title: str,
+    language: object = "zh-CN",
+) -> list[str]:
+    colon = "：" if is_chinese_output(language) else ":"
+    separator = "，" if is_chinese_output(language) else ", "
+    access_labels = ACCESS_LABELS if is_chinese_output(language) else ACCESS_LABELS_EN
     lines = [
         title,
         "",
-        f"**摘要（TL;DR）：** {item['tldr']}",
+        f"**{localized(language, '摘要（TL;DR）', 'Summary (TL;DR)')}{colon}** {item['tldr']}",
         "",
-        f"**为什么重要：** {item['why_it_matters']}",
+        f"**{localized(language, '为什么重要', 'Why it matters')}{colon}** "
+        f"{item['why_it_matters']}",
         "",
         (
-            f"**重要性：** {item['importance']}/100 | "
-            f"**置信度：** {item['confidence']:.2f}"
+            f"**{localized(language, '重要性', 'Importance')}{colon}** "
+            f"{item['importance']}/100 | "
+            f"**{localized(language, '置信度', 'Confidence')}{colon}** "
+            f"{item['confidence']:.2f}"
         ),
         "",
-        f"**重要性依据：** {item['importance_reason']}",
+        f"**{localized(language, '重要性依据', 'Importance rationale')}{colon}** "
+        f"{item['importance_reason']}",
         "",
-        "**证据与原文：**",
+        f"**{localized(language, '证据与原文', 'Evidence and sources')}{colon}**",
         "",
     ]
     for ref in item["source_refs"]:
-        access = ACCESS_LABELS.get(ref["access"], ref["access"])
+        access = access_labels.get(ref["access"], ref["access"])
         time_text = ""
-        if time_info := reference_time_label(ref):
+        if time_info := reference_time_label(ref, language):
             label, value = time_info
-            time_text = f"，{label}：{value}"
+            time_text = f"{separator}{label}{colon}{value}"
         lines.append(
-            f"- [{ref['title']}]({ref['url']}) — {access}，{ref['role']}{time_text}"
+            f"- [{ref['title']}]({ref['url']}) — {access}{separator}"
+            f"{ref['role']}{time_text}"
         )
     if item["evidence_notes"]:
-        lines.extend(["", "**证据说明：**", ""])
+        lines.extend(
+            [
+                "",
+                f"**{localized(language, '证据说明', 'Evidence notes')}{colon}**",
+                "",
+            ]
+        )
         lines.extend(f"- {note}" for note in item["evidence_notes"])
     image = item.get("image")
     if image:
@@ -205,7 +295,8 @@ def _event_markdown(item: dict[str, Any], title: str) -> list[str]:
                 "",
                 f"![{image['caption']}]({image['url']})",
                 "",
-                f"*图片来源：{image['credit']}*",
+                f"*{localized(language, '图片来源', 'Image source')}{colon} "
+                f"{image['credit']}*",
             ]
         )
     lines.append("")
@@ -216,40 +307,89 @@ def render_report_markdown(
     report: dict[str, Any],
     media_path_prefix: str | None = None,
 ) -> str:
-    edition = EDITION_LABELS.get(report["edition"], report["edition"])
+    language = report.get("language") or "zh-CN"
+    chinese = is_chinese_output(language)
+    colon = "：" if chinese else ":"
+    joiner = "、" if chinese else ", "
+    edition_labels = EDITION_LABELS if chinese else EDITION_LABELS_EN
+    status_labels = STATUS_LABELS if chinese else STATUS_LABELS_EN
+    domain_labels = DOMAIN_LABELS if chinese else DOMAIN_LABELS_EN
+    state_labels = STATE_LABELS if chinese else STATE_LABELS_EN
+    group_labels = GROUP_LABELS if chinese else GROUP_LABELS_EN
+    assessment_labels = ASSESSMENT_LABELS if chinese else ASSESSMENT_LABELS_EN
+    perspective_labels = PERSPECTIVE_LABELS if chinese else PERSPECTIVE_LABELS_EN
+    analysis_section_labels = (
+        ANALYSIS_SECTION_LABELS if chinese else ANALYSIS_SECTION_LABELS_EN
+    )
+    evaluation_labels = EVALUATION_LABELS if chinese else EVALUATION_LABELS_EN
+    collection_notes_label = localized(
+        language,
+        "采集与验证说明",
+        "Collection and verification notes",
+    )
+    stakeholder_positions_label = localized(
+        language,
+        "不同立场与利益",
+        "Stakeholder positions and interests",
+    )
+    counterevidence_label = localized(
+        language,
+        "反证与不确定性",
+        "Counterevidence and uncertainty",
+    )
+    changes_heading = localized(
+        language,
+        "日间新增、确认与修正",
+        "New, Confirmed, and Revised Since Morning",
+    )
+    quality_heading = localized(
+        language,
+        "质量评估与用户反馈",
+        "Quality Evaluation and Reader Feedback",
+    )
+    edition = edition_labels.get(report["edition"], report["edition"])
     lines = [
         f"# {report['title']}",
         "",
-        f"- 版本：{edition}",
-        f"- 修订号：{report['revision']}",
-        f"- 生成时间：{report['generated_at']}",
+        f"- {localized(language, '版本', 'Edition')}{colon}{edition}",
+        f"- {localized(language, '修订号', 'Revision')}{colon}{report['revision']}",
+        f"- {localized(language, '生成时间', 'Generated at')}{colon}"
+        f"{report['generated_at']}",
         "",
-        "**摘要**",
+        f"**{localized(language, '摘要', 'Executive Summary')}**",
         "",
     ]
     lines.extend(f"- {item}" for item in report["executive_summary"])
 
     for module in ("information", "technology"):
-        lines.extend(["", f"## {GROUP_LABELS[module]}", ""])
+        lines.extend(["", f"## {group_labels[module]}", ""])
         for section in ordered_sections(report, module):
             lines.extend([f"### {section['title']}", ""])
             if not section.get("items") and not section.get("briefs"):
                 lines.extend([section["coverage_note"], ""])
             if report.get("schema_version") in BRIEF_REPORT_SCHEMAS:
-                for source, items in group_items_by_source(section):
+                for source, items in group_items_by_source(section, language):
                     lines.extend([f"#### [{source['name']}]({source['url']})", ""])
                     for rank, item in enumerate(items, start=1):
-                        lines.extend(_brief_markdown(item, rank, media_path_prefix))
+                        lines.extend(
+                            _brief_markdown(
+                                item,
+                                rank,
+                                media_path_prefix,
+                                language,
+                            )
+                        )
             elif report.get("schema_version") == "1.4":
-                for source, items in group_items_by_source(section):
+                for source, items in group_items_by_source(section, language):
                     lines.extend([f"#### [{source['name']}]({source['url']})", ""])
                     for rank, item in enumerate(items, start=1):
                         link = item["source_refs"][0]["url"]
-                        status = STATUS_LABELS.get(item["status"], item["status"])
+                        status = status_labels.get(item["status"], item["status"])
                         lines.extend(
                             _event_markdown(
                                 item,
                                 f"**{rank}. [{item['title']}]({link})** `[{status}]`",
+                                language,
                             )
                         )
             else:
@@ -258,21 +398,32 @@ def render_report_markdown(
                     key=lambda value: value["importance"],
                     reverse=True,
                 ):
-                    status = STATUS_LABELS.get(item["status"], item["status"])
-                    lines.extend(_event_markdown(item, f"#### [{status}] {item['title']}"))
+                    status = status_labels.get(item["status"], item["status"])
+                    lines.extend(
+                        _event_markdown(
+                            item,
+                            f"#### [{status}] {item['title']}",
+                            language,
+                        )
+                    )
         if module == "information" and report["pending_verifications"]:
-            lines.extend(["**采集与验证说明：**", ""])
+            lines.extend(
+                [
+                    f"**{collection_notes_label}{colon}**",
+                    "",
+                ]
+            )
             for item in report["pending_verifications"]:
                 lines.append(f"- {item['source_name']}: {item.get('note', item['status'])}")
 
-    lines.extend(["", "## 研判", ""])
+    lines.extend(["", f"## {localized(language, '研判', 'Analysis')}", ""])
     if report["analyses"]:
         last_domain = None
         for analysis in report["analyses"]:
             domain = analysis.get("domain")
             if domain != last_domain:
-                section_title = ANALYSIS_SECTION_LABELS.get(
-                    domain, DOMAIN_LABELS.get(domain, domain)
+                section_title = analysis_section_labels.get(
+                    domain, domain_labels.get(domain, domain)
                 )
                 lines.extend(
                     [
@@ -286,125 +437,242 @@ def render_report_markdown(
                     f"#### {analysis['claim']}",
                     "",
                     (
-                        f"**领域：** {DOMAIN_LABELS.get(analysis['domain'], analysis['domain'])} | "
-                        f"**置信度：** {analysis['confidence']:.2f} | "
-                        f"**观点变化：** "
-                        f"{STATE_LABELS.get(analysis['state_change'], analysis['state_change'])}"
+                        f"**{localized(language, '领域', 'Domain')}{colon}** "
+                        f"{domain_labels.get(analysis['domain'], analysis['domain'])} | "
+                        f"**{localized(language, '置信度', 'Confidence')}{colon}** "
+                        f"{analysis['confidence']:.2f} | "
+                        f"**{localized(language, '观点变化', 'State change')}{colon}** "
+                        f"{state_labels.get(analysis['state_change'], analysis['state_change'])}"
                     ),
                     "",
-                    "**证据事件：** " + ", ".join(analysis["evidence_event_ids"]),
+                    f"**{localized(language, '证据事件', 'Evidence events')}{colon}** "
+                    + ", ".join(analysis["evidence_event_ids"]),
                     "",
                     (
-                        "**研判类型：** "
-                        + "、".join(
-                            ASSESSMENT_LABELS.get(item, item)
+                        f"**{localized(language, '研判类型', 'Assessment types')}{colon}** "
+                        + joiner.join(
+                            assessment_labels.get(item, item)
                             for item in analysis.get("assessment_types", [])
                         )
                     ),
                     "",
                     (
-                        "**观察视角：** "
-                        + "、".join(
-                            PERSPECTIVE_LABELS.get(item, item)
+                        f"**{localized(language, '观察视角', 'Perspectives')}{colon}** "
+                        + joiner.join(
+                            perspective_labels.get(item, item)
                             for item in analysis.get("perspectives", [])
                         )
                     ),
                     "",
-                    "**事实基础：**",
+                    f"**{localized(language, '事实基础', 'Facts')}{colon}**",
                     "",
                 ]
             )
             lines.extend(f"- {item}" for item in analysis.get("facts", []))
             if analysis.get("narrative"):
-                lines.extend(["", "**综合论述：**", "", analysis["narrative"], ""])
-            if analysis.get("historical_context"):
-                lines.extend([f"**历史脉络：** {analysis['historical_context']}", ""])
-            if analysis.get("dialectical_analysis"):
-                lines.extend([f"**辩证分析：** {analysis['dialectical_analysis']}", ""])
-            if analysis.get("stakeholder_positions"):
-                lines.extend(["**不同立场与利益：**", ""])
                 lines.extend(
-                    f"- **{position['stakeholder']}：** {position['position']} "
-                    f"利益基础：{position['interests']}"
+                    [
+                        "",
+                        f"**{localized(language, '综合论述', 'Narrative')}{colon}**",
+                        "",
+                        analysis["narrative"],
+                        "",
+                    ]
+                )
+            if analysis.get("historical_context"):
+                lines.extend(
+                    [
+                        f"**{localized(language, '历史脉络', 'Historical context')}{colon}** "
+                        f"{analysis['historical_context']}",
+                        "",
+                    ]
+                )
+            if analysis.get("dialectical_analysis"):
+                lines.extend(
+                    [
+                        f"**{localized(language, '辩证分析', 'Dialectical analysis')}{colon}** "
+                        f"{analysis['dialectical_analysis']}",
+                        "",
+                    ]
+                )
+            if analysis.get("stakeholder_positions"):
+                lines.extend(
+                    [
+                        f"**{stakeholder_positions_label}{colon}**",
+                        "",
+                    ]
+                )
+                lines.extend(
+                    f"- **{position['stakeholder']}{colon}** {position['position']} "
+                    f"{localized(language, '利益基础', 'Interest basis')}{colon}"
+                    f"{position['interests']}"
                     for position in analysis["stakeholder_positions"]
                 )
-            lines.extend(["", f"**推理链：** {analysis.get('reasoning', '')}", ""])
-            lines.extend(["**反证与不确定性：**", ""])
+            lines.extend(
+                [
+                    "",
+                    f"**{localized(language, '推理链', 'Reasoning chain')}{colon}** "
+                    f"{analysis.get('reasoning', '')}",
+                    "",
+                ]
+            )
+            lines.extend(
+                [
+                    f"**{counterevidence_label}{colon}**",
+                    "",
+                ]
+            )
             lines.extend(f"- {item}" for item in analysis["counter_evidence"])
-            lines.extend(["", "**可能情景：**", ""])
+            lines.extend(
+                [
+                    "",
+                    f"**{localized(language, '可能情景', 'Scenarios')}{colon}**",
+                    "",
+                ]
+            )
             lines.extend(f"- {item}" for item in analysis.get("scenarios", []))
-            lines.extend(["", "**影响与启示：**", ""])
+            lines.extend(
+                [
+                    "",
+                    f"**{localized(language, '影响与启示', 'Implications')}{colon}**",
+                    "",
+                ]
+            )
             lines.extend(f"- {item}" for item in analysis["implications"])
-            lines.extend(["", "**建议行动：**", ""])
+            lines.extend(
+                [
+                    "",
+                    f"**{localized(language, '建议行动', 'Recommended actions')}{colon}**",
+                    "",
+                ]
+            )
             lines.extend(f"- {item}" for item in analysis.get("actions", []))
-            lines.extend(["", "**后续观察信号：**", ""])
+            lines.extend(
+                [
+                    "",
+                    f"**{localized(language, '后续观察信号', 'Watch signals')}{colon}**",
+                    "",
+                ]
+            )
             lines.extend(f"- {item}" for item in analysis["watch_signals"])
-            lines.extend(["", "**观点失效信号：**", ""])
+            lines.extend(
+                [
+                    "",
+                    f"**{localized(language, '观点失效信号', 'Invalidation signals')}{colon}**",
+                    "",
+                ]
+            )
             lines.extend(f"- {item}" for item in analysis.get("invalidation_signals", []))
             for title, key in (
-                ("因果传导链", "causal_chain"),
-                ("关键假设", "assumptions"),
-                ("证据缺口", "evidence_gaps"),
+                (localized(language, "因果传导链", "Causal chain"), "causal_chain"),
+                (localized(language, "关键假设", "Key assumptions"), "assumptions"),
+                (localized(language, "证据缺口", "Evidence gaps"), "evidence_gaps"),
             ):
                 values = analysis.get(key, [])
                 if values:
-                    lines.extend(["", f"**{title}：**", ""])
+                    lines.extend(["", f"**{title}{colon}**", ""])
                     lines.extend(f"- {item}" for item in values)
             for title, key in (
-                ("时间跨度", "time_horizon"),
-                ("置信度依据", "confidence_rationale"),
-                ("相对上一版", "change_from_prior"),
-                ("决策相关性", "decision_relevance"),
+                (localized(language, "时间跨度", "Time horizon"), "time_horizon"),
+                (
+                    localized(language, "置信度依据", "Confidence rationale"),
+                    "confidence_rationale",
+                ),
+                (
+                    localized(language, "相对上一版", "Change from prior"),
+                    "change_from_prior",
+                ),
+                (
+                    localized(language, "决策相关性", "Decision relevance"),
+                    "decision_relevance",
+                ),
             ):
                 if analysis.get(key):
-                    lines.extend(["", f"**{title}：** {analysis[key]}"])
+                    lines.extend(["", f"**{title}{colon}** {analysis[key]}"])
     else:
-        lines.append("本版没有形成达到证据门槛的研判。")
+        lines.append(
+            localized(
+                language,
+                "本版没有形成达到证据门槛的研判。",
+                "No analysis met the evidence threshold in this edition.",
+            )
+        )
 
     synthesis = report.get("cross_perspective_synthesis")
     if isinstance(synthesis, dict):
         lines.extend(
             [
                 "",
-                "### 跨视角综合",
+                f"### {localized(language, '跨视角综合', 'Cross-Perspective Synthesis')}",
                 "",
                 synthesis.get("overall_judgment", ""),
                 "",
-                "**共同结论：**",
+                f"**{localized(language, '共同结论', 'Consensus')}{colon}**",
                 "",
             ]
         )
         lines.extend(f"- {item}" for item in synthesis.get("consensus", []))
-        lines.extend(["", "**关键分歧：**", ""])
+        lines.extend(
+            [
+                "",
+                f"**{localized(language, '关键分歧', 'Key tensions')}{colon}**",
+                "",
+            ]
+        )
         for tension in synthesis.get("tensions", []):
             if not isinstance(tension, dict):
                 continue
-            perspectives = "、".join(tension.get("perspectives", []))
+            perspectives = joiner.join(tension.get("perspectives", []))
             lines.append(
-                f"- **{tension.get('issue', '')}**（{perspectives}）："
+                f"- **{tension.get('issue', '')}** ({perspectives}){colon}"
                 f"{tension.get('source_of_difference', '')}"
             )
         for title, key in (
-            ("地缘—技术—市场传导链", "transmission_chain"),
-            ("共同观察信号", "shared_watch_signals"),
-            ("必须修正判断的触发条件", "revision_triggers"),
+            (
+                localized(
+                    language,
+                    "地缘—技术—市场传导链",
+                    "Geopolitics–Technology–Markets Transmission Chain",
+                ),
+                "transmission_chain",
+            ),
+            (
+                localized(language, "共同观察信号", "Shared watch signals"),
+                "shared_watch_signals",
+            ),
+            (
+                localized(language, "必须修正判断的触发条件", "Revision triggers"),
+                "revision_triggers",
+            ),
         ):
-            lines.extend(["", f"**{title}：**", ""])
+            lines.extend(["", f"**{title}{colon}**", ""])
             lines.extend(f"- {item}" for item in synthesis.get(key, []))
         lines.extend(
             [
                 "",
-                "**综合引用事件：** "
-                + "、".join(synthesis.get("evidence_event_ids", [])),
+                f"**{localized(language, '综合引用事件', 'Synthesis evidence events')}{colon}** "
+                + joiner.join(synthesis.get("evidence_event_ids", [])),
             ]
         )
 
     if report["changes"]:
-        lines.extend(["", "### 日间新增、确认与修正", ""])
+        lines.extend(
+            [
+                "",
+                f"### {changes_heading}",
+                "",
+            ]
+        )
         lines.extend(f"- {item}" for item in report["changes"])
 
     if report.get("tomorrow_watch_items"):
-        lines.extend(["", "### 次日观察项", ""])
+        lines.extend(
+            [
+                "",
+                f"### {localized(language, '次日观察项', 'Next-Day Watch List')}",
+                "",
+            ]
+        )
         lines.extend(f"- {item}" for item in report["tomorrow_watch_items"])
 
     evaluation = report.get("quality_evaluation")
@@ -412,54 +680,74 @@ def render_report_markdown(
         lines.extend(
             [
                 "",
-                "## 质量评估与用户反馈",
+                f"## {quality_heading}",
                 "",
-                f"**独立评估总分：{evaluation['total_score']}/45**",
+                f"**{localized(language, '独立评估总分', 'Independent evaluation score')}"
+                f"{colon}{evaluation['total_score']}/45**",
                 "",
-                "| 维度 | 得分 | 重点结论 |",
+                localized(
+                    language,
+                    "| 维度 | 得分 | 重点结论 |",
+                    "| Dimension | Score | Finding |",
+                ),
                 "| --- | ---: | --- |",
             ]
         )
         lines.extend(
-            f"| {EVALUATION_LABELS.get(item['id'], item['id'])} | {item['score']}/5 | "
+            f"| {evaluation_labels.get(item['id'], item['id'])} | {item['score']}/5 | "
             f"{item['finding']} |"
             for item in evaluation["dimensions"]
         )
         for title, key in (
-            ("主要缺陷", "main_defects"),
-            ("证据不足项", "insufficient_evidence"),
-            ("改进建议", "improvements"),
+            (localized(language, "主要缺陷", "Main Defects"), "main_defects"),
+            (
+                localized(language, "证据不足项", "Insufficient Evidence"),
+                "insufficient_evidence",
+            ),
+            (
+                localized(language, "改进建议", "Recommended Improvements"),
+                "improvements",
+            ),
         ):
             lines.extend(["", f"### {title}", ""])
             values = evaluation.get(key, [])
-            lines.extend(f"- {value}" for value in values or ["无"])
+            lines.extend(
+                f"- {value}"
+                for value in values
+                or [localized(language, "无", "None")]
+            )
         lines.extend(
             [
                 "",
-                "### 用户反馈",
+                f"### {localized(language, '用户反馈', 'Reader Feedback')}",
                 "",
-                "- 相关性：__/5",
-                "- 准确性：__/5",
-                "- 分析价值：__/5",
-                "- 整体满意度：__/5",
-                "- 补充意见：",
+                f"- {localized(language, '相关性', 'Relevance')}{colon}__/5",
+                f"- {localized(language, '准确性', 'Accuracy')}{colon}__/5",
+                f"- {localized(language, '分析价值', 'Analysis value')}{colon}__/5",
+                f"- {localized(language, '整体满意度', 'Overall satisfaction')}{colon}__/5",
+                f"- {localized(language, '补充意见', 'Additional comments')}{colon}",
             ]
         )
     elif report.get("schema_version") in BRIEF_REPORT_SCHEMAS:
         lines.extend(
             [
                 "",
-                "## 质量评估与用户反馈",
+                f"## {quality_heading}",
                 "",
-                "独立评估将在日报发布后异步补充；评估意见不阻塞本版发布。",
+                localized(
+                    language,
+                    "独立评估将在日报发布后异步补充；评估意见不阻塞本版发布。",
+                    "An independent evaluation will be added asynchronously after publication; "
+                    "it does not block this edition.",
+                ),
                 "",
-                "### 用户反馈",
+                f"### {localized(language, '用户反馈', 'Reader Feedback')}",
                 "",
-                "- 相关性：__/5",
-                "- 准确性：__/5",
-                "- 分析价值：__/5",
-                "- 整体满意度：__/5",
-                "- 补充意见：",
+                f"- {localized(language, '相关性', 'Relevance')}{colon}__/5",
+                f"- {localized(language, '准确性', 'Accuracy')}{colon}__/5",
+                f"- {localized(language, '分析价值', 'Analysis value')}{colon}__/5",
+                f"- {localized(language, '整体满意度', 'Overall satisfaction')}{colon}__/5",
+                f"- {localized(language, '补充意见', 'Additional comments')}{colon}",
             ]
         )
     lines.append("")

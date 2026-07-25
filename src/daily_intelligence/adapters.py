@@ -4,11 +4,13 @@ import json
 import re
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
+from typing import Any
 from urllib.parse import urljoin, urlsplit
 
 from playwright.sync_api import Page
 
 from .config import SourceConfig
+from .image_policy import normalize_image_candidates
 from .models import ArticleItem
 from .utils import canonicalize_url, clean_title, item_id, url_for_source_filter
 
@@ -139,18 +141,25 @@ def collect_browser_index(
                 a.innerText || ''
             ).trim(),
             href: a.href || '',
-            image_url: (() => {
+            image_candidates: (() => {
                 const card = a.closest('article, li, [class*="card"], [class*="story"]');
-                const image = a.querySelector('img') || (card ? card.querySelector('img') : null);
-                if (!image) return '';
-                const srcset = image.getAttribute('srcset') || '';
-                const srcsetCandidate = srcset
-                    ? srcset.split(',').at(-1).trim().split(/\\s+/)[0]
-                    : '';
-                return image.currentSrc || image.getAttribute('src') ||
-                    image.getAttribute('data-src') ||
-                    image.getAttribute('data-original') ||
-                    image.getAttribute('data-lazy-src') || srcsetCandidate || '';
+                const root = card || a;
+                const images = Array.from(root.querySelectorAll('img'));
+                return Array.from(new Set(images.flatMap(image => {
+                    const srcset = (image.getAttribute('srcset') || '')
+                        .split(',')
+                        .map(value => value.trim().split(/\\s+/)[0])
+                        .filter(Boolean)
+                        .reverse();
+                    return [
+                        image.currentSrc,
+                        image.getAttribute('src'),
+                        image.getAttribute('data-src'),
+                        image.getAttribute('data-original'),
+                        image.getAttribute('data-lazy-src'),
+                        ...srcset
+                    ].filter(Boolean);
+                })));
             })(),
             context: (() => {
                 const card = a.closest('article, li, [class*="card"], [class*="story"]');
@@ -167,7 +176,7 @@ def collect_browser_index(
 
 
 def browser_items_from_rows(
-    rows: list[dict[str, str]],
+    rows: list[dict[str, Any]],
     source: SourceConfig,
     discovered_at: str,
     base_url: str,
@@ -182,10 +191,17 @@ def browser_items_from_rows(
             continue
         article = _article(source, title, url, discovered_at)
         article.published_at = _published_at(row.get("context", ""), url, discovered_at)
-        raw_image_url = row.get("image_url", "")
-        image_url = urljoin(base_url, raw_image_url) if raw_image_url else ""
-        if image_url.startswith(("http://", "https://")):
-            article.image_url = image_url
+        raw_candidates = row.get("image_candidates")
+        if not isinstance(raw_candidates, list):
+            raw_candidates = []
+        image_candidates = normalize_image_candidates(
+            [*raw_candidates, row.get("image_url")],
+            base_url,
+        )
+        if image_candidates:
+            article.image_url = image_candidates[0]
+            if len(image_candidates) > 1:
+                article.metadata["image_candidates"] = image_candidates
         if article.canonical_url in seen:
             continue
         seen.add(article.canonical_url)

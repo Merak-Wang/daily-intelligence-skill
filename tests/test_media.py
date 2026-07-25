@@ -33,7 +33,18 @@ from daily_intelligence.utils import read_json, write_json
 
 def _png_bytes() -> bytes:
     output = BytesIO()
-    Image.new("RGB", (3, 2), "#234a70").save(output, format="PNG")
+    image = Image.new("RGB", (3, 2))
+    image.putdata(
+        [
+            (35, 74, 112),
+            (210, 106, 48),
+            (240, 230, 175),
+            (22, 120, 92),
+            (150, 65, 135),
+            (245, 245, 245),
+        ]
+    )
+    image.save(output, format="PNG")
     return output.getvalue()
 
 
@@ -112,6 +123,10 @@ def test_public_image_url_rejects_credentials_and_private_networks():
         assert_public_image_url("http://127.0.0.1/image.jpg")
     with pytest.raises(ImageDownloadError, match="port 80 or 443"):
         assert_public_image_url("https://example.com:8443/image.jpg")
+    with pytest.raises(ImageDownloadError, match="known placeholder"):
+        assert_public_image_url(
+            "https://static.example/assets/grey-placeholder.png"
+        )
 
 
 def test_public_image_url_confirms_proxy_fake_ip_with_public_dns(monkeypatch):
@@ -209,6 +224,32 @@ def test_download_image_rejects_html_and_does_not_persist_it(tmp_path: Path):
         with pytest.raises(ImageDownloadError, match="valid raster image"):
             download_image(
                 "https://news.example/image",
+                tmp_path,
+                MediaConfig(),
+                client=client,
+                url_validator=lambda _url: None,
+            )
+    finally:
+        client.close()
+    assert not (tmp_path / "media").exists()
+
+
+def test_download_image_rejects_low_information_raster(tmp_path: Path):
+    output = BytesIO()
+    Image.new("RGB", (160, 90), "#eeeeee").save(output, format="PNG")
+    client = httpx.Client(
+        transport=httpx.MockTransport(
+            lambda _request: httpx.Response(
+                200,
+                content=output.getvalue(),
+                headers={"Content-Type": "image/png"},
+            )
+        )
+    )
+    try:
+        with pytest.raises(ImageDownloadError, match="low-information placeholder"):
+            download_image(
+                "https://news.example/opaque-asset.png",
                 tmp_path,
                 MediaConfig(),
                 client=client,
@@ -379,6 +420,66 @@ def test_materialize_report_images_tries_later_candidates_after_a_failure(
     }
 
 
+def test_materialize_report_images_uses_fallback_for_the_same_story(
+    tmp_path: Path,
+):
+    report = _report()
+    index = {
+        "items": [
+            {
+                "item_id": "example-1",
+                "title": "Story with a working secondary image",
+                "url": "https://news.example/story",
+                "image_url": "https://cdn.example/broken.png",
+                "metadata": {
+                    "image_candidates": [
+                        "https://cdn.example/broken.png",
+                        "https://cdn.example/working.png",
+                    ]
+                },
+            }
+        ]
+    }
+    content = _png_bytes()
+    stored = _image_record(content)
+    requested: list[str] = []
+
+    def fake_downloader(source_url, _data_dir, _config, **_kwargs):
+        requested.append(source_url)
+        if source_url.endswith("broken.png"):
+            raise ImageDownloadError("simulated failure")
+        return DownloadedImage(
+            source_url=source_url,
+            resolved_url=source_url,
+            local_path=stored["local_path"],
+            content_type="image/png",
+            sha256=stored["sha256"],
+            byte_size=len(content),
+            width=3,
+            height=2,
+            reused=False,
+        )
+
+    warnings = materialize_report_images(
+        report,
+        index,
+        tmp_path,
+        MediaConfig(),
+        downloader=fake_downloader,
+    )
+
+    assert requested == [
+        "https://cdn.example/broken.png",
+        "https://cdn.example/working.png",
+    ]
+    assert warnings == []
+    assert (
+        report["sections"][0]["briefs"][0]["image"]["source_url"]
+        == "https://cdn.example/working.png"
+    )
+    assert report["media_metrics"]["failed"] == 0
+
+
 def test_materialize_report_images_reuses_persistent_url_cache_without_network(
     tmp_path: Path,
 ):
@@ -403,7 +504,7 @@ def test_materialize_report_images_reuses_persistent_url_cache_without_network(
     write_json(
         tmp_path / "media" / "image-cache.json",
         {
-            "schema_version": "1.0",
+            "schema_version": "1.1",
             "updated_at": "2099-01-01T00:00:00+00:00",
             "entries": {
                 source_url: {
@@ -433,6 +534,27 @@ def test_materialize_report_images_reuses_persistent_url_cache_without_network(
     assert report["media_metrics"]["reused_files"] == 1
 
 
+def test_image_cache_discards_entries_from_pre_quality_schema(tmp_path: Path):
+    write_json(
+        tmp_path / "media" / "image-cache.json",
+        {
+            "schema_version": "1.0",
+            "updated_at": "2099-01-01T00:00:00+00:00",
+            "entries": {
+                "https://cdn.example/old.png": {
+                    "status": "success",
+                    "checked_at": "2099-01-01T00:00:00+00:00",
+                }
+            },
+        },
+    )
+
+    cache = media_module._load_image_cache(tmp_path)
+
+    assert cache["schema_version"] == "1.1"
+    assert cache["entries"] == {}
+
+
 def test_materialize_report_images_respects_negative_cache_retry_window(
     tmp_path: Path,
 ):
@@ -451,7 +573,7 @@ def test_materialize_report_images_respects_negative_cache_retry_window(
     write_json(
         tmp_path / "media" / "image-cache.json",
         {
-            "schema_version": "1.0",
+            "schema_version": "1.1",
             "updated_at": "2099-01-01T00:00:00+00:00",
             "entries": {
                 source_url: {
@@ -527,7 +649,9 @@ def test_local_and_notion_projections_render_a_vertical_uploaded_image_stream():
         "A sufficiently detailed public news headline"
     )
     assert f'../../{image["local_path"]}' in html
-    assert html.index("<figure>") < html.index('class="brief-heading"')
+    assert 'class="brief has-image"' in html
+    assert html.index('class="brief-heading"') < html.index("<figure>")
+    assert "grid-template-columns:38px minmax(220px,300px)" in html
     story = next(block for block in blocks if block["type"] == "numbered_list_item")
     children = story["numbered_list_item"]["children"]
     assert children[0]["type"] == "image"
@@ -544,6 +668,15 @@ def test_local_and_notion_projections_render_a_vertical_uploaded_image_stream():
     rendered = str(children)
     assert "发布时间" in rendered
     assert "TL;DR" in rendered
+
+
+def test_checked_in_html_examples_do_not_publish_placeholder_images():
+    root = Path(__file__).resolve().parents[1]
+
+    for report_path in (root / "examples" / "reports").glob("*.html"):
+        html = report_path.read_text(encoding="utf-8").casefold()
+        assert "grey-placeholder" not in html
+        assert "gray-placeholder" not in html
 
 
 def test_notion_image_uploads_are_reused_after_registry_checkpoint(tmp_path: Path):

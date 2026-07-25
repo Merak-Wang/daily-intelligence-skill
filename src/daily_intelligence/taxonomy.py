@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from enum import StrEnum
 
+from .localization import is_chinese_output
+
 
 class ContentModule(StrEnum):
     INFORMATION = "information"
@@ -79,6 +81,20 @@ SECTION_TITLES_V13 = {
     "technology.papers": "值得阅读的论文",
     "technology.open_source": "今日值得关注的开源项目",
 }
+
+SECTION_TITLES_EN_V13 = {
+    "information.international": "International",
+    "information.domestic": "Domestic News",
+    "information.military": "Military",
+    "information.market": "Markets",
+    "technology.news": "Technology News",
+    "technology.papers": "Papers Worth Reading",
+    "technology.open_source": "Open-Source Projects to Watch",
+}
+
+
+def section_titles(language: object) -> dict[str, str]:
+    return SECTION_TITLES_V13 if is_chinese_output(language) else SECTION_TITLES_EN_V13
 
 # Model-authored drafts from earlier skill revisions used these intuitive names. Keep
 # accepting them at the draft boundary, but always compile the persisted report to the

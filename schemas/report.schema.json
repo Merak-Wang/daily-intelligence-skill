@@ -37,7 +37,7 @@
       ]
     },
     "language": {
-      "const": "zh-CN"
+      "enum": ["zh-CN", "en"]
     },
     "revision": {
       "type": "integer",
@@ -281,6 +281,7 @@
                 "item_id": {"type": "string", "minLength": 1},
                 "title": {"type": "string", "minLength": 1},
                 "title_zh": {"type": "string", "minLength": 2},
+                "title_en": {"type": "string", "minLength": 2},
                 "tldr": {"type": "string", "minLength": 10},
                 "importance": {"type": "integer", "minimum": 0, "maximum": 100},
                 "status": {

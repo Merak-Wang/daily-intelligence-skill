@@ -1,8 +1,8 @@
 # Daily Intelligence
 
-> 把分散在新闻、论文和开源社区里的重要更新，整理成一份可以核对原文的中文晨报或晚报。
+> 把分散在新闻、论文和开源社区里的重要更新，整理成一份可以核对原文的晨报或晚报。
 
-Daily Intelligence 是运行在 [Hermes Agent](https://hermes-agent.nousresearch.com/) 中的本地日报 Skill。它从预设的公开来源收集更新、合并重复事件，再由 Hermes 编写中文摘要和重点分析。完成后的 HTML 会自动复制到桌面，也可以同时保存为 PDF、Markdown 和 JSON。
+Daily Intelligence 是运行在 [Hermes Agent](https://hermes-agent.nousresearch.com/) 中的本地日报 Skill。它从预设的公开来源收集更新、合并重复事件，再由 Hermes 用中文或英文编写摘要和重点分析。完成后的 HTML 会自动复制到桌面，也可以同时保存为 PDF、Markdown 和 JSON。
 
 [查看历史实报](examples/reports/2026-07-24-morning-r3.html) · [快速安装](#快速开始) · [阅读项目 Wiki](wiki/Home.md)
 
@@ -13,7 +13,7 @@ Daily Intelligence 是运行在 [Hermes Agent](https://hermes-agent.nousresearch
 
 下面两份 HTML 来自实际运行，没有为 README 重新润色。GitHub 不直接显示 HTML 时，请下载后用浏览器打开。
 
-[![2026 年 7 月 24 日历史晨报首屏，包含报告标题、日期和今日摘要](output/playwright/readme-morning-report-preview.png)](examples/reports/2026-07-24-morning-r3.html)
+[![2026 年 7 月 24 日历史晨报首屏，包含报告标题、日期和今日摘要](assets/readme/morning-report-preview.png)](examples/reports/2026-07-24-morning-r3.html)
 
 <sub>2026 年 7 月 24 日历史晨报首屏。点击图片查看完整 HTML；该报告使用 schema 1.5。</sub>
 
@@ -22,7 +22,7 @@ Daily Intelligence 是运行在 [Hermes Agent](https://hermes-agent.nousresearch
 | 2026-07-24 | [晨报 r3](examples/reports/2026-07-24-morning-r3.html) | 24 个来源、197 条更新，选出 10 个重点事件 | 能源、关税与 AI 资本效率 |
 | 2026-07-25 | [晨报 r1](examples/reports/2026-07-25-morning-r1.html) | 29 个来源、235 条更新，选出 10 个重点事件 | 能源通道风险、科技监管与智能体工程 |
 
-这两份是历史格式报告（schema 1.5）。当前代码使用 schema 2.0，并要求增加跨视角综合；旧文件保留不动，便于比较真实输出和后续版本变化。
+这两份是历史格式报告（schema 1.5）。当前代码使用 schema 2.0，并要求增加跨视角综合；示例的正文与数据保持原样，只同步修正阅读样式，便于比较真实输出和后续版本变化。
 
 ## 每次生成，你会得到什么
 
@@ -31,23 +31,23 @@ Daily Intelligence 是运行在 [Hermes Agent](https://hermes-agent.nousresearch
 - **三个观察角度**：当前格式分别说明事件对地缘政治、AI 研究与工程、股票市场的影响，并汇总三种视角的共识、分歧和后续观察信号。
 - **一个本地情报台**：可以浏览最新信息、查看同一事件的聚合结果，并检查哪些来源正常、失败或需要人工确认。
 
-新闻流刷新不调用大模型；生成正式晨报或晚报时，Hermes 模型才参与筛选、中文写作和分析。
+新闻流刷新不调用大模型；生成正式晨报或晚报时，Hermes 模型才参与筛选、目标语言写作和分析。
 
 ## 它和其他情报工具有什么不同
 
-Daily Intelligence 不以来源规模、付费内容或企业协作功能取胜。它解决的是更窄的问题：**让 Hermes 用户在自己的电脑上，生成一份结构固定的中文成品日报。**
+Daily Intelligence 不以来源规模、付费内容或企业协作功能取胜。它解决的是更窄的问题：**让 Hermes 用户在自己的电脑上，生成一份结构固定、可追溯原文的成品日报。**
 
 | | Daily Intelligence | [Feedly](https://feedly.com/) / [Inoreader](https://www.inoreader.com/) | [AlphaSense](https://www.alpha-sense.com/) / [Meltwater](https://www.meltwater.com/) |
 | --- | --- | --- | --- |
-| 主要用途 | 生成固定结构的中文晨报和晚报 | 持续订阅、筛选、阅读和自动分发信息流 | 企业研究、媒体监测和决策工作流 |
+| 主要用途 | 生成固定结构的中文或英文晨报和晚报 | 持续订阅、筛选、阅读和自动分发信息流 | 企业研究、媒体监测和决策工作流 |
 | 来源 | 83 个可编辑的公开来源，其中 32 个用于正式日报 | 大规模托管来源和用户订阅 | 付费研究、金融文档、新闻或社交数据库 |
 | 交付方式 | 本地 HTML、PDF、Markdown、JSON；可选 Notion | Web、移动端、邮件、团队空间和 API | 企业工作台、告警、报告及办公套件集成 |
-| 强项 | 本地文件、固定中文成品、来源和流程可改；未读取的网站会注明原因 | 来源广度、个性化、移动端和协作 | 专有内容、企业治理和成熟行业工作流 |
+| 强项 | 本地文件、中英文成品、来源和流程可改；未读取的网站会注明原因 | 来源广度、个性化、移动端和协作 | 专有内容、企业治理和成熟行业工作流 |
 | 明显限制 | 依赖 Hermes；没有付费内容库、移动端、SSO、RBAC 或 SLA | 以托管服务为主，不是本地可修改的日报流水线 | 不是轻量的个人本地工具 |
 
-Feedly 和 Inoreader 也提供 AI 摘要、报告和自动分发。如果你更重视灵活订阅、移动端或团队协作，它们更完整；Daily Intelligence 的差别是本地可修改，并按固定中文结构生成文件。
+Feedly 和 Inoreader 也提供 AI 摘要、报告和自动分发。如果你更重视灵活订阅、移动端或团队协作，它们更完整；Daily Intelligence 的差别是本地可修改，并按固定结构生成可归档文件。
 
-适合已经使用 Hermes，希望用同一套结构生成中文日报，并把报告留在自己电脑上的个人研究者或小团队。
+适合已经使用 Hermes，希望用同一套结构生成中英文日报，并把报告留在自己电脑上的个人研究者或小团队。
 
 如果你需要券商研报、专家访谈、全网社交媒体监听、企业权限管理或服务等级承诺，这个项目不能替代专门的企业情报平台。
 
@@ -105,6 +105,21 @@ daily-intel --help
 使用 daily-intelligence 生成今天的晚报，补充日间变化和次日观察。
 ```
 
+默认输出中文。要生成英文报告，可以直接说“生成英文晨报”，也可以在命令行按次指定：
+
+```powershell
+daily-intel run-edition --edition morning --language en
+```
+
+长期默认值写在 `configs/sources.yaml`：
+
+```yaml
+output:
+  language: zh-CN  # 可选 zh-CN 或 en
+```
+
+选择语言后，摘要、研判、栏目名、状态标签以及 HTML、PDF、Markdown 和 Notion 阅读界面会使用同一种语言；新闻原题始终保留，必要时在下一行给出目标语言译题。
+
 默认情况下，Windows 把版本化报告保存在 `%LOCALAPPDATA%\hermes\daily-intelligence\reports\`，macOS 和 Linux 保存在 `~/.hermes/daily-intelligence/reports/`。如果设置了 `HERMES_HOME`，则改用 `$HERMES_HOME/daily-intelligence/reports/`。最新 HTML 默认复制到 `%USERPROFILE%\Desktop` 或 `~/Desktop`，也可以通过 `output.desktop_dir` 改到其他绝对路径。
 
 Notion 是可选项，不配置也能生成全部本地文件。启用 Notion 后，普通运行可能读取既有页面中的用户反馈；只有发布步骤会写入新的日报内容。
@@ -114,7 +129,7 @@ Notion 是可选项，不配置也能生成全部本地文件。启用 Notion �
 ```mermaid
 flowchart LR
     A["本地刷新公开来源"] --> B["去重并聚合同一事件"]
-    B --> C["Hermes 编写摘要和重点分析"]
+    B --> C["Hermes 按所选语言编写摘要和重点分析"]
     C --> D["校验并生成 HTML / PDF"]
     D --> E["复制 HTML 到桌面"]
 ```

@@ -19,6 +19,7 @@ from bs4 import BeautifulSoup
 from .access import classify_access_text
 from .adapters import is_eligible
 from .config import SourceConfig
+from .image_policy import normalize_image_candidates, srcset_candidates
 from .models import ArticleItem, SourceStatus
 from .utils import canonicalize_url, clean_title, item_id, read_json, write_json
 
@@ -141,7 +142,12 @@ def _description(node: ET.Element) -> str:
     return max(values, key=len, default="")[:600]
 
 
-def _entry_image(node: ET.Element, description_html: str, base_url: str) -> str | None:
+def _entry_image_candidates(
+    node: ET.Element,
+    description_html: str,
+    base_url: str,
+) -> list[str]:
+    raw_candidates: list[str] = []
     for child in node.iter():
         name = _local_name(child.tag)
         url = str(child.attrib.get("url") or child.attrib.get("href") or "").strip()
@@ -157,22 +163,20 @@ def _entry_image(node: ET.Element, description_html: str, base_url: str) -> str 
                 or url.lower().split("?", 1)[0].endswith(_IMAGE_EXTENSIONS)
             ))
         ):
-            resolved = urljoin(base_url, url)
-            if resolved.startswith(("http://", "https://")):
-                return resolved
+            raw_candidates.append(url)
     if "<img" in description_html.lower():
-        image = BeautifulSoup(description_html, "html.parser").find("img")
-        if image:
-            raw_url = str(
-                image.get("src")
-                or image.get("data-src")
-                or image.get("data-original")
-                or ""
+        for image in BeautifulSoup(description_html, "html.parser").find_all("img"):
+            raw_candidates.extend(
+                str(image.get(attribute) or "")
+                for attribute in (
+                    "src",
+                    "data-src",
+                    "data-original",
+                    "data-lazy-src",
+                )
             )
-            resolved = urljoin(base_url, raw_url)
-            if resolved.startswith(("http://", "https://")):
-                return resolved
-    return None
+            raw_candidates.extend(srcset_candidates(image.get("srcset")))
+    return normalize_image_candidates(raw_candidates, base_url)
 
 
 def _provider(node: ET.Element) -> tuple[str | None, str | None]:
@@ -252,6 +256,11 @@ def parse_feed_document(
             key=len,
             default="",
         )
+        image_candidates = _entry_image_candidates(
+            node,
+            description_html,
+            url or feed_url,
+        )
         provider_name, provider_url = _provider(node)
         article = ArticleItem(
             item_id=item_id(source.id, canonical),
@@ -268,7 +277,7 @@ def parse_feed_document(
                 published.isoformat(timespec="seconds") if published is not None else None
             ),
             original_provider=provider_name,
-            image_url=_entry_image(node, description_html, url or feed_url),
+            image_url=image_candidates[0] if image_candidates else None,
             metadata={
                 "role": source.role,
                 "tier": source.tier,
@@ -279,6 +288,11 @@ def parse_feed_document(
                 "feed_url": feed_url,
                 "publication_time_missing": published is None,
                 **({"original_provider_url": provider_url} if provider_url else {}),
+                **(
+                    {"image_candidates": image_candidates}
+                    if len(image_candidates) > 1
+                    else {}
+                ),
             },
         )
         seen.add(canonical)

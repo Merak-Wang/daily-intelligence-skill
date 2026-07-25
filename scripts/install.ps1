@@ -21,8 +21,7 @@ $legacyRuntimeEntries = @(
     ".env", ".git", ".github", ".playwright-cli", ".pytest_cache", ".ruff_cache",
     "browser-profile", "browser-profiles", "build", "daily-intel-data",
     "daily-intelligence", "daily_intelligence_skill.egg-info", "data", "dist",
-    "edge-profile", "raw_html", "screenshots",
-    "brief_batch_brief-batch-2_zh.json", "briefs_batch_3.json"
+    "edge-profile", "raw_html", "screenshots"
 )
 $sameDirectory = [String]::Equals(
     [IO.Path]::GetFullPath($skillDir).TrimEnd([IO.Path]::DirectorySeparatorChar),
@@ -43,9 +42,11 @@ if (-not $sameDirectory) {
 }
 
 $excludedDirs = @(
-    ".agents", ".git", ".playwright-cli", ".pytest_cache", ".ruff_cache", "__pycache__",
-    "build", "dist", "data", "daily-intelligence", "daily-intel-data", "browser-profile",
-    "browser-profiles", "edge-profile", "raw_html", "screenshots",
+    ".agents", ".code-review-graph", ".codex", ".git", ".github", ".idea",
+    ".playwright-cli", ".pytest_cache", ".ruff_cache", ".vscode", "__pycache__",
+    "blob-report", "build", "dist", "data", "daily-intelligence", "daily-intel-data",
+    "browser-profile", "browser-profiles", "edge-profile", "htmlcov", "output",
+    "playwright-report", "raw_html", "screenshots", "test-results",
     "daily_intelligence_skill.egg-info"
 )
 $excludedFiles = @(".env", "*.cookies.json", "*.har", "*.storage-state.json", "brief*.json")

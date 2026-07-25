@@ -7,7 +7,7 @@ import json
 import time
 from pathlib import Path
 from typing import Any
-from urllib.parse import urljoin, urlsplit
+from urllib.parse import urlsplit
 
 import httpx
 from bs4 import BeautifulSoup
@@ -16,6 +16,7 @@ from playwright.async_api import BrowserContext, Page, async_playwright
 from .access import classify_access_text
 from .collector import CHALLENGE_TEXTS
 from .config import AppConfig, SourceConfig, resolve_browser_channel, resolve_profile_dir
+from .image_policy import normalize_image_candidates
 from .models import ContentStatus
 from .storage import next_revision, write_immutable_json, write_text_atomic
 from .utils import now_iso, read_json, timestamp_slug, write_json
@@ -69,6 +70,18 @@ async def meta_content(page: Page, selectors: list[str]) -> str:
     return ""
 
 
+async def meta_contents(page: Page, selectors: list[str]) -> list[str]:
+    values: list[str] = []
+    for selector in selectors:
+        locator = page.locator(selector)
+        for index in range(min(await locator.count(), 8)):
+            value = await locator.nth(index).get_attribute("content")
+            value = value or await locator.nth(index).get_attribute("datetime")
+            if value:
+                values.append(value.strip())
+    return values
+
+
 async def extract_visible_text(page: Page, selectors: list[str]) -> tuple[str, str | None]:
     for selector in selectors:
         locator = page.locator(selector)
@@ -108,6 +121,47 @@ def _html_meta(soup: BeautifulSoup, selectors: list[str]) -> str:
         if value:
             return str(value).strip()
     return ""
+
+
+def _html_meta_values(soup: BeautifulSoup, selectors: list[str]) -> list[str]:
+    values: list[str] = []
+    for selector in selectors:
+        for node in soup.select(selector):
+            value = (
+                node.get("content")
+                or node.get("datetime")
+                or node.get_text(" ", strip=True)
+            )
+            if value:
+                values.append(str(value).strip())
+    return values
+
+
+def _apply_image_candidates(
+    item: dict[str, Any],
+    values: list[object],
+    base_url: str,
+) -> None:
+    metadata = item.setdefault("metadata", {})
+    if not isinstance(metadata, dict):
+        metadata = {}
+        item["metadata"] = metadata
+    stored_candidates = metadata.get("image_candidates")
+    if not isinstance(stored_candidates, list):
+        stored_candidates = []
+    candidates = normalize_image_candidates(
+        [*values, item.get("image_url"), *stored_candidates],
+        base_url,
+    )
+    if not candidates:
+        item.pop("image_url", None)
+        metadata.pop("image_candidates", None)
+        return
+    item["image_url"] = candidates[0]
+    if len(candidates) > 1:
+        metadata["image_candidates"] = candidates
+    else:
+        metadata.pop("image_candidates", None)
 
 
 def _static_visible_text(
@@ -199,13 +253,11 @@ def _apply_http_document(
     )
     if published:
         item["published_at"] = published
-    image_url = _html_meta(
+    image_candidates = _html_meta_values(
         soup,
         ['meta[property="og:image"]', 'meta[name="twitter:image"]'],
     )
-    resolved_image_url = urljoin(final_url, image_url) if image_url else ""
-    if resolved_image_url.startswith(("http://", "https://")):
-        item["image_url"] = resolved_image_url
+    _apply_image_candidates(item, image_candidates, final_url)
 
     body, selector = _static_visible_text(soup, source.content_selectors)
     if len(body) >= 1500:
@@ -430,13 +482,11 @@ async def _extract_one(
         )
         if published:
             item["published_at"] = published
-        image_url = await meta_content(
+        image_candidates = await meta_contents(
             page,
             ['meta[property="og:image"]', 'meta[name="twitter:image"]'],
         )
-        resolved_image_url = urljoin(page.url, image_url) if image_url else ""
-        if resolved_image_url.startswith(("http://", "https://")):
-            item["image_url"] = resolved_image_url
+        _apply_image_candidates(item, image_candidates, page.url)
         body, selector = await extract_visible_text(page, source.content_selectors)
         if len(body) >= 1500:
             status = ContentStatus.FULL_TEXT

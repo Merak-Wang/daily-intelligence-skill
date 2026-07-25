@@ -34,6 +34,8 @@ def test_rss_parser_preserves_time_image_and_missing_time_fallback():
           <link>https://news.example/policy-update</link>
           <pubDate>Fri, 24 Jul 2026 01:30:00 GMT</pubDate>
           <description><![CDATA[<p>A concrete public summary.</p>]]></description>
+          <media:thumbnail
+            url="https://static.example/assets/grey-placeholder.png"/>
           <media:content url="https://news.example/images/policy.jpg" type="image/jpeg"/>
         </item>
         <item>
@@ -163,4 +165,3 @@ def test_conditional_feed_cache_reuses_304_items(tmp_path: Path):
     assert len(second.items) == 1
     assert second.cache_state == "not_modified"
     assert requests[1].headers["if-none-match"] == '"feed-v1"'
-

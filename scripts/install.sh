@@ -29,9 +29,11 @@ except ValueError as exc:
     raise SystemExit(f"Refusing to synchronize outside the Hermes skills directory: {target}") from exc
 
 ignored = {
-    ".agents", ".git", ".github", ".playwright-cli", ".pytest_cache", ".ruff_cache",
-    "__pycache__", "build", "dist", "data", "daily-intelligence", "daily-intel-data",
-    "browser-profile", "browser-profiles", "edge-profile", "raw_html", "screenshots",
+    ".agents", ".code-review-graph", ".codex", ".git", ".github", ".idea",
+    ".playwright-cli", ".pytest_cache", ".ruff_cache", ".vscode", "__pycache__",
+    "blob-report", "build", "dist", "data", "daily-intelligence", "daily-intel-data",
+    "browser-profile", "browser-profiles", "edge-profile", "htmlcov", "output",
+    "playwright-report", "raw_html", "screenshots", "test-results",
     "daily_intelligence_skill.egg-info",
 }
 

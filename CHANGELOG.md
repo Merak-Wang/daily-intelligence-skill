@@ -2,6 +2,10 @@
 
 ## Unreleased
 
+- Filtered known placeholder image URLs during feed, page, and article extraction; added pixel-level rejection for uniform rasters, same-story fallback candidates, and cache-version invalidation so blank image cards are omitted instead of published.
+- Moved story images below their headlines, using an image-and-summary layout on desktop and a stacked layout on narrow screens; updated both historical HTML examples without changing their report content.
+- Added an explicit `zh-CN` / `en` output-language choice across run manifests, authoring packets, semantic caches, validation, Markdown, HTML, PDF, and Notion; cross-language semantic reuse is rejected.
+- Simplified `SKILL.md`, removed checked-in runtime brief batches and a superseded dated audit, and moved the README preview into the stable `assets/readme/` tree.
 - Updated the complete developer Wiki for the current zero-token monitor, deterministic clustering, schema 2.0 authoring sessions, foreground HTML/desktop delivery, background tail, media cache, recovery model, configuration, and test layout.
 - Added automatic, atomic HTML delivery to the user's Desktop after each finalized edition, with absolute local media/archive/PDF links, an explicit directory override, and non-silent delivery errors.
 - Shortened the edition critical path with pre-media semantic validation, real completion timestamps, non-duplicating stage history, resumable post-persistence projections, and per-stage save metrics.

@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 from collections import defaultdict
 from pathlib import Path
+from typing import Any
 from urllib.parse import urlsplit
 
 import httpx
@@ -11,6 +12,7 @@ from bs4 import BeautifulSoup, Tag
 from .access import classify_access_text
 from .adapters import browser_items_from_rows
 from .config import AppConfig, SourceConfig, source_urls
+from .image_policy import is_placeholder_image_url, srcset_candidates
 from .models import SourceResult, SourceStatus
 from .utils import now_iso
 
@@ -21,11 +23,11 @@ _USER_AGENT = (
 )
 
 
-def html_index_rows(html: str) -> tuple[str, list[dict[str, str]]]:
+def html_index_rows(html: str) -> tuple[str, list[dict[str, Any]]]:
     """Extract inert link rows from public HTML without executing scripts."""
     soup = BeautifulSoup(html, "html.parser")
     title = soup.title.get_text(" ", strip=True) if soup.title else ""
-    rows: list[dict[str, str]] = []
+    rows: list[dict[str, Any]] = []
     for anchor in soup.select("a[href]"):
         heading = anchor.select_one("h1, h2, h3, h4")
         anchor_title = (
@@ -46,20 +48,32 @@ def html_index_rows(html: str) -> tuple[str, list[dict[str, str]]]:
             )
         )
         time = parent.select_one("time") if isinstance(parent, Tag) else None
-        image = anchor.select_one("img")
-        if image is None and isinstance(parent, Tag):
-            image = parent.select_one("img")
-        image_url = ""
-        if image is not None:
-            image_url = str(
-                image.get("src")
-                or image.get("data-src")
-                or image.get("data-original")
-                or image.get("data-lazy-src")
-                or ""
-            )
-            if not image_url and image.get("srcset"):
-                image_url = str(image.get("srcset")).split(",")[-1].strip().split()[0]
+        images = list(anchor.select("img"))
+        if isinstance(parent, Tag):
+            images.extend(parent.select("img"))
+        image_candidates: list[str] = []
+        seen_images: set[str] = set()
+        for image in images:
+            raw_candidates = [
+                str(image.get(attribute) or "")
+                for attribute in (
+                    "src",
+                    "data-src",
+                    "data-original",
+                    "data-lazy-src",
+                )
+            ]
+            raw_candidates.extend(srcset_candidates(image.get("srcset")))
+            for candidate in raw_candidates:
+                candidate = candidate.strip()
+                if (
+                    not candidate
+                    or candidate in seen_images
+                    or is_placeholder_image_url(candidate)
+                ):
+                    continue
+                seen_images.add(candidate)
+                image_candidates.append(candidate)
         context = " ".join(
             part
             for part in (
@@ -79,7 +93,8 @@ def html_index_rows(html: str) -> tuple[str, list[dict[str, str]]]:
             {
                 "title": str(anchor_title or ""),
                 "href": str(anchor.get("href") or ""),
-                "image_url": image_url,
+                "image_url": image_candidates[0] if image_candidates else "",
+                "image_candidates": image_candidates,
                 "context": context,
             }
         )

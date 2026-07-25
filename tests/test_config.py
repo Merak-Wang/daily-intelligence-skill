@@ -33,6 +33,7 @@ def test_windows_defaults_to_edge_without_overrides(monkeypatch):
 def test_local_html_and_pdf_are_default_reading_outputs():
     config = load_config()
 
+    assert config.output.language == "zh-CN"
     assert config.output.formats == ["html", "pdf"]
     assert config.output.pdf_engine == "edge"
     assert config.output.open_after_finalize is False
@@ -87,6 +88,27 @@ def test_pdf_output_requires_html_and_known_engine(tmp_path):
         encoding="utf-8",
     )
     with pytest.raises(ValueError, match="pdf_engine"):
+        load_config(config_path)
+
+
+def test_output_language_is_limited_to_chinese_or_english(tmp_path):
+    config_path = tmp_path / "sources.yaml"
+    config_path.write_text(
+        "timezone: Asia/Shanghai\n"
+        "output:\n  language: en\n  formats: [html]\n"
+        "sources: []\n",
+        encoding="utf-8",
+    )
+
+    assert load_config(config_path).output.language == "en"
+
+    config_path.write_text(
+        "timezone: Asia/Shanghai\n"
+        "output:\n  language: fr\n  formats: [html]\n"
+        "sources: []\n",
+        encoding="utf-8",
+    )
+    with pytest.raises(ValueError, match="output.language"):
         load_config(config_path)
 
 

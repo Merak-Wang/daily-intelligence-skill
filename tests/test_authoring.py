@@ -4,6 +4,7 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
+from daily_intelligence.authoring import validate_authoring_batch
 from daily_intelligence.config import load_config
 from daily_intelligence.context import build_context
 from daily_intelligence.utils import read_json, write_json
@@ -104,6 +105,38 @@ def _valid_batch_payload(packet: dict) -> dict:
             if candidate["item_id"] == item_id
         ]
     }
+
+
+def test_english_authoring_batch_requires_english_translation_and_summary():
+    packet = {
+        "output_language": "en",
+        "author_item_ids": ["cn-1"],
+        "candidates": [
+            {
+                "item_id": "cn-1",
+                "title": "一条中文新闻标题",
+                "source_language": "zh-CN",
+            }
+        ],
+    }
+    payload = {
+        "briefs": [
+            {
+                "item_id": "cn-1",
+                "title": "一条中文新闻标题",
+                "title_en": "A Chinese-language public news headline",
+                "tldr": "This is a substantive English summary of the observed facts.",
+                "importance": 70,
+                "status": "NEW",
+            }
+        ]
+    }
+
+    assert validate_authoring_batch(packet, payload) == []
+
+    payload["briefs"][0]["tldr"] = "这是一条中文摘要。"
+    errors = validate_authoring_batch(packet, payload)
+    assert any("substantive English summary" in error for error in errors)
 
 
 def test_authoring_batches_are_validated_and_python_assembled(tmp_path: Path):

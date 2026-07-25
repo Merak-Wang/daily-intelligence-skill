@@ -8,7 +8,7 @@
 | --- | --- |
 | 来源 | 32 个核心来源 + 51 个发现来源 |
 | 常驻监控 | RSS/Atom、条件缓存、静态 HTML、来源健康和跨来源聚类，`token_usage: 0` |
-| 正式日报 | `morning`、`evening` 两个 edition，七个固定内容栏目 |
+| 正式日报 | `morning`、`evening` 两个 edition；`zh-CN`、`en` 两种输出语言；七个固定内容栏目 |
 | 写作协议 | schema 2.0；Brief 分批写作，主模型只处理紧凑分析包 |
 | 研判 | 地缘政治、AI 研究/工程、股票市场 + 跨视角综合 |
 | 前台交付 | JSON、Markdown、HTML、本地索引和桌面 HTML |
@@ -41,6 +41,7 @@ daily-intelligence-skill/
 ├─ templates/               # 模型写作契约
 ├─ references/              # 运行、安装、编辑和发布细节
 ├─ assets/monitor/          # 本地情报台静态资源
+├─ assets/readme/           # README 使用的稳定静态图片
 ├─ examples/reports/        # 去除本机路径的实际 HTML 示例
 ├─ src/daily_intelligence/  # Python 实现
 ├─ tests/                   # 回归与集成测试
@@ -51,7 +52,7 @@ daily-intelligence-skill/
 
 | 领域 | 主要模块 |
 | --- | --- |
-| 配置、路径和绑定 | `config.py`、`runtime.py` |
+| 配置、语言、路径和绑定 | `config.py`、`localization.py`、`runtime.py` |
 | 采集与访问状态 | `access.py`、`adapters.py`、`prefetch.py`、`collector.py` |
 | 零 Token 监控 | `feeds.py`、`monitor.py`、`clustering.py`、`dashboard.py` |
 | 正文与图片 | `content.py`、`media.py` |

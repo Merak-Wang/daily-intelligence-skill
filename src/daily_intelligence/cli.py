@@ -18,6 +18,7 @@ from .config import (
     resolve_data_dir,
     resolve_hermes_home,
     resolve_profile_dir,
+    validate_output_config,
 )
 from .content import extract_content
 from .context import build_context
@@ -149,6 +150,7 @@ def build_parser() -> argparse.ArgumentParser:
     context = sub.add_parser("build-context", help="Build compact continuity context")
     context.add_argument("--index", type=Path, required=True)
     context.add_argument("--edition", choices=["morning", "evening"], required=True)
+    context.add_argument("--language", choices=["zh-CN", "en"])
 
     content = sub.add_parser("extract-content", help="Fetch selected article bodies")
     content.add_argument("--index", type=Path, required=True)
@@ -221,6 +223,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     run = sub.add_parser("run-edition", help="Prepare an edition through authoring context")
     run.add_argument("--edition", choices=["morning", "evening"], required=True)
+    run.add_argument("--language", choices=["zh-CN", "en"])
     run.add_argument("--headed", action="store_true")
     run.add_argument("--profile-dir", type=Path)
     run.add_argument("--browser-channel")
@@ -376,6 +379,9 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
     load_hermes_environment()
     config = load_config(args.config, timezone=args.timezone)
+    if language := getattr(args, "language", None):
+        config.output.language = language
+        validate_output_config(config.output)
     adopting_data_root = args.command == "data-root" and args.action == "adopt"
     data_dir = resolve_data_dir(args.data_dir, allow_conflict=adopting_data_root)
     hermes_home = resolve_hermes_home()

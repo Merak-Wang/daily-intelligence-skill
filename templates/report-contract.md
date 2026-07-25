@@ -1,6 +1,6 @@
 # 结构化日报契约（schema 2.0）
 
-输出 UTF-8 JSON。用户可见文字使用简体中文；来源原题、URL、论文/项目名和技术术语可保留原文。Python 强制设置 schema/language/时间，生成报告、事件和分析 ID，并从索引补齐引用身份、access、来源排名、状态、计数和 `evaluation_status`。不要手工复制这些字段。
+输出 UTF-8 JSON。读取 packet 的 `output_language`：`zh-CN` 使用简体中文，`en` 使用英文；同一报告的标题、摘要、研判和评估建议不得混用输出语言。来源原题、URL、论文/项目名和技术术语可保留原文。Python 固定 schema/language/时间，生成报告、事件和分析 ID，并从索引补齐引用身份、access、来源排名、状态、计数和 `evaluation_status`。不要手工复制这些字段。
 
 ## 固定结构
 
@@ -11,15 +11,16 @@
 3. 研判。
 4. 质量评估与用户反馈（初次发布显示评估待补充）。
 
-七个 section 由 Python 补齐并排序。渲染器按 brief 来源形成三级标题；成功来源有足够真实候选时必须达到 `report_target`，每来源不超过 `report_max`（全局硬上限 15），并按内部 `importance` 降序；重要性相同时按索引 `source_rank` 保留来源顺序。不得设置固定分数淘汰线。Brief 子 Agent 逐项完成 packet 的 `author_item_ids`；Python 验证各批次、原样合并 `reusable_briefs` 并执行覆盖校验。`target_count` 是本来源最低覆盖数，`default_item_ids` 是确定性基线。Python 不会用模板生成中文标题或 TL;DR；它只可复用内容指纹一致、独立评估已批准的旧 brief。只有运行时限已到且 run 明确记录缺失批次时，才允许采用 Python 计算的降级覆盖目标。
+七个 section 由 Python 按输出语言补齐并排序。渲染器按 brief 来源形成三级标题；成功来源有足够真实候选时必须达到 `report_target`，每来源不超过 `report_max`（全局硬上限 15），并按内部 `importance` 降序；重要性相同时按索引 `source_rank` 保留来源顺序。不得设置固定分数淘汰线。Brief 子 Agent 逐项完成 packet 的 `author_item_ids`；Python 验证各批次、原样合并同语言的 `reusable_briefs` 并执行覆盖校验。`target_count` 是本来源最低覆盖数，`default_item_ids` 是确定性基线。Python 不会用模板生成译题或 TL;DR；它只可复用内容指纹、输出语言一致且独立评估已批准的旧 brief。只有运行时限已到且 run 明确记录缺失批次时，才允许采用 Python 计算的降级覆盖目标。
 
 ## Python 装配后的完整草稿
 
-`assemble-authoring` 生成下列完整草稿；它不是最终发布 JSON。必须使用数组形式的 `sections` 和 `analyses`，并使用下列精确 section ID；不要手写 `report_id`、`revision`、`generated_at`、来源身份、access、计数、评分分解或最终事件 ID。
+`assemble-authoring` 生成下列完整草稿；它不是最终发布 JSON。必须使用数组形式的 `sections` 和 `analyses`，并使用下列精确 section ID；不要手写 `report_id`、`revision`、`generated_at`、来源身份、access、计数、评分分解或最终事件 ID。以下语义文本以 `zh-CN` 为例；`en` 保持结构不变并把所有读者可见文字改为英文。
 
 ```json
 {
   "schema_version": "2.0",
+  "language": "zh-CN",
   "date": "2026-07-15",
   "edition": "evening",
   "title": "每日情报晚报 — 2026年7月15日",
@@ -40,7 +41,7 @@
 }
 ```
 
-不要输出 `information.markets`、`technology.tech_news` 或 `technology.oss`。Python 为旧草稿兼容这些别名，但新草稿必须使用规范 ID。晨报的 `changes` 和 `tomorrow_watch_items` 可为空；晚报两者都必须有中文内容。`executive_summary` 始终是字符串数组，不是单个字符串。
+不要输出 `information.markets`、`technology.tech_news` 或 `technology.oss`。Python 为旧草稿兼容这些别名，但新草稿必须使用规范 ID。晨报的 `changes` 和 `tomorrow_watch_items` 可为空；晚报两者都必须使用目标语言填写。`executive_summary` 始终是字符串数组，不是单个字符串。
 
 ## 主 Agent 的紧凑研判输出
 
@@ -90,7 +91,7 @@
 }
 ```
 
-`title` 最终由 Python 覆盖为索引中的原题。原题已有中文时不要写 `title_zh`；原题不是中文时，Hermes 模型必须填写自然、完整的中文 `title_zh`。不要添加 `[英]`、`[EN]`、`【外文】`、来源名或截断英文。TL;DR 不得是“来源 X 报道”“详见原文链接”“仅取得来源标题或公开元数据，正文尚未读取”、英文摘要前加中文前缀、标题重复或其他占位文案。若索引已有 `full_text/partial`，读取 `content_path` 后总结；否则根据公开 `description`/摘要翻译并压缩；只有标题时，仅把标题明确表达的事实忠实改写成简短中文句子，不得添加标题外事实。访问状态只保存在 `source_ref.access` 或内部 `evidence_note`，不进入 TL;DR。
+`title` 最终由 Python 覆盖为索引中的原题。`zh-CN` 报告在原题非中文时填写自然、完整的 `title_zh`；`en` 报告在原题非英文时填写自然、完整的 `title_en`。原题已经符合输出语言时不写译题字段，非当前语言的另一个译题字段也必须省略。不要添加 `[英]`、`[EN]`、`[中]`、`[ZH]`、来源名或截断原文。TL;DR 不得是“来源 X 报道”“详见原文链接”“正文/摘要未获取”、错误语言前缀、标题重复或其他占位文案。若索引已有 `full_text/partial`，读取 `content_path` 后总结；否则根据公开 `description`/摘要翻译并压缩；只有标题时，仅把标题明确表达的事实忠实改写成目标语言短句，不得添加标题外事实。访问状态只保存在 `source_ref.access` 或内部 `evidence_note`，不进入 TL;DR。
 
 `featured_event_id`、`source_ref`、`primary_source`、来源排名和可选 `image` 由 Python 补齐。Agent 草稿不得填写图片 URL 或本地路径；Python 只使用同一索引 item 已观察到的公开配图，安全下载后再进入图文流。`items[]` 是证据与连续性层，通常 6—10 条、硬上限 12 条；普通 brief 不需要逐条研判。精选事件草稿只引用索引 item ID：
 
@@ -180,7 +181,7 @@ schema 2.0 中每个精选事件的 `source_item_ids` 必须恰好包含一篇�
 
 三个部分整体覆盖至少 60% 的精选事件；不要求覆盖全部 briefs。中国/西方立场放入相关部分的 `stakeholder_positions`。观点必须能追溯到事实或明确推导，不得把推断写成事实。
 
-精选事件的 `evidence_notes` 或研判的 `facts` 如果点名 BBC、CNBC、路透等来源，该来源必须能从对应 `source_item_ids` / `evidence_item_ids` 追溯到，不能用未绑定来源增强措辞。`scenarios` 中若出现百分比、概率、价格、金额或数字区间，必须填写中文 `scenario_basis`，明确数据来源或说明它只是情景假设；不能把模型自行给出的数字包装成预测事实。
+精选事件的 `evidence_notes` 或研判的 `facts` 如果点名 BBC、CNBC、路透等来源，该来源必须能从对应 `source_item_ids` / `evidence_item_ids` 追溯到，不能用未绑定来源增强措辞。`scenarios` 中若出现百分比、概率、价格、金额或数字区间，必须用目标语言填写 `scenario_basis`，明确数据来源或说明它只是情景假设；不能把模型自行给出的数字包装成预测事实。
 
 晚报在同一日期页面补充日间新增、事实确认、判断修正和至少一项次日观察；`changes` 和 `tomorrow_watch_items` 不能留空。
 
@@ -202,7 +203,7 @@ daily-intel --data-dir DATA_DIR validate-report DRAFT.json --run RUN.json
   "evaluated_report_id": "daily-2026-07-14-morning-r1",
   "evaluated_content_hash": "由 run artifact 提供的 SHA-256",
   "dimensions": [
-    {"id": "coverage", "score": 4, "finding": "中文、具体、简洁的结论。"}
+    {"id": "coverage", "score": 4, "finding": "使用报告目标语言、具体且简洁的结论。"}
   ],
   "total_score": 36,
   "main_defects": [],

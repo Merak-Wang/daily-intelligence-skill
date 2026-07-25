@@ -6,13 +6,15 @@ from copy import deepcopy
 from pathlib import Path
 from typing import Any
 
+from .localization import validate_output_language
 from .utils import canonicalize_url, clean_title, now_iso, read_json, write_json
 
-SEMANTIC_CACHE_SCHEMA = "1.0"
+SEMANTIC_CACHE_SCHEMA = "1.1"
 REUSABLE_BRIEF_FIELDS = (
     "item_id",
     "title",
     "title_zh",
+    "title_en",
     "tldr",
     "importance",
     "status",
@@ -52,14 +54,18 @@ def load_semantic_cache(data_dir: Path) -> dict[str, dict[str, Any]]:
 
 
 def reusable_semantic_brief(
-    item: dict[str, Any], cache: dict[str, dict[str, Any]]
+    item: dict[str, Any],
+    cache: dict[str, dict[str, Any]],
+    output_language: str = "zh-CN",
 ) -> dict[str, Any] | None:
+    language = validate_output_language(output_language)
     item_id = str(item.get("item_id") or "")
     entry = cache.get(item_id)
     if (
         not entry
         or entry.get("state") != "approved"
         or entry.get("fingerprint") != semantic_fingerprint(item)
+        or str(entry.get("language") or "zh-CN") != language
     ):
         return None
     brief = entry.get("brief")
@@ -89,6 +95,9 @@ def update_semantic_cache_from_report(
         if isinstance(item, dict) and item.get("item_id")
     }
     report_id = str(report.get("report_id") or "")
+    output_language = validate_output_language(
+        str(report.get("language") or "zh-CN")
+    )
     updated_at = str(report.get("generated_at") or now_iso("Asia/Shanghai"))
     for section in report.get("sections", []):
         if not isinstance(section, dict):
@@ -111,11 +120,13 @@ def update_semantic_cache_from_report(
                 existing
                 and existing.get("state") == "approved"
                 and existing.get("fingerprint") == fingerprint
+                and str(existing.get("language") or "zh-CN") == output_language
                 and existing.get("brief") == current_brief
             ):
                 continue
             cache[item_id] = {
                 "fingerprint": fingerprint,
+                "language": output_language,
                 "state": "pending",
                 "report_id": report_id,
                 "updated_at": updated_at,

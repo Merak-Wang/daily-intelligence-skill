@@ -64,6 +64,8 @@ def test_installers_sync_into_platform_hermes_skill_roots_and_exclude_repo_state
     assert '"skills"' in powershell
     assert '".git"' in powershell
     assert '"build"' in powershell
+    assert '".code-review-graph"' in powershell
+    assert '"output"' in powershell
     assert "if (-not $sameDirectory)" in powershell
     assert "post-install artifact" in powershell
     assert '${HOME}/.hermes' in shell
@@ -71,6 +73,8 @@ def test_installers_sync_into_platform_hermes_skill_roots_and_exclude_repo_state
     assert 'target_dir="${skills_root}/research/daily-intelligence"' in shell
     assert "if source != target:" in shell
     assert "shutil.copytree(source, target, ignore=ignore)" in shell
+    assert '".code-review-graph"' in shell
+    assert '"output"' in shell
     assert "post-install artifact" in shell
 
 
@@ -474,9 +478,34 @@ def test_enrich_edition_records_only_ids_accepted_under_hard_cap(monkeypatch, tm
     }
 
 
+def test_existing_run_rejects_silent_output_language_change(
+    monkeypatch, tmp_path: Path
+):
+    config = load_config()
+    config.output.language = "en"
+    data_dir = tmp_path / "data"
+    write_json(
+        data_dir / "runs" / "2026-07-25" / "morning.json",
+        {
+            "date": "2026-07-25",
+            "edition": "morning",
+            "output_language": "zh-CN",
+            "status": RunStatus.AWAITING_SELECTION,
+        },
+    )
+    monkeypatch.setattr(
+        "daily_intelligence.workflow.today_str", lambda _timezone: "2026-07-25"
+    )
+
+    with pytest.raises(RuntimeError, match="--restart"):
+        prepare_edition(config, data_dir, "morning")
+
+
 def test_cli_exposes_two_stage_workflow():
     parser = build_parser()
-    prepared = parser.parse_args(["run-edition", "--edition", "morning"])
+    prepared = parser.parse_args(
+        ["run-edition", "--edition", "morning", "--language", "en"]
+    )
     enriched = parser.parse_args(["enrich-edition", "--run", "run.json"])
     finalized = parser.parse_args(
         ["finalize-edition", "--run", "run.json", "--report", "draft.json"]
@@ -490,6 +519,7 @@ def test_cli_exposes_two_stage_workflow():
         "enrich-edition",
         "finalize-edition",
     )
+    assert prepared.language == "en"
     assert verification.command == "verify-pending"
     assert evaluation.command == "finalize-evaluation"
     assert prepared.open_verification is False
@@ -1120,6 +1150,7 @@ def test_verified_index_reopens_published_run_as_a_report_revision(monkeypatch, 
         {
             "date": "2026-07-15",
             "edition": "morning",
+            "output_language": "en",
             "status": RunStatus.COMPLETED_PARTIAL,
             "artifacts": {
                 "index_path": str(old_index),
@@ -1133,10 +1164,13 @@ def test_verified_index_reopens_published_run_as_a_report_revision(monkeypatch, 
         },
     )
     context_path = data_dir / "context" / "2026-07-15" / "morning-r2.json"
-    monkeypatch.setattr(
-        "daily_intelligence.workflow.build_context",
-        lambda *_args, **_kwargs: context_path,
-    )
+    captured: dict[str, str] = {}
+
+    def fake_build_context(_index_path, config, *_args, **_kwargs):
+        captured["language"] = config.output.language
+        return context_path
+
+    monkeypatch.setattr("daily_intelligence.workflow.build_context", fake_build_context)
 
     adopt_index_for_run(load_config(), data_dir, index_path)
 
@@ -1144,6 +1178,7 @@ def test_verified_index_reopens_published_run_as_a_report_revision(monkeypatch, 
     assert run["status"] == RunStatus.AWAITING_SELECTION
     assert run["revision_reason"] == "verified_source_supplement"
     assert run["artifacts"]["previous_report"]["report_id"].endswith("-r1")
+    assert captured["language"] == "en"
     assert "publication" not in run
     assert "evaluation" not in run
 

@@ -37,6 +37,7 @@ def test_public_html_rows_preserve_title_link_and_time_context():
         <html><head><title>Example News</title></head><body>
           <article><time datetime="2026-07-17T05:00:00+08:00"></time>
             <a href="/articles/one"><h2>A sufficiently long public headline</h2></a>
+            <img src="/images/grey-placeholder.png" alt="">
             <img data-src="/images/one.jpg" alt="">
           </article>
         </body></html>
@@ -48,6 +49,7 @@ def test_public_html_rows_preserve_title_link_and_time_context():
     assert rows[0]["title"] == "A sufficiently long public headline"
     assert "2026-07-17" in rows[0]["context"]
     assert rows[0]["image_url"] == "/images/one.jpg"
+    assert rows[0]["image_candidates"] == ["/images/one.jpg"]
     items = browser_items_from_rows(
         rows,
         _source(),

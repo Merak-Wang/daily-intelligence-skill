@@ -6,6 +6,7 @@ from daily_intelligence.reporting import compile_report_data
 from daily_intelligence.semantics import (
     finalize_semantic_cache_evaluation,
     load_semantic_cache,
+    reusable_semantic_brief,
     semantic_fingerprint,
     update_semantic_cache_from_report,
 )
@@ -111,6 +112,9 @@ def test_evaluated_semantics_are_reused_in_context_and_compiler(tmp_path: Path):
     )
     assert compiled["semantic_cache_reused"] is True
     assert any("reused approved semantic cache" in warning for warning in warnings)
+    assert reusable_semantic_brief(
+        item, load_semantic_cache(data_dir), "en"
+    ) is None
 
 
 def test_low_reliability_evaluation_rejects_semantic_cache(tmp_path: Path):
