@@ -76,3 +76,5 @@ Desktop.ini
 
 # Local build audit; release history belongs in CHANGELOG.md
 /BUILD_REPORT.md
+# Added by code-review-graph
+.code-review-graph/
