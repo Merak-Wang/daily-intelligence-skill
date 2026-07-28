@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Renamed the public Hermes skill and reader-facing report brand to **迹简情报台 · SignalTrail** (`signaltrail`) while retaining the `daily-intel` CLI, `daily_intelligence` package, report identifiers, legacy data root, and legacy `merak-brief`/`daily-intelligence` install-path discovery for backward compatibility.
+- Reorganized `SKILL.md` to the Hermes/Agent Skills metadata layout, added a tracked-file-only community package builder, and documented an auditable GitHub publication workflow.
+- Made Simplified Chinese the default repository README, added full English README and example documentation, and reframed the report gallery around product outcomes and operating scale.
 - Filtered known placeholder image URLs during feed, page, and article extraction; added pixel-level rejection for uniform rasters, same-story fallback candidates, and cache-version invalidation so blank image cards are omitted instead of published.
 - Moved story images below their headlines, using an image-and-summary layout on desktop and a stacked layout on narrow screens; updated both historical HTML examples without changing their report content.
 - Added an explicit `zh-CN` / `en` output-language choice across run manifests, authoring packets, semantic caches, validation, Markdown, HTML, PDF, and Notion; cross-language semantic reuse is rejected.

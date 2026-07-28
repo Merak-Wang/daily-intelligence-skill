@@ -114,7 +114,7 @@ def schedule_independent_evaluation(
         "--skill",
         "daily-intelligence",
         "--name",
-        f"Daily Intelligence Evaluation {report_id}",
+        f"SignalTrail Evaluation {report_id}",
         "--deliver",
         "local",
         "--workdir",

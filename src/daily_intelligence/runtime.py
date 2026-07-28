@@ -109,7 +109,7 @@ def bind_data_root(
     previous = load_bound_data_root(home)
     if previous and previous != root and not adopt:
         raise ValueError(
-            "Daily Intelligence is already bound to another data root: "
+            "SignalTrail is already bound to another data root: "
             f"{previous}. Refusing to use {root}. Use `daily-intel --data-dir \"{root}\" "
             "data-root adopt` only after confirming the intended history."
         )

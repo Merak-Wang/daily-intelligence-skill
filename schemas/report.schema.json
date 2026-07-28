@@ -1,7 +1,7 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://example.local/schemas/daily-intelligence-report.schema.json",
-  "title": "Daily Intelligence Report",
+  "title": "SignalTrail Report",
   "type": "object",
   "required": [
     "report_id",

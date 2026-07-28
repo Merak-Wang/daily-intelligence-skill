@@ -11,7 +11,7 @@ $hermesHome = if ($env:HERMES_HOME) {
     [IO.Path]::GetFullPath((Join-Path $env:LOCALAPPDATA "hermes"))
 }
 $skillsRoot = [IO.Path]::GetFullPath((Join-Path $hermesHome "skills"))
-$targetDir = [IO.Path]::GetFullPath((Join-Path $skillsRoot "research\daily-intelligence"))
+$targetDir = [IO.Path]::GetFullPath((Join-Path $skillsRoot "research\signaltrail"))
 if (-not $targetDir.StartsWith($skillsRoot, [StringComparison]::OrdinalIgnoreCase)) {
     throw "Refusing to synchronize outside the Hermes skills directory: $targetDir"
 }
@@ -21,7 +21,7 @@ $legacyRuntimeEntries = @(
     ".env", ".git", ".github", ".playwright-cli", ".pytest_cache", ".ruff_cache",
     "browser-profile", "browser-profiles", "build", "daily-intel-data",
     "daily-intelligence", "daily_intelligence_skill.egg-info", "data", "dist",
-    "edge-profile", "raw_html", "screenshots"
+    "edge-profile", "raw_html", "screenshots", "tmp"
 )
 $sameDirectory = [String]::Equals(
     [IO.Path]::GetFullPath($skillDir).TrimEnd([IO.Path]::DirectorySeparatorChar),
@@ -46,7 +46,7 @@ $excludedDirs = @(
     ".playwright-cli", ".pytest_cache", ".ruff_cache", ".vscode", "__pycache__",
     "blob-report", "build", "dist", "data", "daily-intelligence", "daily-intel-data",
     "browser-profile", "browser-profiles", "edge-profile", "htmlcov", "output",
-    "playwright-report", "raw_html", "screenshots", "test-results",
+    "playwright-report", "raw_html", "screenshots", "test-results", "tmp",
     "daily_intelligence_skill.egg-info"
 )
 $excludedFiles = @(".env", "*.cookies.json", "*.har", "*.storage-state.json", "brief*.json")
@@ -77,6 +77,6 @@ if (-not $sameDirectory) {
         }
     }
 }
-Write-Host "Synchronized skill: $targetDir"
+Write-Host "Synchronized SignalTrail skill: $targetDir"
 Write-Host "Installed package. Windows collection uses system Microsoft Edge; no bundled browser download is required."
 Write-Host "Run: daily-intel --help"

@@ -1,6 +1,6 @@
 # 开发文档
 
-本 Wiki 面向 Daily Intelligence 的维护者和贡献者，描述当前代码契约、模块边界、状态模型和扩展方式。用户安装、运行和真实 HTML 示例见仓库根目录的 `README.md`；操作手册与平台配置见 `references/`。
+本 Wiki 面向迹简情报台（SignalTrail，原 Merak Brief / Daily Intelligence）的维护者和贡献者，描述当前代码契约、模块边界、状态模型和扩展方式。用户安装、运行和 HTML 报告展厅见仓库根目录的 `README.md`；操作手册与平台配置见 `references/`。
 
 ## 当前系统一览
 
@@ -33,7 +33,7 @@
 ## 仓库目录
 
 ```text
-daily-intelligence-skill/
+signaltrail-skill/
 ├─ SKILL.md                 # Hermes 的精简过程入口
 ├─ README.md                # 用户能力、安装和真实示例
 ├─ configs/                 # 核心来源、发现来源、Notion 映射

@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
 from datetime import datetime
 from pathlib import Path
@@ -9,6 +10,11 @@ from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 from zoneinfo import ZoneInfo
 
 TRACKING_QUERY_PREFIXES = ("utm_", "guce_", "guccounter", "ref", "source")
+
+
+def environment_value(name: str) -> str | None:
+    """Read a caller-declared process variable without coupling utilities to a secret name."""
+    return os.getenv(name)
 
 
 def now_iso(timezone: str) -> str:

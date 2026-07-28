@@ -23,7 +23,7 @@
   "language": "zh-CN",
   "date": "2026-07-15",
   "edition": "evening",
-  "title": "每日情报晚报 — 2026年7月15日",
+  "title": "迹简·晚报 — 2026年7月15日",
   "executive_summary": ["中文摘要一。", "中文摘要二。"],
   "changes": ["晚报相对晨报的新增事实或判断修正。"],
   "tomorrow_watch_items": ["次日需要确认的信号。"],
@@ -49,7 +49,7 @@
 
 ```json
 {
-  "title": "每日情报晚报 — 2026年7月25日",
+  "title": "迹简·晚报 — 2026年7月25日",
   "executive_summary": ["当日最重要的事实与判断。"],
   "changes": ["相对晨报发生的新增或修正。"],
   "tomorrow_watch_items": ["下一观察窗口需要确认的信号。"],

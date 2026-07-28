@@ -130,12 +130,47 @@ def test_media_limits_must_fit_notion_direct_upload(tmp_path):
 def test_project_root_uses_explicit_stable_skill_directory(monkeypatch, tmp_path):
     (tmp_path / "configs").mkdir()
     (tmp_path / "schemas").mkdir()
-    (tmp_path / "SKILL.md").write_text("---\nname: daily-intelligence\n---\n", encoding="utf-8")
+    (tmp_path / "SKILL.md").write_text("---\nname: signaltrail\n---\n", encoding="utf-8")
     (tmp_path / "configs" / "sources.yaml").write_text("sources: []\n", encoding="utf-8")
     (tmp_path / "schemas" / "report.schema.json").write_text("{}\n", encoding="utf-8")
     monkeypatch.setenv("DAILY_INTEL_SKILL_DIR", str(tmp_path))
 
     assert project_root() == tmp_path.resolve()
+
+
+def test_project_root_discovers_new_hermes_path_before_legacy_path(
+    monkeypatch,
+    tmp_path,
+):
+    import daily_intelligence.config as config_module
+
+    hermes_home = tmp_path / "hermes"
+    new_skill = hermes_home / "skills" / "research" / "signaltrail"
+    legacy_brand_skill = hermes_home / "skills" / "research" / "merak-brief"
+    legacy_skill = hermes_home / "skills" / "research" / "daily-intelligence"
+    for skill_path in (new_skill, legacy_brand_skill, legacy_skill):
+        (skill_path / "configs").mkdir(parents=True)
+        (skill_path / "schemas").mkdir()
+        (skill_path / "SKILL.md").write_text("---\nname: signaltrail\n---\n", encoding="utf-8")
+        (skill_path / "configs" / "sources.yaml").write_text(
+            "sources: []\n",
+            encoding="utf-8",
+        )
+        (skill_path / "schemas" / "report.schema.json").write_text(
+            "{}\n",
+            encoding="utf-8",
+        )
+    fake_module = tmp_path / "site-packages" / "daily_intelligence" / "config.py"
+    fake_module.parent.mkdir(parents=True)
+    fake_module.write_text("", encoding="utf-8")
+    empty_cwd = tmp_path / "cwd"
+    empty_cwd.mkdir()
+    monkeypatch.setattr(config_module, "__file__", str(fake_module))
+    monkeypatch.setenv("HERMES_HOME", str(hermes_home))
+    monkeypatch.delenv("DAILY_INTEL_SKILL_DIR", raising=False)
+    monkeypatch.chdir(empty_cwd)
+
+    assert project_root() == new_skill.resolve()
 
 
 def test_explicit_browser_channel_overrides_windows_default(monkeypatch):

@@ -62,19 +62,22 @@ def test_installers_sync_into_platform_hermes_skill_roots_and_exclude_repo_state
 
     assert 'Join-Path $env:LOCALAPPDATA "hermes"' in powershell
     assert '"skills"' in powershell
+    assert r'"research\signaltrail"' in powershell
     assert '".git"' in powershell
     assert '"build"' in powershell
     assert '".code-review-graph"' in powershell
     assert '"output"' in powershell
+    assert '"tmp"' in powershell
     assert "if (-not $sameDirectory)" in powershell
     assert "post-install artifact" in powershell
     assert '${HOME}/.hermes' in shell
     assert 'skills_root="${hermes_home}/skills"' in shell
-    assert 'target_dir="${skills_root}/research/daily-intelligence"' in shell
+    assert 'target_dir="${skills_root}/research/signaltrail"' in shell
     assert "if source != target:" in shell
     assert "shutil.copytree(source, target, ignore=ignore)" in shell
     assert '".code-review-graph"' in shell
     assert '"output"' in shell
+    assert '"tmp"' in shell
     assert "post-install artifact" in shell
 
 
@@ -2006,9 +2009,9 @@ def test_notion_properties_match_hermes_notes_schema():
     morning = publisher.build_properties(report)
     assert set(morning) == {"Name", "Date", "Status", "Source", "Tags"}
     assert morning["Status"] == {"status": {"name": "New"}}
-    assert morning["Source"] == {"select": {"name": "Daily Intelligence"}}
+    assert morning["Source"] == {"select": {"name": "SignalTrail"}}
     assert {item["name"] for item in morning["Tags"]["multi_select"]} == {
-        "Daily Intelligence",
+        "SignalTrail",
         "Morning",
     }
 

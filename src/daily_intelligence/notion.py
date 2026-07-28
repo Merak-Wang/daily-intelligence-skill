@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import hashlib
-import os
 import re
 import time
 from collections.abc import Callable
@@ -40,7 +39,7 @@ from .reports import (
     ordered_sections,
 )
 from .storage import write_text_atomic
-from .utils import canonicalize_url, read_json, write_json
+from .utils import canonicalize_url, environment_value, read_json, write_json
 
 _PROPERTY_TYPES: dict[str, set[str]] = {
     "title": {"title"},
@@ -570,8 +569,8 @@ def parse_user_feedback(text: str) -> dict[str, Any] | None:
 
 
 def sync_user_feedback(data_dir: Path, config_path: Path | None = None) -> Path | None:
-    token = os.getenv("NOTION_TOKEN")
-    data_source_id = os.getenv("NOTION_DATA_SOURCE_ID")
+    token = environment_value("NOTION_TOKEN")
+    data_source_id = environment_value("NOTION_DATA_SOURCE_ID")
     registry_path = data_dir / "publishing" / "notion-registry.json"
     if not token or not data_source_id or not registry_path.exists():
         return None
@@ -1133,8 +1132,8 @@ def append_evaluation(
     errors = validate_evaluation_data(evaluation, report)
     if errors:
         raise ValueError("Evaluation validation failed: " + "; ".join(errors))
-    token = os.getenv("NOTION_TOKEN")
-    data_source_id = os.getenv("NOTION_DATA_SOURCE_ID")
+    token = environment_value("NOTION_TOKEN")
+    data_source_id = environment_value("NOTION_DATA_SOURCE_ID")
     if not token or not data_source_id:
         raise RuntimeError("NOTION_TOKEN and NOTION_DATA_SOURCE_ID are required")
     registry_path = data_dir / "publishing" / "notion-registry.json"
@@ -1453,8 +1452,8 @@ def backfill_report_images(
     if not image_items:
         raise ValueError("Report contains no materialized images to backfill")
 
-    token = os.getenv("NOTION_TOKEN")
-    data_source_id = os.getenv("NOTION_DATA_SOURCE_ID")
+    token = environment_value("NOTION_TOKEN")
+    data_source_id = environment_value("NOTION_DATA_SOURCE_ID")
     if not token or not data_source_id:
         raise RuntimeError("NOTION_TOKEN and NOTION_DATA_SOURCE_ID are required")
 
@@ -1575,8 +1574,8 @@ def publish_report(
     if not isinstance(report, dict):
         raise ValueError("Report must be a JSON object")
 
-    token = os.getenv("NOTION_TOKEN")
-    data_source_id = os.getenv("NOTION_DATA_SOURCE_ID")
+    token = environment_value("NOTION_TOKEN")
+    data_source_id = environment_value("NOTION_DATA_SOURCE_ID")
     if not token or not data_source_id:
         raise RuntimeError("NOTION_TOKEN and NOTION_DATA_SOURCE_ID are required")
 

@@ -665,13 +665,13 @@ def compile_report_data(
     edition_label = localized(
         output_language,
         "晚报" if report.get("edition") == "evening" else "晨报",
-        "Evening Brief" if report.get("edition") == "evening" else "Morning Brief",
+        "Evening Edition" if report.get("edition") == "evening" else "Morning Edition",
     )
     if not report.get("title"):
         report["title"] = localized(
             output_language,
-            f"每日情报{edition_label} — {report.get('date', '')}",
-            f"Daily Intelligence {edition_label} — {report.get('date', '')}",
+            f"迹简·{edition_label} — {report.get('date', '')}",
+            f"SignalTrail {edition_label} — {report.get('date', '')}",
         )
         warnings.append("missing draft title was filled with the deterministic report title")
     summary = report.get("executive_summary")

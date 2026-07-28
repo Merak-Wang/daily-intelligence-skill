@@ -10,7 +10,7 @@ import yaml
 
 from .localization import validate_output_language
 from .taxonomy import validate_content_taxonomy
-from .utils import now_iso, read_json, write_json
+from .utils import environment_value, now_iso, read_json, write_json
 
 SOURCE_PAGE_REWRITES = {
     ("huggingface_papers", "https://huggingface.co/papers/month"): (
@@ -260,23 +260,28 @@ def _validate_source(source: SourceConfig, budget: BudgetConfig) -> None:
 
 
 def project_root() -> Path:
-    explicit = os.getenv("DAILY_INTEL_SKILL_DIR")
-    hermes_home = os.getenv("HERMES_HOME")
+    explicit = environment_value("DAILY_INTEL_SKILL_DIR")
+    hermes_home = environment_value("HERMES_HOME")
+    local_app_data = environment_value("LOCALAPPDATA")
     if hermes_home:
         resolved_hermes_home = Path(hermes_home).expanduser().resolve()
-    elif os.name == "nt" and os.getenv("LOCALAPPDATA"):
-        resolved_hermes_home = (Path(os.environ["LOCALAPPDATA"]) / "hermes").resolve()
+    elif os.name == "nt" and local_app_data:
+        resolved_hermes_home = (Path(local_app_data) / "hermes").resolve()
     else:
         resolved_hermes_home = (Path.home() / ".hermes").resolve()
 
     candidates = [
         Path(explicit).expanduser() if explicit else None,
         Path(__file__).resolve().parents[2],
+        resolved_hermes_home / "skills" / "research" / "signaltrail",
+        resolved_hermes_home / "skills" / "research" / "merak-brief",
         resolved_hermes_home / "skills" / "research" / "daily-intelligence",
         Path.cwd(),
     ]
     skills_dir = resolved_hermes_home / "skills"
     if skills_dir.exists():
+        candidates.extend(skills_dir.glob("*/signaltrail"))
+        candidates.extend(skills_dir.glob("*/merak-brief"))
         candidates.extend(skills_dir.glob("*/daily-intelligence"))
 
     checked: list[str] = []
@@ -292,7 +297,7 @@ def project_root() -> Path:
         ):
             return resolved
     raise FileNotFoundError(
-        "Cannot locate the daily-intelligence skill resources. Set DAILY_INTEL_SKILL_DIR "
+        "Cannot locate the SignalTrail skill resources. Set DAILY_INTEL_SKILL_DIR "
         "to the directory containing SKILL.md, configs/, and schemas/. Checked: "
         + ", ".join(checked)
     )
@@ -347,18 +352,18 @@ def load_config(path: Path | None = None, timezone: str | None = None) -> AppCon
 
 
 def resolve_hermes_home(platform: str | None = None) -> Path:
-    value = os.getenv("HERMES_HOME")
+    value = environment_value("HERMES_HOME")
     if value:
         return Path(value).expanduser().resolve()
     if (platform or os.name) == "nt":
-        local_app_data = os.getenv("LOCALAPPDATA")
+        local_app_data = environment_value("LOCALAPPDATA")
         if local_app_data:
             return (Path(local_app_data) / "hermes").resolve()
     return (Path.home() / ".hermes").resolve()
 
 
 def resolve_data_dir(explicit: Path | None = None, *, allow_conflict: bool = False) -> Path:
-    value = os.getenv("DAILY_INTEL_DATA_DIR")
+    value = environment_value("DAILY_INTEL_DATA_DIR")
     if explicit and value:
         resolved_explicit = explicit.expanduser().resolve()
         resolved_environment = Path(value).expanduser().resolve()
@@ -378,7 +383,7 @@ def resolve_data_dir(explicit: Path | None = None, *, allow_conflict: bool = Fal
 def resolve_profile_dir(config: AppConfig, explicit: Path | None = None) -> Path:
     if explicit:
         return explicit.expanduser().resolve()
-    value = os.getenv(config.browser.profile_dir_env)
+    value = environment_value(config.browser.profile_dir_env)
     if value:
         return Path(value).expanduser().resolve()
     return (resolve_hermes_home() / "browser-profiles" / "daily-intelligence").resolve()
@@ -391,7 +396,7 @@ def resolve_browser_channel(
 ) -> str | None:
     if explicit is not None:
         return explicit or None
-    value = os.getenv(config.browser.channel_env)
+    value = environment_value(config.browser.channel_env)
     if value is not None:
         return value or None
     if config.browser.default_channel:

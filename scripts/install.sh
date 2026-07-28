@@ -4,7 +4,7 @@ set -euo pipefail
 skill_dir="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 hermes_home="${HERMES_HOME:-${HOME}/.hermes}"
 skills_root="${hermes_home}/skills"
-target_dir="${skills_root}/research/daily-intelligence"
+target_dir="${skills_root}/research/signaltrail"
 editable=false
 dev=false
 for arg in "$@"; do
@@ -33,7 +33,7 @@ ignored = {
     ".playwright-cli", ".pytest_cache", ".ruff_cache", ".vscode", "__pycache__",
     "blob-report", "build", "dist", "data", "daily-intelligence", "daily-intel-data",
     "browser-profile", "browser-profiles", "edge-profile", "htmlcov", "output",
-    "playwright-report", "raw_html", "screenshots", "test-results",
+    "playwright-report", "raw_html", "screenshots", "test-results", "tmp",
     "daily_intelligence_skill.egg-info",
 }
 
@@ -85,5 +85,5 @@ if source != target:
         elif candidate.exists():
             candidate.unlink()
 PY
-printf 'Synchronized skill: %s\n' "${target_dir}"
-printf 'Installed daily-intelligence.\n'
+printf 'Synchronized SignalTrail skill: %s\n' "${target_dir}"
+printf 'Installed SignalTrail; the compatible CLI remains daily-intel.\n'

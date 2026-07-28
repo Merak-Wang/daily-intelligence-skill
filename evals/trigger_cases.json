@@ -1,10 +1,12 @@
 {
   "should_trigger": [
+    "Use SignalTrail to prepare today's source-traceable morning report.",
     "Generate today's morning intelligence brief from the configured sources.",
     "Update the evening edition and append it to Notion.",
     "Reuters needs verification; continue the report and let me resume later.",
     "Select which collected articles need full-text reading before analysis.",
-    "Use prior days' theses and watchlist to keep today's analysis continuous."
+    "Use prior days' theses and watchlist to keep today's analysis continuous.",
+    "用迹简情报台生成今天的中文晨报，并保留来源失败状态。"
   ],
   "should_not_trigger": [
     "Explain what Reuters is.",

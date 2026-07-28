@@ -117,7 +117,7 @@ def test_english_compiler_uses_english_defaults_and_section_titles():
 
     compile_report_data(report, index)
 
-    assert report["title"] == "Daily Intelligence Morning Brief — 2026-07-25"
+    assert report["title"] == "SignalTrail Morning Edition — 2026-07-25"
     assert report["executive_summary"] == [
         "This edition's key developments and analysis follow."
     ]
@@ -983,7 +983,7 @@ def test_v15_compiler_normalizes_simple_top_level_draft_fields():
     errors, _validation_warnings = validate_report_data(report, index)
 
     assert errors == []
-    assert report["title"].startswith("每日情报")
+    assert report["title"].startswith("迹简")
     assert report["executive_summary"] == ["这是本版的中文摘要。"]
     assert any("executive_summary string" in warning for warning in warnings)
 

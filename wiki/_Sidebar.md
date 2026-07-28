@@ -1,4 +1,4 @@
-## Daily Intelligence
+## 迹简情报台 · SignalTrail
 
 - [[开发首页|Home]]
 - [[产品目标与边界|01-产品目标与边界]]

@@ -10,9 +10,9 @@ schema_profiles:
     values:
       morning_status: "New"
       evening_status: "Reviewed"
-      source: "Daily Intelligence"
-      morning_tags: ["Daily Intelligence", "Morning"]
-      evening_tags: ["Daily Intelligence", "Evening"]
+      source: "SignalTrail"
+      morning_tags: ["SignalTrail", "Morning"]
+      evening_tags: ["SignalTrail", "Evening"]
   daily_intelligence:
     properties:
       title: "Title"

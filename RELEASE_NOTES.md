@@ -1,6 +1,10 @@
-# Daily Intelligence v2.0.0
+# 迹简情报台 · SignalTrail v2.0.0
 
-本次升级在不提高 Agent Token 预算的前提下加入本地新闻监控、来源扩展、事件聚类和多视角分析 2.0。写作批次、图片预取和确定性装配缩短关键路径；日报先交付本地 JSON、Markdown、HTML，再在后台生成 PDF、可选同步 Notion 并安排独立评估。
+本次升级启用新的对外品牌 **迹简情报台 · SignalTrail**，同时保留 `daily-intel` CLI、
+`daily_intelligence` Python 包与既有数据根，确保现有运行历史连续。在不提高 Agent
+Token 预算的前提下，版本加入本地新闻监控、来源扩展、事件聚类和多视角分析 2.0。
+写作批次、图片预取和确定性装配缩短关键路径；日报先交付本地 JSON、Markdown、HTML，
+再在后台生成 PDF、可选同步 Notion 并安排独立评估。
 
 ## 主要功能
 

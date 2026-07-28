@@ -83,7 +83,7 @@ Hermes 运行时也会读取 Hermes Home 下的 `.env`。仓库内的 `.env` 已
 | Name | Title | 报告标题 |
 | Date | Date | 报告日期 |
 | Status | Status | 晨报为 `New`，晚报为 `Reviewed` |
-| Source | Select | `Daily Intelligence` |
+| Source | Select | `SignalTrail` |
 | Tags | Multi-select | 项目名和版本时段 |
 
 `daily_intelligence` 配置还支持 `Version`、`Source Count`、`Event Count` 和 `Pending Verification`。旧版顶层 `properties`、`values` 配置仍可读取。
