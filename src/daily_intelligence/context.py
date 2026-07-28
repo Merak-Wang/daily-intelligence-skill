@@ -590,11 +590,48 @@ def build_context(
             "domains": ["geopolitics", "ai_technology", "markets"],
             "shared_dossier_rule": (
                 "All three lenses must use the same selected featured-event dossier. "
-                "Do not widen evidence separately for one lens. Reuse an approved unchanged "
-                "judgement instead of regenerating it."
+                "Do not widen evidence separately for one lens, but let each lens cite a "
+                "thematically coherent subset. Events sharing only a date or broad category "
+                "must not be forced into one thesis. Reuse an approved unchanged judgement "
+                "instead of regenerating it."
+            ),
+            "presentation_mode": "narrative_first",
+            "narrative_contract": {
+                "role": (
+                    "Reader-facing main text. Build the structured reasoning ledger first, "
+                    "then rewrite it as a standalone causal story rather than concatenating "
+                    "field contents."
+                ),
+                "paragraphs": {"minimum": 4, "target": 5, "maximum": 7},
+                "required_moves": [
+                    "Open with the concrete change or central falsifiable judgement.",
+                    "Use only facts that advance one central question.",
+                    "Explain the mechanism, stakeholder incentives, constraints, and backlash.",
+                    "Address the strongest counterargument, evidence limit, or condition.",
+                    "End with conditional paths and observable signals that would change the view.",
+                ],
+                "method_visibility": (
+                    "Use dialectics and historical materialism to shape causality, conditions, "
+                    "contradictions, capabilities, and counterforces. Do not announce the methods "
+                    "or use structured field labels as prose headings."
+                ),
+                "theme_coherence_rule": (
+                    "Multiple events require a shared causal mechanism stated in one sentence. "
+                    "A shared date, domain label, or vague theme is not a mechanism; omit or split "
+                    "unrelated events."
+                ),
+            },
+            "supporting_fields_rule": (
+                "Facts, reasoning, history, dialectical analysis, stakeholder positions, "
+                "counterevidence, scenarios, assumptions, implications, actions, watch signals, "
+                "invalidation signals, and confidence rationale remain concise and traceable as "
+                "the expandable reasoning ledger behind the narrative."
             ),
             "per_lens_required_fields": [
                 "claim",
+                "narrative",
+                "historical_context",
+                "dialectical_analysis",
                 "facts",
                 "reasoning",
                 "causal_chain",

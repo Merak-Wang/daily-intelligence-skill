@@ -15,6 +15,7 @@ from .reporting import (
     normalize_report_data,
     reference_time_label,
     report_content_hash,
+    split_narrative_paragraphs,
     validate_evaluation_data,
     validate_report_data,
 )
@@ -464,21 +465,25 @@ def render_report_markdown(
                         )
                     ),
                     "",
+                ]
+            )
+            for paragraph in split_narrative_paragraphs(analysis.get("narrative")):
+                lines.extend([paragraph, ""])
+            support_summary = localized(
+                language,
+                "论证与证据（展开）",
+                "Evidence and reasoning (expand)",
+            )
+            lines.extend(
+                [
+                    "<details>",
+                    f"<summary>{support_summary}</summary>",
+                    "",
                     f"**{localized(language, '事实基础', 'Facts')}{colon}**",
                     "",
                 ]
             )
             lines.extend(f"- {item}" for item in analysis.get("facts", []))
-            if analysis.get("narrative"):
-                lines.extend(
-                    [
-                        "",
-                        f"**{localized(language, '综合论述', 'Narrative')}{colon}**",
-                        "",
-                        analysis["narrative"],
-                        "",
-                    ]
-                )
             if analysis.get("historical_context"):
                 lines.extend(
                     [
@@ -589,6 +594,7 @@ def render_report_markdown(
             ):
                 if analysis.get(key):
                     lines.extend(["", f"**{title}{colon}** {analysis[key]}"])
+            lines.extend(["", "</details>"])
     else:
         lines.append(
             localized(

@@ -169,6 +169,16 @@ def test_authoring_batches_are_validated_and_python_assembled(tmp_path: Path):
     authoring = run["artifacts"]["authoring"]
     packet = read_json(Path(authoring["analysis_packet_path"]))
     assert len(packet["candidate_events"]) == 2
+    protocol = packet["analysis_protocol"]
+    assert protocol["presentation_mode"] == "narrative_first"
+    assert protocol["narrative_contract"]["paragraphs"] == {
+        "minimum": 4,
+        "target": 5,
+        "maximum": 7,
+    }
+    assert "shared date" in protocol["narrative_contract"]["theme_coherence_rule"]
+    assert "narrative" in protocol["per_lens_required_fields"]
+    assert "Do not join unrelated same-day events" in packet["task"]
     analysis_path = write_json(
         Path(authoring["analysis_result_path"]),
         {

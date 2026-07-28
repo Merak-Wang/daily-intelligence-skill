@@ -90,16 +90,15 @@ Hermes 运行时也会读取 Hermes Home 下的 `.env`。仓库内的 `.env` 已
 
 ## 发布行为
 
-- 晨报创建或复用当日页面，并追加晨报内容。
-- 晚报复用同一日期页面，追加晚报内容并更新属性。
-- 本地发布登记用于断点续传和避免重复追加。
-- 每条新闻按“链接原题 → 图片（若有）→ 目标语言译题（需要时）→ 发布时间/采集时间 → TL;DR”纵向排列；栏目、标签和反馈区跟随报告的 `zh-CN` 或 `en`。
-- 本地图片通过 File Upload API 以 `multipart/form-data` 上传，再用 `file_upload` ID 写入图片块；同一 SHA-256 在断点续传时复用。项目单图上限 8 MiB，低于 Notion 单段直传的 20 MB 上限。
-- 图片上传失败时在 `publishing/notion-registry.json` 记录错误，并使用已经验证过的公开原图 URL 作为视觉降级；文字、链接与时间仍照常发布。Notion 完整发布失败不会修改本地报告。
-- 若旧版已发布为纯文字而新 revision 已补齐本地图片，运行 `daily-intel --data-dir DATA_DIR backfill-notion-images REPORT.json`。该命令按原文链接匹配当版新闻块，只追加缺失图片并可重复执行，不会复制整份晨报或改写用户编辑的文字。
+- 晨报创建或复用当日页面；晚报复用同一日期页面并更新属性。
+- 页面正文不再复制新闻、研判或证据字段。每个时段只上传一份由已校验 Report 确定性生成的便携 HTML，并以 `file_upload` 文件块附在页面中。
+- 便携 HTML 不引用本机绝对路径；配图使用报告中已经校验的公开来源 URL。下载附件后即可独立打开，阅读层以 HTML 为准。
+- 本地发布登记保存页面 ID、HTML SHA-256、File Upload ID 和追加进度，用于断点续传和避免重复附件。
+- 独立评估完成后，如显式要求同步 Notion，则再附加一份包含评估结果的更新版 HTML，不发布评估富文本块。
+- 新的 HTML 附件模式不需要逐图上传或图片回填。`backfill-notion-images` 只兼容旧版富文本页面；对 HTML 附件页面返回 `not_applicable_html_attachment`。
 - `--republish` 只用于明确的重新发布，不会跳过报告或 Notion schema 校验。
 - Notion 失败不会破坏已经保存的本地报告。
 
-不会发布正文缓存、原始 HTML、Cookie、浏览器 Profile、付费内容或内部模型指令。
+只上传系统生成的日报 HTML，不会上传抓取到的网页原始 HTML、正文缓存、Cookie、浏览器 Profile、付费内容或内部模型指令。
 
-Notion 官方说明：[上传小文件](https://developers.notion.com/guides/data-apis/uploading-small-files)、[图片块与 File Upload](https://developers.notion.com/reference/block)。
+Notion 官方说明：[上传小文件](https://developers.notion.com/guides/data-apis/uploading-small-files)、[File 块与 File Upload](https://developers.notion.com/reference/block)。

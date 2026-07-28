@@ -54,7 +54,7 @@ metadata:
    daily-intel --data-dir DATA_DIR data-root adopt
    ```
 
-3. 执行时读 `references/editorial-policy.md` 和 `templates/report-contract.md`；发生故障读 `references/runbook.md`；仅在发布 Notion 时读 `references/notion-setup.md`。
+3. 执行时读 `references/editorial-policy.md`、`references/narrative-analysis.md` 和 `templates/report-contract.md`；发生故障读 `references/runbook.md`；仅在发布 Notion 时读 `references/notion-setup.md`。
 
 ## 生成流程
 
@@ -126,6 +126,8 @@ daily-intel --data-dir DATA_DIR prepare-analysis --run RUN.json --allow-degraded
 
 主 Agent 只读生成的紧凑 analysis packet，一次写入其 `analysis_result_path`。选择 6—10 个精选事件，分别完成地缘政治、AI 技术、市场三个视角及一次跨视角综合；所有读者可见语义使用 packet 的 `output_language`。
 
+每个视角先完成结构化论证底稿，再按 `references/narrative-analysis.md` 重写可独立阅读的 `narrative`。不得把没有共同机制的同日事件硬拼成一篇，也不得把事实、辩证分析、反证和建议等字段依次串成正文。
+
 原题必须原样保留。与输出语言不同时，在下一行填写 packet 指定的 `title_zh` 或 `title_en`；不得加 `[EN]`、`[ZH]`、来源前缀或占位文字。TL;DR 必须总结可见证据，不得写“详见链接”“正文未获取”等流程说明。
 
 完成后装配：
@@ -150,7 +152,7 @@ daily-intel --data-dir DATA_DIR validate-report DRAFT.json --run RUN.json
 daily-intel --data-dir DATA_DIR finalize-edition --run RUN.json --report DRAFT.json --defer-tail
 ```
 
-用户明确要求 Notion 时追加 `--publish`。命令返回后立即交付 `artifacts.html_path` 和 `artifacts.desktop_html_path`；不要等待 PDF、Notion 或评估。JSON/Markdown 是本地事实源，HTML/PDF 是可重建投影。
+用户明确要求 Notion 时追加 `--publish`。Notion 页面只写元数据并附加生成后的便携 HTML，不复制整份日报为富文本块。命令返回后立即交付 `artifacts.html_path` 和 `artifacts.desktop_html_path`；不要等待 PDF、Notion 或评估。版本化 HTML 使用相对媒体路径，桌面 HTML 必须把已校验的本地图片内嵌为单文件；两者都必须先显示标题，再显示配图。PDF 的 Edge 与 ReportLab 两条生成路径都必须把同一批已校验图片写入 PDF 文件本身，不得依赖本地或远程图片链接。JSON/Markdown 是本地事实源，HTML/PDF 是可重建投影。
 
 ### 6. 后台收尾
 
@@ -182,7 +184,7 @@ daily-intel --data-dir DATA_DIR serve --open --refresh-minutes 30
 
 ## 完成条件
 
-- run 为 `completed` 或 `completed_partial`，HTML 与桌面副本可打开；
+- run 为 `completed` 或 `completed_partial`，HTML 与桌面副本可打开，桌面副本单独移动后图片仍可显示；
 - 报告通过 schema 2.0、来源身份、时间、状态、引用和计数校验；
 - 七个栏目、三个分析视角和跨视角综合齐全；
 - 报告 `language`、语义文本、栏目及输出界面一致；

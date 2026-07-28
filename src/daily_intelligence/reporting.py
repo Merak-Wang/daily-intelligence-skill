@@ -105,6 +105,21 @@ _UNREAD_BODY_MARKERS = (
     "based only on the title",
     "based only on metadata",
 )
+
+
+def split_narrative_paragraphs(value: object) -> list[str]:
+    """Return authored prose paragraphs without treating wrapped lines as structure."""
+
+    text = str(value or "").replace("\r\n", "\n").replace("\r", "\n").strip()
+    if not text:
+        return []
+    return [
+        re.sub(r"[ \t]*\n[ \t]*", " ", paragraph).strip()
+        for paragraph in re.split(r"\n[ \t]*\n+", text)
+        if paragraph.strip()
+    ]
+
+
 _REPORT_REVISION_PATTERN = re.compile(r"^(.+)-r\d+$")
 EVALUATION_DIMENSIONS = {
     "coverage",

@@ -72,7 +72,7 @@ data/
   locks/YYYY-MM-DD-<edition>.lock
 ```
 
-report JSON/Markdown revision 与内容寻址图片不可覆盖；它们是事实源。报告先完成编译和语义校验，再进入媒体物化；图片 URL 缓存记录内容摘要、验证元数据和失败重试时间，使用共享连接池、全局并发及同域并发限制。默认在 brief 子任务运行时预热图片，因此定稿只读取暖缓存。HTML 是前台交付门槛；PDF、Notion 与独立评估属于可重试 tail，不进入用户等待关键路径。HTML/PDF 是同一 report 的可重建阅读投影，投影失败只记录可操作警告，不撤回已经持久化的 JSON/Markdown，也不分配重复 revision；评估完成后允许原子刷新评估区。Notion 图片先上传到工作区托管存储，upload ID 和失败信息只写入可重试的发布登记；Notion 页面仍只是可选远端副本和用户可编辑反馈。
+report JSON/Markdown revision 与内容寻址图片不可覆盖；它们是事实源。报告先完成编译和语义校验，再进入媒体物化；图片 URL 缓存记录内容摘要、验证元数据和失败重试时间，使用共享连接池、全局并发及同域并发限制。默认在 brief 子任务运行时预热图片，因此定稿只读取暖缓存。HTML 是前台交付门槛；PDF、Notion 与独立评估属于可重试 tail，不进入用户等待关键路径。版本化 HTML 使用指向内容寻址媒体的相对路径，桌面 HTML 将已校验图片内嵌为可单独移动的单文件；标题与图片的 DOM 顺序在两种投影中保持一致。PDF 的 Edge 输入使用同一份内嵌图片 HTML 并强制完成图片加载，ReportLab 降级路径直接读取受媒体根约束的已校验文件；两条路径最终都把位图对象写入 PDF。HTML/PDF 是同一 report 的可重建阅读投影，投影失败只记录可操作警告，不撤回已经持久化的 JSON/Markdown，也不分配重复 revision；评估完成后允许原子刷新评估区。Notion 页面只保存元数据并附加便携 HTML；HTML upload ID、内容 hash 和失败信息只写入可重试的发布登记，Notion 仍只是可选远端副本。
 
 ## 上下文预算
 

@@ -1,6 +1,7 @@
 # ruff: noqa: E501
 from __future__ import annotations
 
+import base64
 import html
 import json
 import os
@@ -15,7 +16,7 @@ from .localization import (
     localized,
     translated_title,
 )
-from .reporting import reference_time_label
+from .reporting import reference_time_label, split_narrative_paragraphs
 from .storage import write_text_atomic
 from .taxonomy import SECTION_GROUPS_V13
 from .utils import read_json
@@ -96,6 +97,7 @@ UI_LABELS = {
         "confidence_basis": "置信度依据",
         "change_prior": "相对上一版",
         "decision": "决策相关性",
+        "support": "论证与证据（展开）",
         "stakeholders": "不同立场与利益",
         "interest_basis": "利益基础",
         "confidence": "置信度",
@@ -169,6 +171,7 @@ UI_LABELS = {
         "confidence_basis": "Confidence Rationale",
         "change_prior": "Change From Prior",
         "decision": "Decision Relevance",
+        "support": "Evidence and reasoning (expand)",
         "stakeholders": "Stakeholder Positions and Interests",
         "interest_basis": "Interest basis",
         "confidence": "Confidence",
@@ -239,8 +242,49 @@ def _safe_url(value: object) -> str:
     return "#"
 
 
-def _image_src(image: dict[str, Any], media_path_prefix: str | None) -> str:
+_EMBEDDABLE_IMAGE_TYPES = {
+    "image/gif",
+    "image/jpeg",
+    "image/png",
+    "image/webp",
+}
+_MAX_EMBEDDED_IMAGE_BYTES = 8 * 1024 * 1024
+
+
+def _validated_local_image_path(
+    image: dict[str, Any],
+    data_dir: Path,
+) -> Path | None:
     local_path = str(image.get("local_path") or "").replace("\\", "/")
+    parts = [part for part in local_path.split("/") if part]
+    content_type = str(image.get("content_type") or "").lower()
+    if (
+        len(parts) < 3
+        or parts[:2] != ["media", "images"]
+        or ".." in parts
+        or content_type not in _EMBEDDABLE_IMAGE_TYPES
+    ):
+        return None
+    image_root = (data_dir / "media" / "images").resolve()
+    candidate = data_dir.joinpath(*parts).resolve()
+    try:
+        candidate.relative_to(image_root)
+        size = candidate.stat().st_size
+    except (OSError, ValueError):
+        return None
+    if not candidate.is_file() or size <= 0 or size > _MAX_EMBEDDED_IMAGE_BYTES:
+        return None
+    return candidate
+
+
+def _image_src(
+    image: dict[str, Any],
+    media_path_prefix: str | None,
+    embedded_image_sources: dict[str, str] | None = None,
+) -> str:
+    local_path = str(image.get("local_path") or "").replace("\\", "/")
+    if embedded_image_sources and local_path in embedded_image_sources:
+        return _escape(embedded_image_sources[local_path])
     local_parts = [part for part in local_path.split("/") if part]
     if (
         media_path_prefix
@@ -250,6 +294,35 @@ def _image_src(image: dict[str, Any], media_path_prefix: str | None) -> str:
     ):
         return _escape(f"{media_path_prefix.rstrip('/')}/{local_path}")
     return _safe_url(image.get("source_url") or image.get("url"))
+
+
+def _embedded_image_sources(
+    report: dict[str, Any],
+    data_dir: Path,
+) -> dict[str, str]:
+    embedded: dict[str, str] = {}
+    for section in report.get("sections", []):
+        if not isinstance(section, dict):
+            continue
+        items = section.get("briefs") if "briefs" in section else section.get("items", [])
+        for item in items or []:
+            image = item.get("image") if isinstance(item, dict) else None
+            if not isinstance(image, dict):
+                continue
+            local_path = str(image.get("local_path") or "").replace("\\", "/")
+            content_type = str(image.get("content_type") or "").lower()
+            if local_path in embedded:
+                continue
+            candidate = _validated_local_image_path(image, data_dir)
+            if candidate is None:
+                continue
+            try:
+                payload = candidate.read_bytes()
+            except OSError:
+                continue
+            encoded = base64.b64encode(payload).decode("ascii")
+            embedded[local_path] = f"data:{content_type};base64,{encoded}"
+    return embedded
 
 
 def _external_link(label: object, url: object, *, css_class: str = "") -> str:
@@ -313,6 +386,14 @@ def _list_html(
     return f"<ul{class_attr}>" + "".join(f"<li>{_escape(value)}</li>" for value in values) + "</ul>"
 
 
+def _prose_html(value: object, *, css_class: str = "") -> str:
+    class_attr = f' class="{_escape(css_class)}"' if css_class else ""
+    paragraphs = split_narrative_paragraphs(value)
+    return f"<div{class_attr}>" + "".join(
+        f"<p>{_escape(paragraph)}</p>" for paragraph in paragraphs
+    ) + "</div>"
+
+
 def _item_ref(item: dict[str, Any]) -> dict[str, Any]:
     ref = item.get("source_ref")
     if isinstance(ref, dict):
@@ -325,6 +406,7 @@ def _brief_html(
     item: dict[str, Any],
     rank: int,
     media_path_prefix: str | None = None,
+    embedded_image_sources: dict[str, str] | None = None,
     language: object = "zh-CN",
 ) -> str:
     ref = _item_ref(item)
@@ -358,7 +440,7 @@ def _brief_html(
     ):
         figure = (
             '<figure><img loading="lazy" referrerpolicy="no-referrer" '
-            f'src="{_image_src(image, media_path_prefix)}" '
+            f'src="{_image_src(image, media_path_prefix, embedded_image_sources)}" '
             f'alt="{_escape(image.get("caption"))}">'
             f'<figcaption>{_escape(image.get("caption"))} · '
             f'{_escape(image.get("credit"))}</figcaption></figure>'
@@ -380,11 +462,18 @@ def _source_section_html(
     source: dict[str, Any],
     items: list[dict[str, Any]],
     media_path_prefix: str | None = None,
+    embedded_image_sources: dict[str, str] | None = None,
     language: object = "zh-CN",
 ) -> str:
     source_name = source.get("name") or _ui(language)["unknown_source"]
     stories = "".join(
-        _brief_html(item, rank, media_path_prefix, language)
+        _brief_html(
+            item,
+            rank,
+            media_path_prefix,
+            embedded_image_sources,
+            language,
+        )
         for rank, item in enumerate(items, start=1)
     )
     return (
@@ -414,7 +503,6 @@ def _analysis_html(
     )
     sections = [
         (labels["facts"], _list_html(analysis.get("facts", []), language=language)),
-        (labels["narrative"], f'<p>{_escape(analysis.get("narrative"))}</p>'),
         (labels["history"], f'<p>{_escape(analysis.get("historical_context"))}</p>'),
         (labels["dialectic"], f'<p>{_escape(analysis.get("dialectical_analysis"))}</p>'),
         (labels["reasoning"], f'<p>{_escape(analysis.get("reasoning"))}</p>'),
@@ -457,6 +545,10 @@ def _analysis_html(
             f'<section class="analysis-part"><h5>{_escape(labels["stakeholders"])}</h5>'
             f'<div class="stakeholder-grid">{stakeholder_rows}</div></section>'
         )
+    narrative = _prose_html(
+        analysis.get("narrative"),
+        css_class="analysis-narrative",
+    )
     confidence = analysis.get("confidence")
     confidence_text = f"{float(confidence):.0%}" if isinstance(confidence, (int, float)) else "-"
     return (
@@ -466,7 +558,10 @@ def _analysis_html(
         f'<span>{_escape(labels["confidence"])} {confidence_text}</span>'
         f'<span>{_escape(labels["evidence"])} '
         f'{" · ".join(event_links) or _escape(labels["unbound"])}</span></div>'
-        f"{body}</article>"
+        f"{narrative}"
+        '<details class="analysis-notebook">'
+        f'<summary>{_escape(labels["support"])}</summary>'
+        f'<div class="analysis-notebook-body">{body}</div></details></article>'
     )
 
 
@@ -620,6 +715,7 @@ def render_report_html(
     *,
     include_pdf_link: bool = True,
     media_path_prefix: str | None = None,
+    embedded_image_sources: dict[str, str] | None = None,
     archive_href: str | None = "../index.html",
     pdf_href: str | None = None,
 ) -> str:
@@ -640,7 +736,13 @@ def render_report_html(
         section_blocks = []
         for section in _ordered_sections(report, module):
             source_groups = "".join(
-                _source_section_html(source, items, media_path_prefix, language)
+                _source_section_html(
+                    source,
+                    items,
+                    media_path_prefix,
+                    embedded_image_sources,
+                    language,
+                )
                 for source, items in _group_items(section, language)
             )
             empty_note = ""
@@ -749,10 +851,11 @@ def render_report_html(
 :root{{--ink:#18202a;--muted:#637083;--paper:#f5f2eb;--card:#fff;--line:#dfe3e8;--blue:#234a70;--red:#a53b2e;--gold:#a67424;--soft:#eef3f7}}
 *{{box-sizing:border-box}}html{{scroll-behavior:smooth}}body{{margin:0;color:var(--ink);background:var(--paper);font-family:"Microsoft YaHei","PingFang SC","Noto Sans CJK SC",sans-serif;line-height:1.72}}
 a{{color:var(--blue);text-decoration:none}}a:hover{{text-decoration:underline}}.shell{{width:min(1120px,calc(100% - 32px));margin:0 auto}}.masthead{{padding:56px 0 38px;background:linear-gradient(135deg,#172a3d,#254f6f);color:#fff;border-bottom:5px solid #bd8a39}}.eyebrow{{letter-spacing:.16em;text-transform:uppercase;color:#e5c98e;font-size:13px}}h1{{font-family:Georgia,"Noto Serif CJK SC",serif;font-size:clamp(34px,5vw,60px);line-height:1.14;margin:10px 0 16px;max-width:900px}}.metadata{{display:flex;gap:10px 24px;flex-wrap:wrap;color:#d9e3ec;font-size:14px}}.toolbar{{position:sticky;top:0;z-index:10;background:rgba(255,255,255,.96);border-bottom:1px solid var(--line);backdrop-filter:blur(12px)}}.toolbar-inner{{display:flex;align-items:center;gap:16px;padding:12px 0}}.toolbar nav{{display:flex;gap:18px;font-weight:700}}.toolbar input{{margin-left:auto;min-width:260px;padding:9px 12px;border:1px solid var(--line);border-radius:8px}}.tools{{display:flex;gap:10px;white-space:nowrap}}main{{padding:34px 0 70px}}.summary,.module,.analysis-module,.evaluation,.feedback,.pending{{background:var(--card);border:1px solid var(--line);border-radius:14px;box-shadow:0 8px 24px rgba(25,36,48,.05);margin:0 0 24px;padding:28px}}.summary h2,.module-label,.analysis-module>h2,.evaluation>h2,.feedback>h2{{font-family:Georgia,"Noto Serif CJK SC",serif;color:var(--blue);font-size:28px;margin:0 0 16px}}.summary ul{{margin:0;padding-left:24px}}.module-label{{font-size:34px;border-bottom:3px solid var(--gold);padding-bottom:10px}}.content-section{{padding:24px 0 6px;border-bottom:1px solid var(--line)}}.content-section:last-child{{border:0}}.content-section>h2{{font-size:24px;margin:0 0 16px}}.source-group{{margin:18px 0 28px}}.source-heading{{display:flex;align-items:center;justify-content:space-between;background:var(--soft);border-left:5px solid var(--blue);padding:10px 14px;margin-bottom:4px}}.source-heading h3{{font-size:19px;margin:0}}.source-heading span{{font-size:13px;color:var(--muted)}}.brief{{display:grid;grid-template-columns:38px minmax(220px,300px) minmax(0,1fr);gap:14px 18px;padding:18px 6px;border-bottom:1px dashed var(--line);break-inside:avoid}}.brief-heading{{grid-column:1/-1;grid-row:1;display:grid;grid-template-columns:38px minmax(0,1fr) auto;gap:12px;align-items:start}}.ordinal{{font:700 18px Georgia;color:var(--gold);padding-top:2px}}.brief h4{{font-size:17px;line-height:1.5;margin:0}}.translated-title{{font-weight:700;margin:5px 0 0;color:#35465a}}.story-time{{margin:5px 0 0;color:var(--muted);font-size:12px}}.badges{{display:flex;gap:6px;flex-wrap:wrap;justify-content:flex-end}}.badge{{display:inline-block;padding:2px 7px;border-radius:999px;font-size:11px;background:#eef2f5;color:#4d5a67}}.badge.status{{background:#f5e8e2;color:var(--red)}}.badge.rank{{background:#f6edd8;color:#7a581c}}.brief>.tldr{{grid-column:3;grid-row:2;margin:0;color:#344150}}.brief:not(.has-image)>.tldr{{grid-column:2/-1}}.tldr span{{font-size:11px;font-weight:800;letter-spacing:.08em;color:var(--red);margin-right:9px}}.brief>figure{{grid-column:2;grid-row:2;margin:0}}.brief figure img{{display:block;width:100%;max-width:300px;aspect-ratio:16/9;object-fit:cover;border-radius:8px}}.brief figcaption{{font-size:12px;color:var(--muted);line-height:1.45;margin-top:5px}}.empty-note,.evaluation-pending{{padding:18px;background:#f7f8f9;border:1px dashed #c9d0d7;border-radius:8px;color:var(--muted)}}.pending li{{display:flex;gap:10px;justify-content:space-between;border-bottom:1px solid var(--line);padding:8px 0}}.pending li span{{color:var(--muted);font-size:13px}}.analysis-domain>h3{{font-size:23px;margin:30px 0 14px;border-left:5px solid var(--red);padding-left:12px}}.analysis-card{{border:1px solid var(--line);border-radius:12px;margin:0 0 20px;padding:24px;break-inside:avoid}}.analysis-card>h4{{font-family:Georgia,"Noto Serif CJK SC",serif;font-size:23px;line-height:1.5;margin:0 0 10px}}.analysis-meta{{display:flex;gap:14px;flex-wrap:wrap;color:var(--muted);font-size:13px;padding-bottom:15px;border-bottom:1px solid var(--line)}}.analysis-part{{margin-top:18px}}.analysis-part h5{{font-size:15px;color:var(--red);margin:0 0 6px}}.analysis-part p,.analysis-part ul{{margin-top:0}}.stakeholder-grid{{display:grid;grid-template-columns:repeat(auto-fit,minmax(240px,1fr));gap:12px}}.stakeholder{{background:#f7f5ef;border-radius:8px;padding:14px}}.stakeholder p{{margin:4px 0}}.stakeholder small{{color:var(--muted)}}.follow-up{{border-top:1px solid var(--line);margin-top:24px;padding-top:18px}}.evaluation-score{{display:flex;align-items:baseline;gap:6px;margin:4px 0 18px}}.evaluation-score strong{{font:700 52px Georgia;color:var(--red)}}.evaluation-score span{{color:var(--muted)}}.table-wrap{{overflow:auto}}table{{width:100%;border-collapse:collapse}}th,td{{text-align:left;border-bottom:1px solid var(--line);padding:10px;vertical-align:top}}th{{background:var(--soft)}}.score{{font-weight:800;color:var(--red);white-space:nowrap}}.feedback-grid{{display:grid;grid-template-columns:repeat(4,1fr);gap:12px}}label{{font-size:13px;color:var(--muted)}}select,textarea{{width:100%;margin-top:5px;padding:9px;border:1px solid var(--line);border-radius:7px;background:#fff}}textarea{{min-height:100px}}.feedback .comment{{display:block;margin-top:16px}}button{{margin-top:14px;background:var(--blue);color:#fff;border:0;border-radius:8px;padding:10px 16px;font-weight:700;cursor:pointer}}.feedback-note{{color:var(--muted);font-size:12px}}.feedback-print{{display:none}}footer{{color:var(--muted);font-size:12px;padding:0 0 34px;text-align:center}}.hidden-by-search{{display:none!important}}
+.analysis-narrative{{max-width:76ch;margin:22px 0 18px;font-family:Georgia,"Noto Serif CJK SC",serif;font-size:17px;line-height:1.92;color:#253342}}.analysis-narrative p{{margin:0 0 1em}}.analysis-notebook{{margin-top:20px;border-top:1px solid var(--line);padding-top:14px}}.analysis-notebook summary{{cursor:pointer;color:var(--blue);font-weight:800;list-style-position:outside}}.analysis-notebook-body{{margin-top:12px;padding:2px 16px 12px;border-left:3px solid var(--line);color:#374556}}
 .summary,.module,.content-section,.analysis-module,.analysis-domain,.evaluation,.feedback{{scroll-margin-top:88px}}.toc-toggle{{position:fixed;z-index:32;left:14px;top:50%;display:flex;flex-direction:column;align-items:center;gap:6px;width:42px;margin:0;padding:13px 8px;transform:translateY(-50%);border:1px solid rgba(35,74,112,.2);border-radius:10px;background:rgba(255,255,255,.96);box-shadow:0 8px 24px rgba(25,36,48,.14);color:var(--blue);font-size:12px;letter-spacing:.12em;backdrop-filter:blur(12px);transition:opacity .2s,transform .2s}}.toc-toggle span:first-child{{font-size:17px;line-height:1}}body.toc-open .toc-toggle{{opacity:0;pointer-events:none;transform:translate(-12px,-50%)}}.report-toc{{position:fixed;z-index:31;left:14px;top:84px;bottom:18px;width:286px;display:flex;flex-direction:column;overflow:hidden;border:1px solid rgba(35,74,112,.16);border-radius:14px;background:rgba(255,255,255,.97);box-shadow:0 16px 42px rgba(22,42,61,.18);backdrop-filter:blur(16px);transform:translateX(calc(-100% - 30px));transition:transform .24s ease}}body.toc-open .report-toc{{transform:translateX(0)}}.toc-heading{{display:flex;align-items:center;justify-content:space-between;padding:16px 16px 12px;border-bottom:1px solid var(--line);color:var(--blue)}}.toc-heading strong{{font:700 18px Georgia,"Noto Serif CJK SC",serif}}.toc-close{{margin:0;padding:5px 9px;border:1px solid var(--line);border-radius:7px;background:var(--soft);color:var(--blue);font-size:12px}}.toc-nav{{overflow-y:auto;padding:10px}}.toc-link{{display:block;margin:2px 0;padding:7px 10px;border-left:3px solid transparent;border-radius:6px;color:#35465a;font-size:14px;line-height:1.4}}.toc-link:hover{{background:var(--soft);text-decoration:none}}.toc-link.toc-level-0{{margin-top:7px;font-weight:800;color:var(--blue)}}.toc-link.toc-level-1{{padding-left:22px;font-size:13px}}.toc-link.active{{border-left-color:var(--gold);background:#f6edd8;color:#634718}}.toc-scrim{{position:fixed;z-index:30;inset:0;visibility:hidden;background:rgba(18,30,42,.22);opacity:0;transition:opacity .2s,visibility .2s}}body.toc-open .toc-scrim{{visibility:visible;opacity:1}}
 @media(min-width:1500px){{.toc-scrim{{display:none}}}}
 @media(max-width:720px){{.toolbar-inner{{align-items:flex-start;flex-wrap:wrap}}.toolbar input{{order:3;margin:0;width:100%;min-width:0}}.tools{{margin-left:auto}}.summary,.module,.analysis-module,.evaluation,.feedback,.pending{{padding:20px}}.brief{{grid-template-columns:32px minmax(0,1fr);gap:10px 12px}}.brief-heading{{grid-column:1/-1;grid-template-columns:32px 1fr}}.badges{{grid-column:2;justify-content:flex-start}}.brief>figure{{grid-column:2;grid-row:2}}.brief.has-image>.tldr{{grid-column:2;grid-row:3}}.brief:not(.has-image)>.tldr{{grid-column:2;grid-row:2}}.feedback-grid{{grid-template-columns:1fr 1fr}}.toc-toggle{{left:8px;width:38px}}.report-toc{{left:8px;top:72px;bottom:8px;width:min(300px,calc(100vw - 24px))}}}}
-@media print{{body{{background:#fff;font-size:10.5pt}}.masthead{{padding:28px 0;background:#fff!important;color:#172a3d;border-bottom:3px solid #a67424}}.eyebrow{{color:#7a581c}}.metadata{{color:#536273}}.toolbar,.toc-toggle,.report-toc,.toc-scrim,.feedback button,.feedback-note,.feedback-grid,.feedback .comment{{display:none}}.feedback-print{{display:block}}.shell{{width:auto;margin:0 14mm}}main{{padding:12px 0}}.summary,.module,.analysis-module,.evaluation,.feedback,.pending{{box-shadow:none;border:0;border-radius:0;padding:10px 0;margin:0 0 12px}}.source-group,.brief,.analysis-card,table,figure{{break-inside:avoid}}a{{color:#18202a}}.content-section{{break-before:auto}}}}
+@media print{{body{{background:#fff;font-size:10.5pt}}.masthead{{padding:28px 0;background:#fff!important;color:#172a3d;border-bottom:3px solid #a67424}}.eyebrow{{color:#7a581c}}.metadata{{color:#536273}}.toolbar,.toc-toggle,.report-toc,.toc-scrim,.feedback button,.feedback-note,.feedback-grid,.feedback .comment{{display:none}}.feedback-print{{display:block}}.shell{{width:auto;margin:0 14mm}}main{{padding:12px 0}}.summary,.module,.analysis-module,.evaluation,.feedback,.pending{{box-shadow:none;border:0;border-radius:0;padding:10px 0;margin:0 0 12px}}.source-group,.brief,table,figure{{break-inside:avoid}}details.analysis-notebook:not([open])>.analysis-notebook-body{{display:block!important}}.analysis-notebook summary{{list-style:none}}a{{color:#18202a}}.content-section{{break-before:auto}}}}
 </style>
 </head>
 <body>
@@ -794,6 +897,7 @@ def _reportlab_pdf(
     report: dict[str, Any],
     evaluation: dict[str, Any] | None,
     output_path: Path,
+    data_dir: Path | None = None,
 ) -> None:
     try:
         from reportlab.lib import colors
@@ -801,8 +905,12 @@ def _reportlab_pdf(
         from reportlab.lib.pagesizes import A4
         from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
         from reportlab.lib.units import mm
+        from reportlab.lib.utils import ImageReader
         from reportlab.pdfbase import pdfmetrics
         from reportlab.pdfbase.cidfonts import UnicodeCIDFont
+        from reportlab.platypus import (
+            Image as PlatypusImage,
+        )
         from reportlab.platypus import (
             KeepTogether,
             PageBreak,
@@ -938,6 +1046,41 @@ def _reportlab_pdf(
                     if time_info := reference_time_label(ref, language):
                         time_label, time_value = time_info
                         blocks.append(paragraph(f"{time_label}：{time_value}", small))
+                    image = item.get("image")
+                    if data_dir is not None and isinstance(image, dict):
+                        image_path = _validated_local_image_path(image, data_dir)
+                        if image_path is not None:
+                            try:
+                                image_width, image_height = ImageReader(
+                                    str(image_path)
+                                ).getSize()
+                                scale = min(
+                                    (80 * mm) / image_width,
+                                    (45 * mm) / image_height,
+                                    1.0,
+                                )
+                                blocks.append(
+                                    PlatypusImage(
+                                        str(image_path),
+                                        width=image_width * scale,
+                                        height=image_height * scale,
+                                    )
+                                )
+                                caption = image.get("caption")
+                                credit = image.get("credit")
+                                if caption or credit:
+                                    blocks.append(
+                                        paragraph(
+                                            " · ".join(
+                                                str(value)
+                                                for value in (caption, credit)
+                                                if value
+                                            ),
+                                            small,
+                                        )
+                                    )
+                            except (OSError, ValueError, ZeroDivisionError):
+                                pass
                     blocks.append(paragraph(f"TL;DR：{item.get('tldr')}"))
                     story.append(KeepTogether(blocks))
                     story.append(Spacer(1, 2 * mm))
@@ -949,9 +1092,13 @@ def _reportlab_pdf(
             story.append(paragraph(labels["analysis_empty"], small))
         for analysis in rows:
             story.append(paragraph(analysis.get("claim"), h3))
+            story.extend(
+                paragraph(value)
+                for value in split_narrative_paragraphs(analysis.get("narrative"))
+            )
+            story.append(paragraph(labels["support"], h3))
             for label, key in (
                 (labels["facts"], "facts"),
-                (labels["narrative"], "narrative"),
                 (labels["history"], "historical_context"),
                 (labels["dialectic"], "dialectical_analysis"),
                 (labels["reasoning"], "reasoning"),
@@ -1076,13 +1223,19 @@ def _reportlab_pdf(
     document.build(story, onFirstPage=footer, onLaterPages=footer)
 
 
-def _edge_pdf(html_path: Path, output_path: Path) -> None:
+def _edge_pdf(
+    html_path: Path,
+    output_path: Path,
+    *,
+    html_document: str | None = None,
+) -> None:
     from playwright.sync_api import sync_playwright
 
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch(channel="msedge", headless=True)
         try:
             page = browser.new_page()
+            page.emulate_media(media="print")
 
             def route_request(route: Any) -> None:
                 if route.request.url.startswith(("http://", "https://")):
@@ -1091,8 +1244,17 @@ def _edge_pdf(html_path: Path, output_path: Path) -> None:
                     route.continue_()
 
             page.route("**/*", route_request)
-            page.goto(html_path.resolve().as_uri(), wait_until="load", timeout=30_000)
-            page.emulate_media(media="print")
+            if html_document is None:
+                page.goto(html_path.resolve().as_uri(), wait_until="load", timeout=30_000)
+            else:
+                page.set_content(html_document, wait_until="load", timeout=30_000)
+            page.locator("img").evaluate_all(
+                "(images) => images.forEach((image) => { image.loading = 'eager'; })"
+            )
+            page.wait_for_function(
+                "() => Array.from(document.images).every((image) => image.complete)",
+                timeout=30_000,
+            )
             page.pdf(
                 path=str(output_path),
                 format="A4",
@@ -1118,6 +1280,9 @@ def render_pdf_from_html(
     report: dict[str, Any],
     evaluation: dict[str, Any] | None,
     engine: str,
+    *,
+    data_dir: Path | None = None,
+    embedded_html: str | None = None,
 ) -> tuple[str, str | None]:
     pdf_path.parent.mkdir(parents=True, exist_ok=True)
     temporary = pdf_path.with_suffix(".pdf.tmp")
@@ -1125,14 +1290,14 @@ def render_pdf_from_html(
     edge_error: Exception | None = None
     if engine in {"edge", "auto"}:
         try:
-            _edge_pdf(html_path, temporary)
+            _edge_pdf(html_path, temporary, html_document=embedded_html)
             temporary.replace(pdf_path)
             return "edge", None
         except Exception as exc:  # pragma: no cover - environment-dependent browser failure
             edge_error = exc
             temporary.unlink(missing_ok=True)
     try:
-        _reportlab_pdf(report, evaluation, temporary)
+        _reportlab_pdf(report, evaluation, temporary, data_dir)
         temporary.replace(pdf_path)
     except Exception:
         temporary.unlink(missing_ok=True)
@@ -1262,6 +1427,7 @@ def write_desktop_html(
     config: OutputConfig,
     *,
     evaluation: dict[str, Any] | None = None,
+    embedded_image_sources: dict[str, str] | None = None,
 ) -> Path:
     desktop_dir = resolve_desktop_directory(config)
     stem = (
@@ -1277,7 +1443,11 @@ def write_desktop_html(
             report,
             evaluation,
             include_pdf_link="pdf" in config.formats,
-            media_path_prefix=data_dir.resolve().as_uri(),
+            embedded_image_sources=(
+                embedded_image_sources
+                if embedded_image_sources is not None
+                else _embedded_image_sources(report, data_dir)
+            ),
             archive_href=(data_dir / "reports" / "index.html").resolve().as_uri(),
             pdf_href=pdf_path.resolve().as_uri(),
         ),
@@ -1299,6 +1469,12 @@ def write_local_outputs(
     pdf_path = report_dir / f"{stem}.pdf"
     warnings: list[str] = []
     result: dict[str, Any] = {}
+    embedded_image_sources = (
+        _embedded_image_sources(report, data_dir)
+        if "pdf" in config.formats
+        or ("html" in config.formats and config.copy_html_to_desktop)
+        else None
+    )
     if "html" in config.formats:
         write_text_atomic(
             html_path,
@@ -1318,6 +1494,7 @@ def write_local_outputs(
                         data_dir,
                         config,
                         evaluation=evaluation,
+                        embedded_image_sources=embedded_image_sources,
                     )
                 )
             except Exception as exc:
@@ -1336,6 +1513,13 @@ def write_local_outputs(
                 report,
                 evaluation,
                 config.pdf_engine,
+                data_dir=data_dir,
+                embedded_html=render_report_html(
+                    report,
+                    evaluation,
+                    include_pdf_link=False,
+                    embedded_image_sources=embedded_image_sources,
+                ),
             )
             result.update({"pdf_path": str(pdf_path), "pdf_engine": engine})
             if warning:

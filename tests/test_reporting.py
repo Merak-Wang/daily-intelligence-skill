@@ -9,6 +9,7 @@ from daily_intelligence.notion import report_to_blocks
 from daily_intelligence.reporting import (
     compile_report_data,
     report_content_hash,
+    split_narrative_paragraphs,
     validate_evaluation_data,
     validate_report,
     validate_report_data,
@@ -564,6 +565,40 @@ def test_v20_compiler_maps_synthesis_item_ids_and_renders_it():
     assert "跨视角综合" in markdown
     assert "跨视角综合" in html
     assert "跨视角综合" in notion
+
+
+def test_v20_narrative_first_local_projections_keep_complete_reasoning_ledger():
+    report = _v20_report()
+    analysis = report["analyses"][0]
+    analysis["narrative"] = (
+        "第一段先讲清当天真正发生了什么，并保留 <script> 作为转义测试。"
+        "\r\n\r\n"
+        "第二段解释因果机制。\n这一行只是同一段的换行。"
+        "\r\n\r\n"
+        "第三段处理反作用、边界和后续观察。"
+    )
+    compile_report_data(report, _v15_index(report))
+
+    markdown = render_report_markdown(report)
+    html = render_report_html(report)
+
+    assert split_narrative_paragraphs(analysis["narrative"]) == [
+        "第一段先讲清当天真正发生了什么，并保留 <script> 作为转义测试。",
+        "第二段解释因果机制。 这一行只是同一段的换行。",
+        "第三段处理反作用、边界和后续观察。",
+    ]
+    assert markdown.index("第一段先讲清") < markdown.index("<details>")
+    assert markdown.index("<details>") < markdown.index("事实基础")
+    assert "<summary>论证与证据（展开）</summary>" in markdown
+    assert html.count('<div class="analysis-narrative">') == 3
+    assert (
+        "<p>第一段先讲清当天真正发生了什么，并保留 "
+        "&lt;script&gt; 作为转义测试。</p>"
+    ) in html
+    assert html.index("第一段先讲清") < html.index(
+        '<details class="analysis-notebook">'
+    )
+    assert html.index('<details class="analysis-notebook">') < html.index("事实基础")
 
 
 def test_v20_html_has_collapsible_scroll_tracking_toc():

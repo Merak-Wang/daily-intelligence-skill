@@ -12,8 +12,13 @@ import httpx
 import yaml
 
 from .config import project_root
+from .local_output import render_report_html
 from .localization import is_chinese_output, localized, translated_title
-from .reporting import reference_time_label, validate_evaluation_data, validate_report
+from .reporting import (
+    reference_time_label,
+    validate_evaluation_data,
+    validate_report,
+)
 from .reports import (
     ACCESS_LABELS,
     ACCESS_LABELS_EN,
@@ -34,6 +39,7 @@ from .reports import (
     group_items_by_source,
     ordered_sections,
 )
+from .storage import write_text_atomic
 from .utils import canonicalize_url, read_json, write_json
 
 _PROPERTY_TYPES: dict[str, set[str]] = {
@@ -48,6 +54,7 @@ _PROPERTY_TYPES: dict[str, set[str]] = {
     "pending_verification_count": {"number"},
 }
 _FEEDBACK_PREFIXES = ("用户反馈|", "Reader Feedback|")
+_HTML_ATTACHMENT_MODE = "html_attachment_v1"
 
 
 def validate_notion_schema(config: dict[str, Any], schema: dict[str, Any]) -> None:
@@ -174,7 +181,7 @@ class NotionPublisher:
 
     def upload_file(self, path: Path, content_type: str) -> str:
         if not path.is_file():
-            raise FileNotFoundError(f"Notion image upload file does not exist: {path}")
+            raise FileNotFoundError(f"Notion upload file does not exist: {path}")
         if path.stat().st_size > 20 * 1024 * 1024:
             raise ValueError("Notion direct file uploads must not exceed 20 MB")
         created = self._request(
@@ -1141,18 +1148,46 @@ def append_evaluation(
         return str(entry["page_id"]), "skipped_duplicate"
     publisher = NotionPublisher(token, data_source_id, config_path)
     try:
+        portable_html = _portable_report_html(
+            report,
+            data_dir,
+            evaluation=evaluation,
+        )
+        uploads = entry.setdefault("evaluation_html_uploads", {})
+        if not isinstance(uploads, dict):
+            uploads = {}
+            entry["evaluation_html_uploads"] = uploads
+        state = uploads.setdefault(evaluation_id, {})
+        if not isinstance(state, dict):
+            state = {}
+            uploads[evaluation_id] = state
+
+        def save_upload_progress() -> None:
+            write_json(registry_path, registry)
+
+        file_upload_id = _prepare_html_upload(
+            publisher,
+            portable_html,
+            state,
+            save_upload_progress,
+        )
         publisher.append_blocks(
             str(entry["page_id"]),
-            evaluation_to_blocks(
-                evaluation, report.get("language") or "zh-CN"
-            ),
+            [
+                _html_attachment_block(
+                    file_upload_id,
+                    portable_html,
+                    report.get("language") or "zh-CN",
+                    evaluated=True,
+                )
+            ],
         )
     finally:
         publisher.close()
     entry.setdefault("evaluation_ids", []).append(evaluation_id)
     entry["evaluation_status"] = "completed"
     write_json(registry_path, registry)
-    return str(entry["page_id"]), "appended"
+    return str(entry["page_id"]), "html_attached"
 
 
 def _local_report_images(
@@ -1197,6 +1232,87 @@ def _saved_upload_id(value: object) -> str | None:
     if isinstance(value, dict) and value.get("id"):
         return str(value["id"])
     return None
+
+
+def _portable_report_html(
+    report: dict[str, Any],
+    data_dir: Path,
+    *,
+    evaluation: dict[str, Any] | None = None,
+) -> Path:
+    report_id = str(report.get("report_id") or "").strip()
+    if not report_id:
+        raise ValueError("Report requires report_id before Notion publication")
+    suffix = (
+        f"-{evaluation['evaluation_id']}"
+        if isinstance(evaluation, dict) and evaluation.get("evaluation_id")
+        else ""
+    )
+    output = data_dir / "publishing" / "notion-html" / f"{report_id}{suffix}.html"
+    return write_text_atomic(
+        output,
+        render_report_html(
+            report,
+            evaluation,
+            include_pdf_link=False,
+            media_path_prefix=None,
+        ),
+    )
+
+
+def _html_attachment_block(
+    file_upload_id: str,
+    path: Path,
+    language: object,
+    *,
+    evaluated: bool = False,
+) -> dict[str, Any]:
+    caption = localized(
+        language,
+        "含独立评估的完整 HTML 日报" if evaluated else "完整 HTML 日报",
+        "Complete HTML report with independent evaluation"
+        if evaluated
+        else "Complete HTML report",
+    )
+    return {
+        "object": "block",
+        "type": "file",
+        "file": {
+            "type": "file_upload",
+            "file_upload": {"id": file_upload_id},
+            "name": path.name,
+            "caption": [_text(caption)],
+        },
+    }
+
+
+def _prepare_html_upload(
+    publisher: NotionPublisher,
+    path: Path,
+    state: dict[str, Any],
+    on_progress: Callable[[], None],
+) -> str:
+    digest = _file_sha256(path)
+    saved_id = _saved_upload_id(state)
+    if saved_id and state.get("sha256") == digest:
+        try:
+            saved = publisher.retrieve_file_upload(saved_id)
+        except Exception:
+            saved = {}
+        if saved.get("status") == "uploaded":
+            return saved_id
+    file_upload_id = publisher.upload_file(path, "text/html")
+    state.clear()
+    state.update(
+        {
+            "id": file_upload_id,
+            "sha256": digest,
+            "local_path": str(path),
+            "content_type": "text/html",
+        }
+    )
+    on_progress()
+    return file_upload_id
 
 
 def _prepare_image_uploads(
@@ -1352,6 +1468,8 @@ def backfill_report_images(
         raise RuntimeError("Publish the report before backfilling its images")
 
     page_id = str(entry["page_id"])
+    if entry.get("publication_mode") == _HTML_ATTACHMENT_MODE:
+        return page_id, "not_applicable_html_attachment"
     progress = {
         "status": "publishing",
         "report_id": report["report_id"],
@@ -1477,6 +1595,12 @@ def publish_report(
                 "An interrupted publish exists for a different report_id; "
                 "resolve it before publishing this edition"
             )
+        if existing.get("publication_mode") != _HTML_ATTACHMENT_MODE:
+            raise RuntimeError(
+                "An interrupted legacy rich-text publish cannot resume as an HTML "
+                "attachment. Resolve the partial Notion page, then publish again with "
+                "--force."
+            )
 
     publisher = NotionPublisher(token, data_source_id, config_path)
     try:
@@ -1491,52 +1615,52 @@ def publish_report(
             else:
                 publisher.update_properties(page_id, report)
             start_block = 0
-
-        prior_uploads = (
-            existing.get("image_uploads", {})
+        if start_block not in {0, 1}:
+            raise RuntimeError(
+                f"HTML attachment publish checkpoint is invalid: {start_block}"
+            )
+        prior_html_upload = (
+            existing.get("html_upload", {})
             if isinstance(existing, dict)
             and existing.get("report_id") == report["report_id"]
+            and existing.get("publication_mode") == _HTML_ATTACHMENT_MODE
             else {}
         )
+        if not isinstance(prior_html_upload, dict):
+            prior_html_upload = {}
         entry = {
             "page_id": page_id,
             "report_id": report["report_id"],
             "revision": report["revision"],
             "published_at": report["generated_at"],
             "status": "publishing",
+            "publication_mode": _HTML_ATTACHMENT_MODE,
             "blocks_appended": start_block,
-            "blocks_total": 0,
-            "image_uploads": prior_uploads,
-            "image_upload_errors": {},
+            "blocks_total": 1,
+            "html_upload": prior_html_upload,
         }
         if isinstance(existing, dict) and existing.get("evaluation_ids"):
             entry["evaluation_ids"] = existing["evaluation_ids"]
         registry[key] = entry
         write_json(registry_path, registry)
 
-        def save_image_progress() -> None:
+        def save_upload_progress() -> None:
             write_json(registry_path, registry)
 
-        image_uploads, image_upload_errors = _prepare_image_uploads(
+        portable_html = _portable_report_html(report, data_dir)
+        html_upload_id = _prepare_html_upload(
             publisher,
-            report,
-            data_dir,
-            entry,
-            save_image_progress,
+            portable_html,
+            entry["html_upload"],
+            save_upload_progress,
         )
-        blocks = (
-            report_to_blocks(report, image_uploads)
-            if image_uploads
-            else report_to_blocks(report)
-        )
-        entry["blocks_total"] = len(blocks)
-        entry["media_status"] = (
-            "external_fallback"
-            if image_upload_errors
-            else "uploaded"
-            if image_uploads
-            else "no_local_images"
-        )
+        blocks = [
+            _html_attachment_block(
+                html_upload_id,
+                portable_html,
+                report.get("language") or "zh-CN",
+            )
+        ]
         write_json(registry_path, registry)
 
         def save_progress(completed: int) -> None:
@@ -1552,7 +1676,6 @@ def publish_report(
         entry["status"] = "complete"
         entry["blocks_appended"] = len(blocks)
         write_json(registry_path, registry)
-        status = "published_with_image_fallbacks" if image_upload_errors else "published"
-        return page_id, status
+        return page_id, "published"
     finally:
         publisher.close()

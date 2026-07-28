@@ -117,7 +117,18 @@ schema 2.0 中每个精选事件的 `source_item_ids` 必须恰好包含一篇�
 
 ## 研判
 
-必须分别输出三个 analysis domain：`geopolitics`、`ai_technology`、`markets`，对应“从地缘政治专家的角度”“从 AI 研究/开发工程师的角度”“从股票分析师的角度”。三个视角只读取同一份 6—10 个精选事件的压缩 dossier；不要为某个视角单独扩张证据。每个使用 `facts`、`reasoning`、`causal_chain`、`counter_evidence`、`scenarios`、`assumptions`、`implications`、`actions`、`watch_signals`、`invalidation_signals`，并用 `evidence_item_ids` 引用索引 item ID；Python 转为事件 ID。该结构替换旧的泛化研判，不是额外附录。
+必须分别输出三个 analysis domain：`geopolitics`、`ai_technology`、`markets`，对应“从地缘政治专家的角度”“从 AI 研究/开发工程师的角度”“从股票分析师的角度”。三个视角只读取同一份 6—10 个精选事件的压缩 dossier；不要为某个视角单独扩张证据。每个使用 `facts`、`reasoning`、`causal_chain`、`counter_evidence`、`scenarios`、`assumptions`、`implications`、`actions`、`watch_signals`、`invalidation_signals`，并用 `evidence_item_ids` 引用索引 item ID；Python 转为事件 ID。该结构是主文的论证底稿，不是需要再写一遍的第二篇研判。
+
+输出采用“前台叙事、后台论证”：
+
+- `claim` 是具体、可证伪的文章标题；
+- `narrative` 是读者层主文，通常 4—7 个自然段，不设“事实基础”“历史脉络”“辩证分析”等内部小标题；
+- 其余字段是支撑层论证底稿，必须完整但保持简洁，发布时默认放入可展开的“论证与证据”；
+- 先完成支撑字段，再把事实、因果、矛盾、条件、最强反证和后续信号重写成一条自然推进的故事，不能按字段顺序拼接；
+- 每篇主文只回答一个中心问题。多事件必须共享可说明的机制；共享日期或领域标签不算机制，互不相关的事件应拆开或从该视角舍弃；
+- 三个视角可以各自引用 dossier 的连贯子集，整体覆盖至少 60% 的精选事件即可。
+
+详细写法与完稿检查见 `references/narrative-analysis.md`。
 
 每个 analysis 使用以下完整草稿结构；三个 domain 各输出一个对象：
 
@@ -143,7 +154,7 @@ schema 2.0 中每个精选事件的 `source_item_ids` 必须恰好包含一篇�
   "evidence_gaps": ["缺少哪一类一手数据或交叉证据。"],
   "change_from_prior": "相对上一版判断增强、减弱、修正或首次建立基线的具体差异。",
   "decision_relevance": "这一判断会改变哪些观察优先级或后续研究安排。",
-  "narrative": "可独立阅读的中文研判正文，具体关联当日事件。",
+  "narrative": "可独立阅读的中文研判主文。用4—7个自然段讲清中心判断、关键事实、传导机制、反作用、最强反证与后续观察，不显示后台字段名。",
   "historical_context": "必要的历史背景及其与当日事实的关系。",
   "dialectical_analysis": "主要矛盾、次要矛盾、推动因素与制约因素。",
   "stakeholder_positions": [

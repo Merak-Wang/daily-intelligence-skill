@@ -118,11 +118,11 @@ output:
   language: zh-CN  # 可选 zh-CN 或 en
 ```
 
-选择语言后，摘要、研判、栏目名、状态标签以及 HTML、PDF、Markdown 和 Notion 阅读界面会使用同一种语言；新闻原题始终保留，必要时在下一行给出目标语言译题。
+选择语言后，摘要、研判、栏目名、状态标签以及 HTML、PDF 和 Markdown 会使用同一种语言；新闻原题始终保留，必要时在下一行给出目标语言译题。Notion 只保存页面元数据并附加同语言的便携 HTML。
 
-默认情况下，Windows 把版本化报告保存在 `%LOCALAPPDATA%\hermes\daily-intelligence\reports\`，macOS 和 Linux 保存在 `~/.hermes/daily-intelligence/reports/`。如果设置了 `HERMES_HOME`，则改用 `$HERMES_HOME/daily-intelligence/reports/`。最新 HTML 默认复制到 `%USERPROFILE%\Desktop` 或 `~/Desktop`，也可以通过 `output.desktop_dir` 改到其他绝对路径。
+默认情况下，Windows 把版本化报告保存在 `%LOCALAPPDATA%\hermes\daily-intelligence\reports\`，macOS 和 Linux 保存在 `~/.hermes/daily-intelligence/reports/`。如果设置了 `HERMES_HOME`，则改用 `$HERMES_HOME/daily-intelligence/reports/`。最新 HTML 默认复制到 `%USERPROFILE%\Desktop` 或 `~/Desktop`，也可以通过 `output.desktop_dir` 改到其他绝对路径。版本化 HTML 使用报告目录旁的内容寻址图片；桌面 HTML 把已校验的本地图片嵌入单个文件，因此单独复制到其他设备后仍可离线显示图片。
 
-Notion 是可选项，不配置也能生成全部本地文件。启用 Notion 后，普通运行可能读取既有页面中的用户反馈；只有发布步骤会写入新的日报内容。
+Notion 是可选项，不配置也能生成全部本地文件。启用后只在发布步骤写入页面元数据并上传便携 HTML；新闻、研判和证据字段不再复制为 Notion 富文本。
 
 ## 工作流程
 
@@ -167,9 +167,9 @@ daily-intel serve --open --refresh-minutes 30
 | `reports/YYYY-MM-DD/EDITION-rN.json` | 版本化结构化记录，不覆盖已有版本 |
 | `reports/YYYY-MM-DD/EDITION-rN.md` | 便于审阅和归档的文本 |
 | `reports/YYYY-MM-DD/EDITION-rN.html` | 完整本地日报 |
-| `reports/YYYY-MM-DD/EDITION-rN.pdf` | 打印与分享 |
+| `reports/YYYY-MM-DD/EDITION-rN.pdf` | 打印与分享，已校验图片写入 PDF 文件本身 |
 | `reports/index.html` | 按日期和修订浏览历史日报 |
-| `Desktop/daily-intelligence-…html` | 自动复制到桌面的阅读副本 |
+| `Desktop/daily-intelligence-…html` | 自动复制到桌面的单文件阅读副本，已校验图片内嵌 |
 | Notion | 仅在明确启用时同步 |
 
 如果桌面复制或 PDF、Notion 同步失败，已经生成的版本化报告仍会保留，命令行会显示失败原因，可以随后重试。

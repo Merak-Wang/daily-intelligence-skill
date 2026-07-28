@@ -53,11 +53,11 @@ run manifest 固定在 `DATA_DIR/runs/YYYY-MM-DD/<edition>.json`。不要手改�
 
 ## 验收
 
-前台交付检查：run/index/report 一致、schema 2.0、七个 section、每源目标/上限、brief/精选事件关系、发布时间（缺失时显示采集时间）与 NEW、URL/标题身份、正文访问等级、三个视角使用同一事件档案、跨视角综合、JSON/Markdown/HTML、`reports/index.html`、`local_html_ready_at` 和待验证链接。
+前台交付检查：run/index/report 一致、schema 2.0、七个 section、每源目标/上限、brief/精选事件关系、发布时间（缺失时显示采集时间）与 NEW、URL/标题身份、正文访问等级、三个视角使用同一事件档案、跨视角综合、JSON/Markdown/HTML、`reports/index.html`、`local_html_ready_at` 和待验证链接。浏览器验收还要确认每条 brief 的标题先于配图、版本化 HTML 的相对图片存在，以及桌面 HTML 单独移入无媒体目录后所有内嵌图片均可加载。
 
-后台收尾检查：tail 为 `completed` 或有可操作的 `partial` 错误；PDF、`pdf_ready_at`、可选 Notion page ID/`notion_ready_at` 和独立评估调度彼此可重试，不影响前台 HTML 有效性。
+后台收尾检查：tail 为 `completed` 或有可操作的 `partial` 错误；PDF、`pdf_ready_at`、可选 Notion page ID/`notion_ready_at` 和独立评估调度彼此可重试，不影响前台 HTML 有效性。PDF 必须在断开本地媒体目录与网络后仍能显示全部已物化图片；用渲染抽查和 PDF image XObject 计数确认图片已写入文件，而不是保留外链。
 
-评估检查：九维完整、总分正确、被评 report ID/hash 匹配、独立 artifact 存在、HTML/PDF 已刷新、可选 Notion 已追加或可重试、长期连续状态按建议更新。
+评估检查：九维完整、总分正确、被评 report ID/hash 匹配、独立 artifact 存在、HTML/PDF 已刷新、可选 Notion 已附加更新版 HTML 或可重试、长期连续状态按建议更新。
 
 运行复盘中的计数只能来自 manifest 和根级 `items[]`；不得把 `verification_required`、`failed` 或 `metadata_only` 说成 `no_items`。
 
