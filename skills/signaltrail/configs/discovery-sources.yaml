@@ -1,0 +1,577 @@
+sources:
+  # Global and regional news. These sources expand discovery only; they never
+  # create per-source quotas in the morning or evening newspaper.
+  - id: un_news
+    name: UN News
+    url: https://news.un.org/en/
+    feed_urls: [https://news.un.org/feed/subscribe/en/news/all/rss.xml]
+    role: primary
+    tier: 1
+    bundle: geopolitics
+    module: information
+    category: international
+    language: en
+    region: global
+  - id: al_jazeera
+    name: Al Jazeera
+    url: https://www.aljazeera.com/
+    feed_urls: [https://www.aljazeera.com/xml/rss/all.xml]
+    role: evidence
+    tier: 1
+    bundle: geopolitics
+    module: information
+    category: international
+    language: en
+    region: global
+  - id: dw_world
+    name: DW
+    url: https://www.dw.com/en/top-stories/s-9097
+    feed_urls: [https://rss.dw.com/rdf/rss-en-all]
+    role: evidence
+    tier: 1
+    bundle: geopolitics
+    module: information
+    category: international
+    language: en
+    region: eu
+  - id: france24_world
+    name: France 24
+    url: https://www.france24.com/en/
+    feed_urls: [https://www.france24.com/en/rss]
+    role: evidence
+    tier: 1
+    bundle: geopolitics
+    module: information
+    category: international
+    language: en
+    region: eu
+  - id: npr_world
+    name: NPR World
+    url: https://www.npr.org/sections/world/
+    feed_urls: [https://feeds.npr.org/1004/rss.xml]
+    role: evidence
+    tier: 1
+    bundle: geopolitics
+    module: information
+    category: international
+    language: en
+    region: us
+  - id: nyt_world
+    name: The New York Times World
+    url: https://www.nytimes.com/section/world
+    feed_urls: [https://rss.nytimes.com/services/xml/rss/nyt/World.xml]
+    role: evidence
+    tier: 1
+    bundle: geopolitics
+    module: information
+    category: international
+    language: en
+    region: us
+  - id: cbc_world
+    name: CBC World
+    url: https://www.cbc.ca/news/world
+    feed_urls: [https://www.cbc.ca/cmlink/rss-world]
+    role: evidence
+    tier: 2
+    bundle: geopolitics
+    module: information
+    category: international
+    language: en
+    region: ca
+  - id: abc_australia_world
+    name: ABC Australia World
+    url: https://www.abc.net.au/news/world
+    feed_urls: [https://www.abc.net.au/news/feed/51120/rss.xml]
+    role: evidence
+    tier: 2
+    bundle: geopolitics
+    module: information
+    category: international
+    language: en
+    region: au
+  - id: japan_times
+    name: The Japan Times
+    url: https://www.japantimes.co.jp/news/
+    feed_urls: [https://www.japantimes.co.jp/feed/]
+    role: evidence
+    tier: 2
+    bundle: asia
+    module: information
+    category: international
+    language: en
+    region: jp
+  - id: google_news_china
+    name: Google News · China
+    url: https://news.google.com/
+    feed_urls:
+      - https://news.google.com/rss/search?q=China%20policy%20OR%20economy&hl=en-US&gl=US&ceid=US:en
+    role: discovery
+    tier: 3
+    bundle: china
+    module: information
+    category: domestic
+    language: en
+    region: cn
+
+  # Markets, central banks, and official economic releases.
+  - id: ecb_press
+    name: European Central Bank
+    url: https://www.ecb.europa.eu/press/html/index.en.html
+    feed_urls: [https://www.ecb.europa.eu/rss/press.html]
+    role: primary
+    tier: 1
+    bundle: markets
+    module: information
+    category: market
+    language: en
+    region: eu
+  - id: bis_press
+    name: Bank for International Settlements
+    url: https://www.bis.org/press/index.htm
+    feed_urls: [https://www.bis.org/doclist/all_pressrels.rss]
+    role: primary
+    tier: 1
+    bundle: markets
+    module: information
+    category: market
+    language: en
+    region: global
+  - id: bank_of_england_news
+    name: Bank of England
+    url: https://www.bankofengland.co.uk/news
+    feed_urls: [https://www.bankofengland.co.uk/rss/news]
+    role: primary
+    tier: 1
+    bundle: markets
+    module: information
+    category: market
+    language: en
+    region: uk
+  - id: imf_news
+    name: International Monetary Fund
+    url: https://www.imf.org/en/News
+    feed_urls: [https://www.imf.org/en/News/RSS]
+    role: primary
+    tier: 1
+    bundle: markets
+    module: information
+    category: market
+    language: en
+    region: global
+  - id: world_bank_news
+    name: World Bank
+    url: https://www.worldbank.org/en/news
+    role: primary
+    tier: 1
+    bundle: markets
+    module: information
+    category: market
+    language: en
+    region: global
+  - id: oecd_news
+    name: OECD
+    url: https://www.oecd.org/en/about/news.html
+    feed_urls: [https://www.oecd.org/newsroom/rss.xml]
+    role: primary
+    tier: 1
+    bundle: markets
+    module: information
+    category: market
+    language: en
+    region: global
+  - id: cnbc_markets_feed
+    name: CNBC Markets
+    url: https://www.cnbc.com/markets/
+    feed_urls: [https://www.cnbc.com/id/10000664/device/rss/rss.html]
+    role: evidence
+    tier: 1
+    bundle: markets
+    module: information
+    category: market
+    language: en
+    region: global
+  - id: marketwatch_top
+    name: MarketWatch
+    url: https://www.marketwatch.com/latest-news
+    feed_urls: [https://feeds.marketwatch.com/marketwatch/topstories/]
+    role: evidence
+    tier: 2
+    bundle: markets
+    module: information
+    category: market
+    language: en
+    region: us
+
+  # Military, security, policy, and think-tank analysis.
+  - id: us_dod_news
+    name: U.S. Department of Defense
+    url: https://www.defense.gov/News/
+    feed_urls:
+      - https://www.defense.gov/DesktopModules/ArticleCS/RSS.ashx?ContentType=400&Site=945&max=40
+    role: primary
+    tier: 1
+    bundle: military
+    module: information
+    category: military
+    language: en
+    region: us
+  - id: nato_news
+    name: NATO
+    url: https://www.nato.int/cps/en/natohq/news.htm
+    role: primary
+    tier: 1
+    bundle: military
+    module: information
+    category: military
+    language: en
+    region: eu
+  - id: breaking_defense
+    name: Breaking Defense
+    url: https://breakingdefense.com/
+    feed_urls: [https://breakingdefense.com/feed/]
+    role: evidence
+    tier: 1
+    bundle: military
+    module: information
+    category: military
+    language: en
+    region: global
+  - id: defense_one
+    name: Defense One
+    url: https://www.defenseone.com/
+    feed_urls: [https://www.defenseone.com/rss/all/]
+    role: evidence
+    tier: 1
+    bundle: military
+    module: information
+    category: military
+    language: en
+    region: us
+  - id: defense_news
+    name: Defense News
+    url: https://www.defensenews.com/
+    feed_urls: [https://www.defensenews.com/arc/outboundfeeds/rss/]
+    role: evidence
+    tier: 1
+    bundle: military
+    module: information
+    category: military
+    language: en
+    region: global
+  - id: war_on_the_rocks
+    name: War on the Rocks
+    url: https://warontherocks.com/
+    feed_urls: [https://warontherocks.com/feed/]
+    role: evidence
+    tier: 1
+    bundle: military
+    module: information
+    category: military
+    language: en
+    region: global
+  - id: csis_analysis
+    name: CSIS Analysis
+    url: https://www.csis.org/analysis
+    role: evidence
+    tier: 1
+    bundle: geopolitics
+    module: information
+    category: military
+    language: en
+    region: us
+  - id: rand_research
+    name: RAND Research
+    url: https://www.rand.org/pubs.html
+    feed_urls: [https://www.rand.org/pubs.xml]
+    role: evidence
+    tier: 1
+    bundle: geopolitics
+    module: information
+    category: military
+    language: en
+    region: us
+  - id: brookings_research
+    name: Brookings
+    url: https://www.brookings.edu/research/
+    feed_urls: [https://www.brookings.edu/feed/]
+    role: evidence
+    tier: 2
+    bundle: geopolitics
+    module: information
+    category: international
+    language: en
+    region: us
+
+  # AI, software engineering, and the broader technology ecosystem.
+  - id: github_blog
+    name: GitHub Blog
+    url: https://github.blog/
+    feed_urls: [https://github.blog/feed/]
+    role: primary
+    tier: 1
+    bundle: ai
+    module: technology
+    category: news
+    language: en
+    region: global
+  - id: cloudflare_blog
+    name: Cloudflare Blog
+    url: https://blog.cloudflare.com/
+    feed_urls: [https://blog.cloudflare.com/rss/]
+    role: primary
+    tier: 1
+    bundle: ai
+    module: technology
+    category: news
+    language: en
+    region: global
+  - id: aws_ml_blog
+    name: AWS Machine Learning Blog
+    url: https://aws.amazon.com/blogs/machine-learning/
+    feed_urls: [https://aws.amazon.com/blogs/machine-learning/feed/]
+    role: primary
+    tier: 1
+    bundle: ai
+    module: technology
+    category: news
+    language: en
+    region: global
+  - id: microsoft_research_blog
+    name: Microsoft Research Blog
+    url: https://www.microsoft.com/en-us/research/blog/
+    feed_urls: [https://www.microsoft.com/en-us/research/feed/]
+    role: primary
+    tier: 1
+    bundle: ai
+    module: technology
+    category: news
+    language: en
+    region: global
+  - id: nvidia_blog
+    name: NVIDIA Blog
+    url: https://blogs.nvidia.com/
+    feed_urls: [https://blogs.nvidia.com/feed/]
+    role: primary
+    tier: 1
+    bundle: ai
+    module: technology
+    category: news
+    language: en
+    region: global
+  - id: huggingface_blog
+    name: Hugging Face Blog
+    url: https://huggingface.co/blog
+    feed_urls: [https://huggingface.co/blog/feed.xml]
+    role: primary
+    tier: 1
+    bundle: ai
+    module: technology
+    category: news
+    language: en
+    region: global
+  - id: mozilla_hacks
+    name: Mozilla Hacks
+    url: https://hacks.mozilla.org/
+    feed_urls: [https://hacks.mozilla.org/feed/]
+    role: primary
+    tier: 2
+    bundle: ai
+    module: technology
+    category: news
+    language: en
+    region: global
+  - id: techcrunch_ai
+    name: TechCrunch AI
+    url: https://techcrunch.com/category/artificial-intelligence/
+    feed_urls: [https://techcrunch.com/category/artificial-intelligence/feed/]
+    role: discovery
+    tier: 2
+    bundle: ai
+    module: technology
+    category: news
+    language: en
+    region: global
+  - id: ars_technica
+    name: Ars Technica
+    url: https://arstechnica.com/
+    feed_urls: [https://feeds.arstechnica.com/arstechnica/index]
+    role: evidence
+    tier: 1
+    bundle: ai
+    module: technology
+    category: news
+    language: en
+    region: global
+  - id: the_verge
+    name: The Verge
+    url: https://www.theverge.com/
+    feed_urls: [https://www.theverge.com/rss/index.xml]
+    role: discovery
+    tier: 2
+    bundle: ai
+    module: technology
+    category: news
+    language: en
+    region: global
+  - id: ieee_spectrum
+    name: IEEE Spectrum
+    url: https://spectrum.ieee.org/
+    feed_urls: [https://spectrum.ieee.org/feeds/feed.rss]
+    role: evidence
+    tier: 1
+    bundle: ai
+    module: technology
+    category: news
+    language: en
+    region: global
+  - id: mit_technology_review
+    name: MIT Technology Review
+    url: https://www.technologyreview.com/
+    feed_urls: [https://www.technologyreview.com/feed/]
+    role: evidence
+    tier: 1
+    bundle: ai
+    module: technology
+    category: news
+    language: en
+    region: global
+  - id: google_security_blog
+    name: Google Security Blog
+    url: https://security.googleblog.com/
+    feed_urls: [https://security.googleblog.com/feeds/posts/default]
+    role: primary
+    tier: 1
+    bundle: cyber
+    module: technology
+    category: news
+    language: en
+    region: global
+
+  # Papers and research discovery.
+  - id: arxiv_machine_learning
+    name: arXiv Machine Learning
+    url: https://arxiv.org/list/cs.LG/recent
+    feed_urls:
+      - https://export.arxiv.org/api/query?search_query=cat:cs.LG&sortBy=submittedDate&sortOrder=descending&max_results=40
+    role: discovery
+    tier: 2
+    bundle: research
+    module: technology
+    category: papers
+    language: en
+    region: global
+  - id: arxiv_computation_language
+    name: arXiv Computation and Language
+    url: https://arxiv.org/list/cs.CL/recent
+    feed_urls:
+      - https://export.arxiv.org/api/query?search_query=cat:cs.CL&sortBy=submittedDate&sortOrder=descending&max_results=40
+    role: discovery
+    tier: 2
+    bundle: research
+    module: technology
+    category: papers
+    language: en
+    region: global
+  - id: arxiv_computer_vision
+    name: arXiv Computer Vision
+    url: https://arxiv.org/list/cs.CV/recent
+    feed_urls:
+      - https://export.arxiv.org/api/query?search_query=cat:cs.CV&sortBy=submittedDate&sortOrder=descending&max_results=40
+    role: discovery
+    tier: 2
+    bundle: research
+    module: technology
+    category: papers
+    language: en
+    region: global
+  - id: arxiv_robotics
+    name: arXiv Robotics
+    url: https://arxiv.org/list/cs.RO/recent
+    feed_urls:
+      - https://export.arxiv.org/api/query?search_query=cat:cs.RO&sortBy=submittedDate&sortOrder=descending&max_results=40
+    role: discovery
+    tier: 2
+    bundle: research
+    module: technology
+    category: papers
+    language: en
+    region: global
+  - id: nature_news
+    name: Nature
+    url: https://www.nature.com/nature/articles
+    feed_urls: [https://www.nature.com/nature.rss]
+    role: evidence
+    tier: 1
+    bundle: research
+    module: technology
+    category: papers
+    language: en
+    region: global
+
+  # Cybersecurity and official public-interest signals.
+  - id: cisa_advisories
+    name: CISA Cybersecurity Advisories
+    url: https://www.cisa.gov/news-events/cybersecurity-advisories
+    feed_urls: [https://www.cisa.gov/cybersecurity-advisories/all.xml]
+    role: primary
+    tier: 1
+    bundle: cyber
+    module: technology
+    category: news
+    language: en
+    region: us
+  - id: bleeping_computer
+    name: BleepingComputer
+    url: https://www.bleepingcomputer.com/
+    feed_urls: [https://www.bleepingcomputer.com/feed/]
+    role: evidence
+    tier: 2
+    bundle: cyber
+    module: technology
+    category: news
+    language: en
+    region: global
+  - id: security_week
+    name: SecurityWeek
+    url: https://www.securityweek.com/
+    feed_urls: [https://www.securityweek.com/feed/]
+    role: evidence
+    tier: 2
+    bundle: cyber
+    module: technology
+    category: news
+    language: en
+    region: global
+  - id: krebs_security
+    name: Krebs on Security
+    url: https://krebsonsecurity.com/
+    feed_urls: [https://krebsonsecurity.com/feed/]
+    role: evidence
+    tier: 2
+    bundle: cyber
+    module: technology
+    category: news
+    language: en
+    region: global
+  - id: nasa_news
+    name: NASA News Releases
+    url: https://www.nasa.gov/news-release/
+    feed_urls: [https://www.nasa.gov/news-release/feed/]
+    role: primary
+    tier: 1
+    bundle: science
+    module: technology
+    category: news
+    language: en
+    region: us
+  - id: who_news
+    name: World Health Organization
+    url: https://www.who.int/news
+    feed_urls: [https://www.who.int/rss-feeds/news-english.xml]
+    role: primary
+    tier: 1
+    bundle: science
+    module: information
+    category: international
+    language: en
+    region: global
