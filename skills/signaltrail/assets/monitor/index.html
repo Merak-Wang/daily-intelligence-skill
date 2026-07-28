@@ -1,0 +1,138 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="color-scheme" content="light">
+  <meta name="description" content="零模型 token 的本地新闻流、事件聚类与来源健康台">
+  <title>日报情报台</title>
+  <link rel="stylesheet" href="/styles.css">
+  <script src="/app.js" defer></script>
+</head>
+<body>
+  <header class="masthead">
+    <div class="masthead-rule"></div>
+    <div class="shell masthead-grid">
+      <div>
+        <p class="kicker">SIGNALTRAIL · LOCAL DESK</p>
+        <h1>日报情报台</h1>
+        <p class="deck">高频采集与展示不调用模型；晨报和晚报仍按原预算完成翻译、摘要与多视角研判。</p>
+      </div>
+      <div class="edition-stamp" aria-label="当前监控状态">
+        <span>LIVE INDEX</span>
+        <strong id="generated-time">等待首轮采集</strong>
+        <small id="token-note">模型 token：0</small>
+      </div>
+    </div>
+  </header>
+
+  <main class="shell">
+    <section class="metrics" aria-label="监控摘要">
+      <article><span>来源</span><strong id="metric-sources">—</strong></article>
+      <article><span>新闻</span><strong id="metric-items">—</strong></article>
+      <article><span>事件簇</span><strong id="metric-clusters">—</strong></article>
+      <article><span>多源印证</span><strong id="metric-corroborated">—</strong></article>
+      <article class="metric-alert"><span>待处理来源</span><strong id="metric-pending">—</strong></article>
+    </section>
+
+    <section class="desk-controls" aria-label="筛选与视图">
+      <div class="view-tabs" role="tablist" aria-label="情报台视图">
+        <button class="tab active" data-view="stream" role="tab" aria-selected="true">新闻流</button>
+        <button class="tab" data-view="clusters" role="tab" aria-selected="false">事件聚类</button>
+        <button class="tab" data-view="sources" role="tab" aria-selected="false">来源健康</button>
+        <button class="tab" data-view="pending" role="tab" aria-selected="false">人工验证</button>
+      </div>
+      <div class="filters">
+        <label class="search-field">
+          <span class="visually-hidden">搜索新闻</span>
+          <input id="search" type="search" placeholder="搜索标题、来源或摘要">
+        </label>
+        <label>
+          <span class="visually-hidden">栏目</span>
+          <select id="category-filter">
+            <option value="">全部栏目</option>
+          </select>
+        </label>
+        <label>
+          <span class="visually-hidden">来源</span>
+          <select id="source-filter">
+            <option value="">全部来源</option>
+          </select>
+        </label>
+        <label class="image-toggle">
+          <input id="image-only" type="checkbox">
+          <span>仅看有图</span>
+        </label>
+      </div>
+    </section>
+
+    <p id="status-message" class="status-message" role="status">正在读取本地监控快照……</p>
+
+    <section id="view-stream" class="view-panel active" role="tabpanel">
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">WIRE & FEEDS</p>
+          <h2>新闻流</h2>
+        </div>
+        <p id="stream-count">—</p>
+      </div>
+      <div id="stream-list" class="story-grid"></div>
+    </section>
+
+    <section id="view-clusters" class="view-panel" role="tabpanel" hidden>
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">STORY IDENTITY</p>
+          <h2>事件聚类</h2>
+        </div>
+        <p>同一事件的多家报道被确定性归并，不调用模型。</p>
+      </div>
+      <div id="cluster-list" class="cluster-list"></div>
+    </section>
+
+    <section id="view-sources" class="view-panel" role="tabpanel" hidden>
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">SOURCE OPERATIONS</p>
+          <h2>来源健康</h2>
+        </div>
+        <p>失败不会被伪装成“没有新闻”。</p>
+      </div>
+      <div class="table-shell">
+        <table>
+          <thead>
+            <tr>
+              <th>来源</th>
+              <th>状态</th>
+              <th>成功率</th>
+              <th>连续失败</th>
+              <th>本次条目</th>
+              <th>采集方式</th>
+              <th>最后成功</th>
+            </tr>
+          </thead>
+          <tbody id="source-table"></tbody>
+        </table>
+      </div>
+    </section>
+
+    <section id="view-pending" class="view-panel" role="tabpanel" hidden>
+      <div class="section-heading">
+        <div>
+          <p class="eyebrow">ACCESS QUEUE</p>
+          <h2>人工验证</h2>
+        </div>
+        <p>情报台只显示入口，不绕过验证码、登录或付费墙。</p>
+      </div>
+      <div id="pending-list" class="pending-list"></div>
+    </section>
+  </main>
+
+  <footer>
+    <div class="shell">
+      <strong>本地优先</strong>
+      <span>结构化 JSON 是事实源；这个页面只读，不上传浏览器资料或新闻内容。</span>
+    </div>
+  </footer>
+</body>
+</html>
