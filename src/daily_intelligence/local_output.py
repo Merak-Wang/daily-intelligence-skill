@@ -227,18 +227,35 @@ UI_LABELS = {
 
 
 def _ui(language: object) -> dict[str, str]:
+    """处理：按输出语言选择本地报告界面文本。
+    输入：
+    - ``language``：规范语言标识；用于本地化选择或语言一致性判断。
+    输出：“按输出语言选择本地报告界面文本”形成的结构化字典；
+      键值表达该处理定义的业务记录或查找关系。
+    """
     return UI_LABELS["zh-CN" if is_chinese_output(language) else "en"]
 
 
 def _escape(value: object) -> str:
+    """处理：对不可信值执行 HTML 属性和文本转义。
+    输入：
+    - ``value``：待解析或规范化的单个输入值；非法值按函数契约返回空值或报错。
+    输出：“对不可信值执行 HTML 属性和文本转义”得到的规范字符串，供调用方存储、比较或展示。
+    """
     return html.escape(str(value or ""), quote=True)
 
 
 def _safe_url(value: object) -> str:
+    """处理：仅保留具有主机名的 HTTP(S) URL，并对 HTML 属性进行转义。
+    输入：
+    - ``value``：待解析或规范化的单个输入值；非法值按函数契约返回空值或报错。
+    输出：经过选择、规范化或安全处理的 URL 字符串，供后续访问或渲染使用。
+    """
     url = str(value or "")
     parsed = urlsplit(url)
     if parsed.scheme in {"http", "https"} and parsed.netloc:
         return _escape(url)
+    # 未知协议统一失效，避免把 javascript: 等不可信值写进可点击属性。
     return "#"
 
 
@@ -255,6 +272,13 @@ def _validated_local_image_path(
     image: dict[str, Any],
     data_dir: Path,
 ) -> Path | None:
+    """处理：校验报告图片位于数据根媒体目录且类型、大小可嵌入。
+    输入：
+    - ``image``：报告或索引中的图片元数据；包含 URL、本地路径、哈希、尺寸和说明。
+    - ``data_dir``：当前运行的唯一数据根；所有状态和版本化产物都必须位于其中。
+    输出：指向“校验报告图片位于数据根媒体目录且类型、大小可嵌入”所生成、定位或确认产物的本地路径
+      ；条件不满足时返回 None。
+    """
     local_path = str(image.get("local_path") or "").replace("\\", "/")
     parts = [part for part in local_path.split("/") if part]
     content_type = str(image.get("content_type") or "").lower()
@@ -268,6 +292,7 @@ def _validated_local_image_path(
     image_root = (data_dir / "media" / "images").resolve()
     candidate = data_dir.joinpath(*parts).resolve()
     try:
+        # 报告中的 local_path 仍是不可信数据，嵌入前必须限定在内容寻址图片目录。
         candidate.relative_to(image_root)
         size = candidate.stat().st_size
     except (OSError, ValueError):
@@ -282,6 +307,14 @@ def _image_src(
     media_path_prefix: str | None,
     embedded_image_sources: dict[str, str] | None = None,
 ) -> str:
+    """处理：优先选择内嵌或本地图片地址，最后回退到安全公网 URL。
+    输入：
+    - ``image``：报告或索引中的图片元数据；包含 URL、本地路径、哈希、尺寸和说明。
+    - ``media_path_prefix``：HTML 或 Markdown 相对引用本地媒体文件时添加的路径前缀。
+    - ``embedded_image_sources``：按图片哈希或路径索引的数据 URI；用于生成可独立打开的 HTML。
+    输出：“优先选择内嵌或本地图片地址，最后回退到安全公网 URL”得到的规范字符串，
+      供调用方存储、比较或展示。
+    """
     local_path = str(image.get("local_path") or "").replace("\\", "/")
     if embedded_image_sources and local_path in embedded_image_sources:
         return _escape(embedded_image_sources[local_path])
@@ -300,6 +333,13 @@ def _embedded_image_sources(
     report: dict[str, Any],
     data_dir: Path,
 ) -> dict[str, str]:
+    """处理：校验本地报告图片并构造可离线使用的数据 URI。
+    输入：
+    - ``report``：当前报告结构；包含栏目、简报或事件、来源引用及质量元数据。
+    - ``data_dir``：当前运行的唯一数据根；所有状态和版本化产物都必须位于其中。
+    输出：“校验本地报告图片并构造可离线使用的数据 URI”形成的结构化字典；
+      键值表达该处理定义的业务记录或查找关系。
+    """
     embedded: dict[str, str] = {}
     for section in report.get("sections", []):
         if not isinstance(section, dict):
@@ -326,6 +366,13 @@ def _embedded_image_sources(
 
 
 def _external_link(label: object, url: object, *, css_class: str = "") -> str:
+    """处理：渲染经过协议校验和转义的外部链接。
+    输入：
+    - ``label``：用于错误消息的字段或产物名称，使失败能定位到具体输入。
+    - ``url``：调用方提供的 URL；当前函数按处理说明进行规范化、过滤或访问。
+    - ``css_class``：渲染到 HTML 元素的受控 CSS 类名；不接受外部任意标记。
+    输出：“渲染经过协议校验和转义的外部链接”得到的规范字符串，供调用方存储、比较或展示。
+    """
     class_attr = f' class="{_escape(css_class)}"' if css_class else ""
     return (
         f'<a{class_attr} href="{_safe_url(url)}" target="_blank" '
@@ -334,6 +381,13 @@ def _external_link(label: object, url: object, *, css_class: str = "") -> str:
 
 
 def _ordered_sections(report: dict[str, Any], module: str) -> list[dict[str, Any]]:
+    """处理：按契约顺序排列已存在的报告栏目。
+    输入：
+    - ``report``：当前报告结构；包含栏目、简报或事件、来源引用及质量元数据。
+    - ``module``：报告顶层领域 ID，例如 information 或 technology。
+    输出：“按契约顺序排列已存在的报告栏目”得到的有序结构化记录；
+      每项承载处理说明所定义的身份、证据或状态字段，可直接交给下一阶段。
+    """
     sections = [section for section in report.get("sections", []) if section.get("module") == module]
     by_id = {str(section.get("id")): section for section in sections}
     ordered = [by_id[key] for key in SECTION_GROUPS_V13[module] if key in by_id]
@@ -345,6 +399,14 @@ def _group_items(
     section: dict[str, Any],
     language: object = "zh-CN",
 ) -> list[tuple[dict[str, Any], list[dict[str, Any]]]]:
+    """处理：按来源 ID 分组报告条目，同时保留来源首次出现顺序。
+    输入：
+    - ``section``：报告中的栏目对象；包含栏目 ID、标题、简报或事件列表。
+    - ``language``：规范语言标识；用于本地化选择或语言一致性判断。
+    输出：按“按来源 ID 分组报告条目，
+      同时保留来源首次出现顺序”规则得到的 ``tuple[dict[str, Any`` 列表；
+      列表顺序表达配置优先级、业务排名或稳定扫描顺序。
+    """
     values = section.get("briefs") if "briefs" in section else section.get("items", [])
     groups: dict[str, tuple[dict[str, Any], list[dict[str, Any]]]] = {}
     for item in values or []:
@@ -380,6 +442,13 @@ def _list_html(
     css_class: str = "",
     language: object = "zh-CN",
 ) -> str:
+    """处理：把文本列表渲染为经过转义的 HTML 列表。
+    输入：
+    - ``values``：待规范化、匹配或渲染的一组输入值。
+    - ``css_class``：渲染到 HTML 元素的受控 CSS 类名；不接受外部任意标记。
+    - ``language``：规范语言标识；用于本地化选择或语言一致性判断。
+    输出：“把文本列表渲染为经过转义的 HTML 列表”得到的规范字符串，供调用方存储、比较或展示。
+    """
     if not values:
         return f'<p class="muted">{_escape(_ui(language)["none"])}</p>'
     class_attr = f' class="{_escape(css_class)}"' if css_class else ""
@@ -387,6 +456,12 @@ def _list_html(
 
 
 def _prose_html(value: object, *, css_class: str = "") -> str:
+    """处理：把多段正文渲染为经过转义的 HTML 段落。
+    输入：
+    - ``value``：待解析或规范化的单个输入值；非法值按函数契约返回空值或报错。
+    - ``css_class``：渲染到 HTML 元素的受控 CSS 类名；不接受外部任意标记。
+    输出：“把多段正文渲染为经过转义的 HTML 段落”得到的规范字符串，供调用方存储、比较或展示。
+    """
     class_attr = f' class="{_escape(css_class)}"' if css_class else ""
     paragraphs = split_narrative_paragraphs(value)
     return f"<div{class_attr}>" + "".join(
@@ -395,6 +470,11 @@ def _prose_html(value: object, *, css_class: str = "") -> str:
 
 
 def _item_ref(item: dict[str, Any]) -> dict[str, Any]:
+    """处理：从报告条目提取首选来源引用。
+    输入：
+    - ``item``：单个规范条目对象；通常包含 item_id、来源、标题、URL、时间和元数据。
+    输出：“从报告条目提取首选来源引用”形成的结构化字典；键值表达该处理定义的业务记录或查找关系。
+    """
     ref = item.get("source_ref")
     if isinstance(ref, dict):
         return ref
@@ -409,6 +489,15 @@ def _brief_html(
     embedded_image_sources: dict[str, str] | None = None,
     language: object = "zh-CN",
 ) -> str:
+    """处理：把单条简报渲染为本地报告卡片。
+    输入：
+    - ``item``：单个规范条目对象；通常包含 item_id、来源、标题、URL、时间和元数据。
+    - ``rank``：简报或来源在当前栏目中的一基排序号。
+    - ``media_path_prefix``：HTML 或 Markdown 相对引用本地媒体文件时添加的路径前缀。
+    - ``embedded_image_sources``：按图片哈希或路径索引的数据 URI；用于生成可独立打开的 HTML。
+    - ``language``：规范语言标识；用于本地化选择或语言一致性判断。
+    输出：“把单条简报渲染为本地报告卡片”得到的规范字符串，供调用方存储、比较或展示。
+    """
     ref = _item_ref(item)
     status_labels = STATUS_LABELS if is_chinese_output(language) else STATUS_LABELS_EN
     status = status_labels.get(str(item.get("status")), str(item.get("status") or ""))
@@ -465,6 +554,15 @@ def _source_section_html(
     embedded_image_sources: dict[str, str] | None = None,
     language: object = "zh-CN",
 ) -> str:
+    """处理：把同一来源的简报集合渲染为报告分区。
+    输入：
+    - ``source``：来源配置；包含来源 ID、名称、入口 URL、分类、过滤规则、限额和可信层级。
+    - ``items``：规范条目列表；每项带稳定身份并可进入聚类、报告或渲染步骤。
+    - ``media_path_prefix``：HTML 或 Markdown 相对引用本地媒体文件时添加的路径前缀。
+    - ``embedded_image_sources``：按图片哈希或路径索引的数据 URI；用于生成可独立打开的 HTML。
+    - ``language``：规范语言标识；用于本地化选择或语言一致性判断。
+    输出：“把同一来源的简报集合渲染为报告分区”得到的规范字符串，供调用方存储、比较或展示。
+    """
     source_name = source.get("name") or _ui(language)["unknown_source"]
     stories = "".join(
         _brief_html(
@@ -489,6 +587,12 @@ def _analysis_html(
     analysis: dict[str, Any],
     language: object = "zh-CN",
 ) -> str:
+    """处理：把单个分析视角渲染为结构化 HTML。
+    输入：
+    - ``analysis``：已校验的跨栏目分析对象；包含模式、风险、机会和展望。
+    - ``language``：规范语言标识；用于本地化选择或语言一致性判断。
+    输出：“把单个分析视角渲染为结构化 HTML”得到的规范字符串，供调用方存储、比较或展示。
+    """
     labels = _ui(language)
     event_links = []
     for event_id in analysis.get("evidence_event_ids", []):
@@ -569,6 +673,12 @@ def _synthesis_html(
     synthesis: dict[str, Any] | None,
     language: object = "zh-CN",
 ) -> str:
+    """处理：渲染跨视角综合结论及其分歧和共识。
+    输入：
+    - ``synthesis``：可选执行摘要对象；包含核心判断、优先事项和观察信号。
+    - ``language``：规范语言标识；用于本地化选择或语言一致性判断。
+    输出：“渲染跨视角综合结论及其分歧和共识”得到的规范字符串，供调用方存储、比较或展示。
+    """
     if not isinstance(synthesis, dict):
         return ""
     labels = _ui(language)
@@ -620,6 +730,11 @@ def _synthesis_html(
 
 
 def _toc_html(report: dict[str, Any]) -> str:
+    """处理：根据实际栏目生成可折叠的报告目录。
+    输入：
+    - ``report``：当前报告结构；包含栏目、简报或事件、来源引用及质量元数据。
+    输出：“根据实际栏目生成可折叠的报告目录”得到的规范字符串，供调用方存储、比较或展示。
+    """
     language = report.get("language") or "zh-CN"
     labels = _ui(language)
     modules = MODULE_LABELS if is_chinese_output(language) else MODULE_LABELS_EN
@@ -673,6 +788,12 @@ def _evaluation_html(
     evaluation: dict[str, Any] | None,
     language: object = "zh-CN",
 ) -> str:
+    """处理：把质量评估和改进建议渲染为 HTML。
+    输入：
+    - ``evaluation``：独立质量评估对象；包含评分、问题和改进建议。
+    - ``language``：规范语言标识；用于本地化选择或语言一致性判断。
+    输出：“把质量评估和改进建议渲染为 HTML”得到的规范字符串，供调用方存储、比较或展示。
+    """
     labels = _ui(language)
     evaluation_labels = (
         EVALUATION_LABELS if is_chinese_output(language) else EVALUATION_LABELS_EN
@@ -719,6 +840,18 @@ def render_report_html(
     archive_href: str | None = "../index.html",
     pdf_href: str | None = None,
 ) -> str:
+    """处理：把已验证报告、来源证据和本地图片投影为可离线阅读的完整 HTML。
+    输入：
+    - ``report``：当前报告结构；包含栏目、简报或事件、来源引用及质量元数据。
+    - ``evaluation``：独立质量评估对象；包含评分、问题和改进建议。
+    - ``include_pdf_link``：HTML 页面是否展示指向同版本 PDF 的下载链接。
+    - ``media_path_prefix``：HTML 或 Markdown 相对引用本地媒体文件时添加的路径前缀。
+    - ``embedded_image_sources``：按图片哈希或路径索引的数据 URI；用于生成可独立打开的 HTML。
+    - ``archive_href``：同日期报告归档页的受控相对链接；为空时不渲染。
+    - ``pdf_href``：同版本 PDF 的受控相对链接；为空时不渲染。
+    输出：“把已验证报告、来源证据和本地图片投影为可离线阅读的完整 HTML”得到的规范字符串，
+      供调用方存储、比较或展示。
+    """
     language = report.get("language") or "zh-CN"
     labels = _ui(language)
     module_labels = MODULE_LABELS if is_chinese_output(language) else MODULE_LABELS_EN
@@ -855,7 +988,7 @@ a{{color:var(--blue);text-decoration:none}}a:hover{{text-decoration:underline}}.
 .summary,.module,.content-section,.analysis-module,.analysis-domain,.evaluation,.feedback{{scroll-margin-top:88px}}.toc-toggle{{position:fixed;z-index:32;left:14px;top:50%;display:flex;flex-direction:column;align-items:center;gap:6px;width:42px;margin:0;padding:13px 8px;transform:translateY(-50%);border:1px solid rgba(35,74,112,.2);border-radius:10px;background:rgba(255,255,255,.96);box-shadow:0 8px 24px rgba(25,36,48,.14);color:var(--blue);font-size:12px;letter-spacing:.12em;backdrop-filter:blur(12px);transition:opacity .2s,transform .2s}}.toc-toggle span:first-child{{font-size:17px;line-height:1}}body.toc-open .toc-toggle{{opacity:0;pointer-events:none;transform:translate(-12px,-50%)}}.report-toc{{position:fixed;z-index:31;left:14px;top:84px;bottom:18px;width:286px;display:flex;flex-direction:column;overflow:hidden;border:1px solid rgba(35,74,112,.16);border-radius:14px;background:rgba(255,255,255,.97);box-shadow:0 16px 42px rgba(22,42,61,.18);backdrop-filter:blur(16px);transform:translateX(calc(-100% - 30px));transition:transform .24s ease}}body.toc-open .report-toc{{transform:translateX(0)}}.toc-heading{{display:flex;align-items:center;justify-content:space-between;padding:16px 16px 12px;border-bottom:1px solid var(--line);color:var(--blue)}}.toc-heading strong{{font:700 18px Georgia,"Noto Serif CJK SC",serif}}.toc-close{{margin:0;padding:5px 9px;border:1px solid var(--line);border-radius:7px;background:var(--soft);color:var(--blue);font-size:12px}}.toc-nav{{overflow-y:auto;padding:10px}}.toc-link{{display:block;margin:2px 0;padding:7px 10px;border-left:3px solid transparent;border-radius:6px;color:#35465a;font-size:14px;line-height:1.4}}.toc-link:hover{{background:var(--soft);text-decoration:none}}.toc-link.toc-level-0{{margin-top:7px;font-weight:800;color:var(--blue)}}.toc-link.toc-level-1{{padding-left:22px;font-size:13px}}.toc-link.active{{border-left-color:var(--gold);background:#f6edd8;color:#634718}}.toc-scrim{{position:fixed;z-index:30;inset:0;visibility:hidden;background:rgba(18,30,42,.22);opacity:0;transition:opacity .2s,visibility .2s}}body.toc-open .toc-scrim{{visibility:visible;opacity:1}}
 @media(min-width:1500px){{.toc-scrim{{display:none}}}}
 @media(max-width:720px){{.toolbar-inner{{align-items:flex-start;flex-wrap:wrap}}.toolbar input{{order:3;margin:0;width:100%;min-width:0}}.tools{{margin-left:auto}}.summary,.module,.analysis-module,.evaluation,.feedback,.pending{{padding:20px}}.brief{{grid-template-columns:32px minmax(0,1fr);gap:10px 12px}}.brief-heading{{grid-column:1/-1;grid-template-columns:32px 1fr}}.badges{{grid-column:2;justify-content:flex-start}}.brief>figure{{grid-column:2;grid-row:2}}.brief.has-image>.tldr{{grid-column:2;grid-row:3}}.brief:not(.has-image)>.tldr{{grid-column:2;grid-row:2}}.feedback-grid{{grid-template-columns:1fr 1fr}}.toc-toggle{{left:8px;width:38px}}.report-toc{{left:8px;top:72px;bottom:8px;width:min(300px,calc(100vw - 24px))}}}}
-@media print{{body{{background:#fff;font-size:10.5pt}}.masthead{{padding:28px 0;background:#fff!important;color:#172a3d;border-bottom:3px solid #a67424}}.eyebrow{{color:#7a581c}}.metadata{{color:#536273}}.toolbar,.toc-toggle,.report-toc,.toc-scrim,.feedback button,.feedback-note,.feedback-grid,.feedback .comment{{display:none}}.feedback-print{{display:block}}.shell{{width:auto;margin:0 14mm}}main{{padding:12px 0}}.summary,.module,.analysis-module,.evaluation,.feedback,.pending{{box-shadow:none;border:0;border-radius:0;padding:10px 0;margin:0 0 12px}}.source-group,.brief,table,figure{{break-inside:avoid}}details.analysis-notebook:not([open])>.analysis-notebook-body{{display:block!important}}.analysis-notebook summary{{list-style:none}}a{{color:#18202a}}.content-section{{break-before:auto}}}}
+@media print{{body{{background:#fff;font-size:10.5pt}}.masthead{{padding:28px 0;background:#fff!important;color:#172a3d;border-bottom:3px solid #a67424}}.eyebrow{{color:#7a581c}}.metadata{{color:#536273}}.toolbar,.toc-toggle,.report-toc,.toc-scrim,.feedback button,.feedback-note,.feedback-grid,.feedback .comment{{display:none}}.feedback-print{{display:block}}.shell{{width:auto;margin:0 14mm}}main{{padding:12px 0}}.summary,.module,.analysis-module,.evaluation,.feedback,.pending{{box-shadow:none;border:0;border-radius:0;padding:10px 0;margin:0 0 12px}}.source-group,.brief,table,figure{{break-inside:avoid}}.analysis-domain>h3{{break-after:avoid}}.analysis-card{{break-inside:auto}}details.analysis-notebook:not([open])>.analysis-notebook-body{{display:block!important}}.analysis-notebook summary{{list-style:none}}a{{color:#18202a}}.content-section{{break-before:auto}}}}
 </style>
 </head>
 <body>
@@ -899,6 +1032,15 @@ def _reportlab_pdf(
     output_path: Path,
     data_dir: Path | None = None,
 ) -> None:
+    """处理：使用 ReportLab 从报告数据生成离线 PDF 备用投影。
+    输入：
+    - ``report``：当前报告结构；包含栏目、简报或事件、来源引用及质量元数据。
+    - ``evaluation``：独立质量评估对象；包含评分、问题和改进建议。
+    - ``output_path``：当前阶段允许写入的目标路径；父目录和覆盖语义由函数负责。
+    - ``data_dir``：当前运行的唯一数据根；所有状态和版本化产物都必须位于其中。
+    输出：不返回新数据；完成“使用 ReportLab 从报告数据生成离线 PDF 备用投影”，
+      副作用限于该处理声明的受控对象或产物。
+    """
     try:
         from reportlab.lib import colors
         from reportlab.lib.enums import TA_CENTER
@@ -993,12 +1135,32 @@ def _reportlab_pdf(
     )
 
     def paragraph(value: object, style: ParagraphStyle = base) -> Paragraph:
+        """处理：清理输入文本并按指定样式创建可加入 PDF 排版流的正文段落。
+        输入：
+        - ``value``：待解析或规范化的单个输入值；非法值按函数契约返回空值或报错。
+        - ``style``：ReportLab 段落样式；控制字体、字号、行距和段后间距。
+        输出：封装“清理输入文本并按指定样式创建可加入 PDF 排版流的正文段落”业务结果的 ``Paragrap
+          h`` 对象；调用方据此继续相邻阶段或识别无结果状态。
+        """
         return Paragraph(_escape(value).replace("\n", "<br/>"), style)
 
     def bullet(value: object) -> Paragraph:
+        """处理：为清理后的文本添加项目符号并创建可加入 PDF 排版流的列表段落。
+        输入：
+        - ``value``：待解析或规范化的单个输入值；非法值按函数契约返回空值或报错。
+        输出：封装“为清理后的文本添加项目符号并创建可加入 PDF 排版流的列表段落”业务结果的 ``Para
+          graph`` 对象；调用方据此继续相邻阶段或识别无结果状态。
+        """
         return Paragraph(f"• {_escape(value)}", base)
 
     def footer(canvas: Any, document: Any) -> None:
+        """处理：在 ReportLab 当前页面底部绘制稳定页码，不改变正文排版流。
+        输入：
+        - ``canvas``：ReportLab 当前页面画布；页脚函数只在其上绘制页码。
+        - ``document``：当前 ReportLab 文档模板；提供页尺寸以定位页脚。
+        输出：不返回新数据；完成“在 ReportLab 当前页面底部绘制稳定页码，不改变正文排版流”，
+          副作用限于该处理声明的受控对象或产物。
+        """
         canvas.saveState()
         canvas.setFont(font_name, 8)
         canvas.setFillColor(colors.HexColor("#73808D"))
@@ -1229,6 +1391,14 @@ def _edge_pdf(
     *,
     html_document: str | None = None,
 ) -> None:
+    """处理：使用无头 Edge 从安全 HTML 生成打印版 PDF。
+    输入：
+    - ``html_path``：已生成并通过本地路径校验的报告 HTML 文件。
+    - ``output_path``：当前阶段允许写入的目标路径；父目录和覆盖语义由函数负责。
+    - ``html_document``：可选完整 HTML 文本；提供时直接交给浏览器打印，不再读取文件。
+    输出：不返回新数据；完成“使用无头 Edge 从安全 HTML 生成打印版 PDF”，
+      副作用限于该处理声明的受控对象或产物。
+    """
     from playwright.sync_api import sync_playwright
 
     with sync_playwright() as playwright:
@@ -1238,7 +1408,14 @@ def _edge_pdf(
             page.emulate_media(media="print")
 
             def route_request(route: Any) -> None:
+                """处理：拦截 PDF 渲染请求并执行网络访问策略。
+                输入：
+                - ``route``：Playwright 的待处理网络路由；按离线 PDF 策略继续或中止请求。
+                输出：不返回新数据；完成“拦截 PDF 渲染请求并执行网络访问策略”，
+                  副作用限于该处理声明的受控对象或产物。
+                """
                 if route.request.url.startswith(("http://", "https://")):
+                    # PDF 渲染必须离线，避免 HTML 投影在打印时发起隐式网络请求。
                     route.abort()
                 else:
                     route.continue_()
@@ -1284,6 +1461,18 @@ def render_pdf_from_html(
     data_dir: Path | None = None,
     embedded_html: str | None = None,
 ) -> tuple[str, str | None]:
+    """处理：按配置选择 Edge 或 ReportLab，把报告 HTML 投影为 PDF。
+    输入：
+    - ``html_path``：已生成并通过本地路径校验的报告 HTML 文件。
+    - ``pdf_path``：目标版本化 PDF 文件；写入前执行不可覆盖和父目录检查。
+    - ``report``：当前报告结构；包含栏目、简报或事件、来源引用及质量元数据。
+    - ``evaluation``：独立质量评估对象；包含评分、问题和改进建议。
+    - ``engine``：PDF 引擎选择；edge、reportlab 或 auto 决定渲染与回退路径。
+    - ``data_dir``：当前运行的唯一数据根；所有状态和版本化产物都必须位于其中。
+    - ``embedded_html``：已内嵌样式和图片的独立 HTML；供浏览器离线打印 PDF。
+    输出：“按配置选择 Edge 或 ReportLab，把报告 HTML 投影为 PDF”得到的固定结构结果；
+      返回位置依次对应 'reportlab'、warning。
+    """
     pdf_path.parent.mkdir(parents=True, exist_ok=True)
     temporary = pdf_path.with_suffix(".pdf.tmp")
     temporary.unlink(missing_ok=True)
@@ -1312,6 +1501,12 @@ def render_pdf_from_html(
 
 
 def _evaluation_map(data_dir: Path) -> dict[str, dict[str, Any]]:
+    """处理：按报告 ID 和内容哈希索引可用质量评估。
+    输入：
+    - ``data_dir``：当前运行的唯一数据根；所有状态和版本化产物都必须位于其中。
+    输出：“按报告 ID 和内容哈希索引可用质量评估”形成的结构化字典；
+      键值表达该处理定义的业务记录或查找关系。
+    """
     result: dict[str, dict[str, Any]] = {}
     root = data_dir / "evaluations"
     if not root.exists():
@@ -1330,6 +1525,12 @@ def _evaluation_map(data_dir: Path) -> dict[str, dict[str, Any]]:
 
 
 def render_archive_index(data_dir: Path) -> Path:
+    """处理：扫描版本化报告并生成按日期排列的本地 HTML 归档索引。
+    输入：
+    - ``data_dir``：当前运行的唯一数据根；所有状态和版本化产物都必须位于其中。
+    输出：指向“扫描版本化报告并生成按日期排列的本地 HTML 归档索引”所生成、定位或确认产物的本地路
+      径。
+    """
     reports_root = data_dir / "reports"
     reports_root.mkdir(parents=True, exist_ok=True)
     evaluations = _evaluation_map(data_dir)
@@ -1412,6 +1613,11 @@ def render_archive_index(data_dir: Path) -> Path:
 
 
 def resolve_desktop_directory(config: OutputConfig) -> Path:
+    """处理：按输出配置和平台默认值确定桌面交付目录。
+    输入：
+    - ``config``：已校验的应用配置；提供时区、来源策略、并发限制、预算和输出选项。
+    输出：指向“按输出配置和平台默认值确定桌面交付目录”所生成、定位或确认产物的本地路径。
+    """
     if config.desktop_dir:
         return Path(config.desktop_dir).expanduser().resolve()
     if os.name == "nt":
@@ -1429,6 +1635,15 @@ def write_desktop_html(
     evaluation: dict[str, Any] | None = None,
     embedded_image_sources: dict[str, str] | None = None,
 ) -> Path:
+    """处理：生成内嵌图片和绝对链接的独立桌面 HTML 副本。
+    输入：
+    - ``report``：当前报告结构；包含栏目、简报或事件、来源引用及质量元数据。
+    - ``data_dir``：当前运行的唯一数据根；所有状态和版本化产物都必须位于其中。
+    - ``config``：已校验的应用配置；提供时区、来源策略、并发限制、预算和输出选项。
+    - ``evaluation``：独立质量评估对象；包含评分、问题和改进建议。
+    - ``embedded_image_sources``：按图片哈希或路径索引的数据 URI；用于生成可独立打开的 HTML。
+    输出：指向“生成内嵌图片和绝对链接的独立桌面 HTML 副本”所生成、定位或确认产物的本地路径。
+    """
     desktop_dir = resolve_desktop_directory(config)
     stem = (
         f"daily-intelligence-{report['date']}-{report['edition']}"
@@ -1462,6 +1677,16 @@ def write_local_outputs(
     evaluation: dict[str, Any] | None = None,
     open_after_finalize: bool | None = None,
 ) -> dict[str, Any]:
+    """处理：从已验证报告生成 HTML、PDF、桌面副本和归档索引。
+    输入：
+    - ``report``：当前报告结构；包含栏目、简报或事件、来源引用及质量元数据。
+    - ``data_dir``：当前运行的唯一数据根；所有状态和版本化产物都必须位于其中。
+    - ``config``：已校验的应用配置；提供时区、来源策略、并发限制、预算和输出选项。
+    - ``evaluation``：独立质量评估对象；包含评分、问题和改进建议。
+    - ``open_after_finalize``：完成本地输出后是否用默认浏览器打开 HTML。
+    输出：“从已验证报告生成 HTML、PDF、桌面副本和归档索引”形成的结构化字典；
+      典型键包括 pdf_engine、pdf_path。
+    """
     config = validate_output_config(config)
     report_dir = data_dir / "reports" / str(report["date"])
     stem = f"{report['edition']}-r{report['revision']}"
@@ -1476,6 +1701,7 @@ def write_local_outputs(
         else None
     )
     if "html" in config.formats:
+        # HTML/PDF 都从已验证报告对象生成，不回读或修改权威 JSON。
         write_text_atomic(
             html_path,
             render_report_html(
@@ -1524,7 +1750,7 @@ def write_local_outputs(
             result.update({"pdf_path": str(pdf_path), "pdf_engine": engine})
             if warning:
                 warnings.append(warning)
-        except Exception as exc:  # local truth has already been persisted
+        except Exception as exc:  # 本地权威记录已持久化，PDF 失败只产生可重试警告。
             warnings.append(f"PDF output failed: {type(exc).__name__}: {exc}")
             result["pdf_error"] = warnings[-1]
     index_path = render_archive_index(data_dir)

@@ -24,7 +24,12 @@ _USER_AGENT = (
 
 
 def html_index_rows(html: str) -> tuple[str, list[dict[str, Any]]]:
-    """Extract inert link rows from public HTML without executing scripts."""
+    """处理：从公共 HTML 中惰性提取链接行，不执行任何脚本。
+    输入：
+    - ``html``：HTTP 或浏览器取得的不可信 HTML 文本；只执行静态解析。
+    输出：“从公共 HTML 中惰性提取链接行，不执行任何脚本”得到的固定结构结果；
+      返回位置依次对应 title、rows。
+    """
     soup = BeautifulSoup(html, "html.parser")
     title = soup.title.get_text(" ", strip=True) if soup.title else ""
     rows: list[dict[str, Any]] = []
@@ -109,6 +114,16 @@ async def _prefetch_one(
     global_limit: asyncio.Semaphore,
     domain_limits: defaultdict[str, asyncio.Semaphore],
 ) -> SourceResult:
+    """处理：用有界 HTTP 请求预取单个来源页面并分类访问状态。
+    输入：
+    - ``client``：已配置超时、重定向和连接池策略的 HTTP 客户端。
+    - ``source``：来源配置；包含来源 ID、名称、入口 URL、分类、过滤规则、限额和可信层级。
+    - ``url``：调用方提供的 URL；当前函数按处理说明进行规范化、过滤或访问。
+    - ``config``：已校验的应用配置；提供时区、来源策略、并发限制、预算和输出选项。
+    - ``global_limit``：当前网络阶段共享的全局异步信号量。
+    - ``domain_limits``：按主机名懒创建的异步信号量；限制同域并发请求数。
+    输出：供索引汇总的来源采集结果；包含明确状态、错误或挑战信息、页面元数据和规范文章条目。
+    """
     collected_at = now_iso(config.timezone)
     domain = urlsplit(url).netloc.lower()
     async with global_limit, domain_limits[domain]:
@@ -167,6 +182,14 @@ async def _prefetch_all(
     *,
     transport: httpx.AsyncBaseTransport | None = None,
 ) -> dict[tuple[str, str], SourceResult]:
+    """处理：按全局和同域并发限制预取全部来源页面。
+    输入：
+    - ``sources``：本轮选择的来源配置列表；每项定义采集入口、策略和身份信息。
+    - ``config``：已校验的应用配置；提供时区、来源策略、并发限制、预算和输出选项。
+    - ``data_dir``：当前运行的唯一数据根；所有状态和版本化产物都必须位于其中。
+    - ``transport``：测试可注入的 HTTP 传输层；生产通常为空并使用真实网络。
+    输出：供索引汇总的来源采集结果；包含明确状态、错误或挑战信息、页面元数据和规范文章条目。
+    """
     global_limit = asyncio.Semaphore(
         max(1, config.browser.collection_global_concurrency)
     )
@@ -211,11 +234,22 @@ def prefetch_browser_pages(
     config: AppConfig,
     data_dir: Path,
 ) -> dict[tuple[str, str], SourceResult]:
+    """处理：按全局与同域并发限制预取来源页面，供后续采集判断是否需要浏览器。
+    输入：
+    - ``sources``：本轮选择的来源配置列表；每项定义采集入口、策略和身份信息。
+    - ``config``：已校验的应用配置；提供时区、来源策略、并发限制、预算和输出选项。
+    - ``data_dir``：当前运行的唯一数据根；所有状态和版本化产物都必须位于其中。
+    输出：供索引汇总的来源采集结果；包含明确状态、错误或挑战信息、页面元数据和规范文章条目。
+    """
     return asyncio.run(_prefetch_all(sources, config, data_dir))
 
 
 def page_needs_browser(result: SourceResult | None) -> bool:
-    """Decide whether Edge can add value after an HTTP prefetch attempt."""
+    """处理：判断 HTTP 预取之后 Edge 是否仍能增加有效信息。
+    输入：
+    - ``result``：上游 HTTP 预取或来源采集结果；读取状态、响应类型和页面证据决定后续路径。
+    输出：布尔判断；True 表示满足处理说明中的条件，False 表示不满足且不产生该结果。
+    """
     if result is None:
         return True
     status = SourceStatus(result.status)

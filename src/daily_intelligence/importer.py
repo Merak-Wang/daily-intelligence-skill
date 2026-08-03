@@ -22,6 +22,15 @@ SOURCE_NAME_ALIASES = {
 
 
 def import_legacy(path: Path, config: AppConfig, data_dir: Path, edition: str = "imported") -> Path:
+    """处理：读取旧版日报和状态文件，转换后写入当前数据目录结构。
+    输入：
+    - ``path``：当前函数要读取、校验或写入的本地文件路径。
+    - ``config``：已校验的应用配置；提供时区、来源策略、并发限制、预算和输出选项。
+    - ``data_dir``：当前运行的唯一数据根；所有状态和版本化产物都必须位于其中。
+    - ``edition``：日报版本标识，通常为 morning 或 evening；参与窗口和产物命名。
+    输出：指向“读取旧版日报和状态文件，
+      转换后写入当前数据目录结构”所生成、定位或确认产物的本地路径。
+    """
     raw = read_json(path)
     if not isinstance(raw, list):
         raise ValueError("Legacy input must be a list of source result objects")

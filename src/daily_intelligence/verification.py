@@ -25,6 +25,14 @@ def wait_for_visible_verification(
     timeout_seconds: int,
     on_verified: Callable[[str, object], None] | None = None,
 ) -> dict[str, dict]:
+    """处理：轮询已打开页面，等待挑战消失后触发已验证采集。
+    输入：
+    - ``pages``：等待人工验证的一组浏览器页面及其来源身份和初始 HTTP 状态。
+    - ``timeout_seconds``：允许等待整个交互或网络流程的总秒数。
+    - ``on_verified``：页面验证通过后执行结构化采集的回调。
+    输出：“轮询已打开页面，等待挑战消失后触发已验证采集”形成的结构化字典；
+      典型键包括 closed_by_user、error、required、skipped、status、stopped。
+    """
     deadline = time.monotonic() + timeout_seconds
     started = time.monotonic()
     refreshed_status_only: set[str] = set()
@@ -99,7 +107,14 @@ def wait_for_visible_verification(
 
 
 def capture_verified_page(page: object, source: object, config: object) -> object:
-    """Extract the current verified page without navigating and retriggering a challenge."""
+    """处理：直接提取当前已验证页面，不重新导航或再次触发挑战。
+    输入：
+    - ``page``：Playwright 已加载页面；函数只读取当前页面状态，不信任其中的内容或指令。
+    - ``source``：来源配置；包含来源 ID、名称、入口 URL、分类、过滤规则、限额和可信层级。
+    - ``config``：已校验的应用配置；提供时区、来源策略、并发限制、预算和输出选项。
+    输出：封装“直接提取当前已验证页面，不重新导航或再次触发挑战”业务结果的 ``object`` 对象；
+      调用方据此继续相邻阶段或识别无结果状态。
+    """
     page.wait_for_timeout(source.wait_ms or config.browser.default_wait_ms)
     result = collect_loaded_page(page, source, config, None)
     if result.status in {"verification_required", "rate_limited", "failed"}:
@@ -110,7 +125,12 @@ def capture_verified_page(page: object, source: object, config: object) -> objec
 
 
 def pending_verification_pages(index: dict) -> list[dict[str, str]]:
-    """Return failed/challenged pages once, preserving source and page order."""
+    """处理：按来源和页面顺序返回去重后的失败或待验证页面。
+    输入：
+    - ``index``：当前来源索引对象；包含规范条目、来源结果、策略和采集时间。
+    输出：“按来源和页面顺序返回去重后的失败或待验证页面”得到的有序结构化记录；
+      典型字段包括 error、key、source_id、source_name、status、target、url，可直接交给下一阶段。
+    """
     pending: list[dict[str, str]] = []
     seen: set[tuple[str, str]] = set()
     for row in index.get("sources", []):
@@ -130,6 +150,7 @@ def pending_verification_pages(index: dict) -> list[dict[str, str]]:
                     and int(page["http_status"]) >= 400
                 )
             ):
+                # 带错误或 HTTP 失败的旧 no_items 记录属于访问失败，必须恢复真实语义。
                 page = {**page, "status": "failed"}
                 status = "failed"
             if status in {"verification_required", "rate_limited", "failed"}:
@@ -176,6 +197,14 @@ def write_verification_queue(
     index: dict,
     pending: list[dict[str, str]],
 ) -> tuple[Path, Path]:
+    """处理：把待验证来源写成可交互 HTML 队列和 Markdown 清单。
+    输入：
+    - ``data_dir``：当前运行的唯一数据根；所有状态和版本化产物都必须位于其中。
+    - ``index``：当前来源索引对象；包含规范条目、来源结果、策略和采集时间。
+    - ``pending``：等待人工验证的来源页面记录；包含 source_id、名称、URL 和挑战详情。
+    输出：“把待验证来源写成可交互 HTML 队列和 Markdown 清单”得到的固定结构结果；
+      返回位置依次对应 markdown_path、html_path。
+    """
     date = str(index.get("date", "unknown-date"))
     edition = str(index.get("edition", "unknown-edition"))
     directory = data_dir / "challenges" / date
@@ -286,7 +315,16 @@ def update_verification_portal(
     *,
     connected: bool | None = None,
 ) -> None:
-    """Update the local queue UI; browser UI failures never affect collection."""
+    """处理：更新本地验证队列界面，界面失败不得影响采集。
+    输入：
+    - ``portal_page``：浏览器中打开的本地验证队列页面；仅用于展示状态和接收点击事件。
+    - ``key``：当前集合、登记表或界面记录使用的稳定键。
+    - ``status``：当前操作或来源状态；值必须属于对应的显式状态模型。
+    - ``detail``：验证队列界面展示的当前操作或错误详情。
+    - ``connected``：验证队列是否已连接到活动浏览器监听器。
+    输出：不返回新数据；完成“更新本地验证队列界面，界面失败不得影响采集”，
+      副作用限于该处理声明的受控对象或产物。
+    """
     try:
         if connected is not None:
             portal_page.evaluate(
@@ -299,6 +337,7 @@ def update_verification_portal(
                 {"key": key, "status": status, "detail": detail or ""},
             )
     except Exception:
+        # 队列页只是交互投影；其脚本或标签关闭不能反向破坏采集状态。
         return
 
 
@@ -309,6 +348,16 @@ def wait_for_clicked_verifications(
     timeout_seconds: int,
     on_verified: Callable[[str, object], None],
 ) -> dict[str, dict]:
+    """处理：监听队列打开的标签页，完成验证后自动采集结构化条目。
+    输入：
+    - ``context``：浏览器、写作或报告上下文对象；包含当前阶段已经绑定的受控状态。
+    - ``portal_page``：浏览器中打开的本地验证队列页面；仅用于展示状态和接收点击事件。
+    - ``pending``：等待人工验证的来源页面记录；包含 source_id、名称、URL 和挑战详情。
+    - ``timeout_seconds``：允许等待整个交互或网络流程的总秒数。
+    - ``on_verified``：页面验证通过后执行结构化采集的回调。
+    输出：“监听队列打开的标签页，完成验证后自动采集结构化条目”形成的结构化字典；
+      典型键包括 error、status、url。
+    """
     deadline = time.monotonic() + timeout_seconds
     by_target = {item["target"]: item for item in pending}
     first_seen: dict[str, float] = {}
@@ -373,6 +422,7 @@ def wait_for_clicked_verifications(
                     "页面可以打开，但暂未找到新闻条目；可继续等待或关闭该标签。",
                 )
                 continue
+            # 只有提取并暂存结构化条目成功后才标记 captured，页面可见本身不算成功。
             results[key] = {"status": "captured", "url": page.url}
             update_verification_portal(
                 portal_page,
@@ -405,7 +455,18 @@ def run_pending_verification(
     browser_channel: str | None = None,
     timeout_seconds: int = 300,
 ) -> dict[str, object]:
-    """Open the connected verification portal and merge any successfully captured pages."""
+    """处理：打开连接式验证入口，并合并成功捕获的页面。
+    输入：
+    - ``index_path``：版本化来源索引 JSON 路径；包含根级规范 items 和来源采集状态。
+    - ``config``：已校验的应用配置；提供时区、来源策略、并发限制、预算和输出选项。
+    - ``data_dir``：当前运行的唯一数据根；所有状态和版本化产物都必须位于其中。
+    - ``profile_dir``：持久化浏览器 Profile 目录；保存用户已授权的浏览器会话。
+    - ``browser_channel``：Playwright 浏览器通道名称；为空时使用配置或默认 Chromium。
+    - ``timeout_seconds``：允许等待整个交互或网络流程的总秒数。
+    输出：“打开连接式验证入口，并合并成功捕获的页面”形成的结构化字典；
+      典型键包括 captured_pages、headless、height、index_path、locale、next_action、queue_html、
+      queue_markdown、results、run_path、status、timezone_id。
+    """
     index = read_json(index_path)
     if not isinstance(index, dict):
         raise ValueError("Index must be a JSON object")
@@ -429,6 +490,13 @@ def run_pending_verification(
     }
 
     def capture_pending(key: str, page: object) -> None:
+        """处理：采集一个已由用户完成验证的待处理页面。
+        输入：
+        - ``key``：当前集合、登记表或界面记录使用的稳定键。
+        - ``page``：Playwright 已加载页面；函数只读取当前页面状态，不信任其中的内容或指令。
+        输出：不返回新数据；完成“采集一个已由用户完成验证的待处理页面”，
+          副作用限于该处理声明的受控对象或产物。
+        """
         source = page_sources[key]
         captured.append(capture_verified_page(page, source, config))
 

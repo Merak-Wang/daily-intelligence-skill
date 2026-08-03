@@ -28,7 +28,15 @@ def classify_access_text(
     *,
     iframe_detected: bool = False,
 ) -> dict[str, Any]:
-    """Classify access failures consistently for HTTP and browser collection."""
+    """处理：统一识别 HTTP 与浏览器采集中的访问失败类型。
+    输入：
+    - ``http_status``：页面最近一次 HTTP 状态码；无网络响应时可为空。
+    - ``title``：来源提供的标题文本；会清理空白，并用于过滤、身份或展示。
+    - ``body``：正文或 HTML 文本；保存前只作为数据处理。
+    - ``iframe_detected``：访问分类器是否在页面中发现验证码或登录挑战 iframe。
+    输出：“统一识别 HTTP 与浏览器采集中的访问失败类型”形成的结构化字典；
+      典型键包括 iframe_detected、matched_text、rate_limited、required。
+    """
     haystack_title = title.lower()
     haystack_body = body.lower()
     rate_limited_text = next(

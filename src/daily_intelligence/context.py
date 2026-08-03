@@ -34,6 +34,12 @@ _CANDIDATE_FIELDS = (
 
 
 def _read_state(path: Path) -> list[dict[str, Any]]:
+    """处理：读取论点或观察状态文件，并在文件缺失或根结构非法时返回空记录。
+    输入：
+    - ``path``：当前函数要读取、校验或写入的本地文件路径。
+    输出：“读取论点或观察状态文件，并在文件缺失或根结构非法时返回空记录”得到的有序结构化记录；
+      典型字段包括 items、schema_version，可直接交给下一阶段。
+    """
     if not path.exists():
         payload = {"schema_version": "1.0", "items": []}
         write_json(path, payload)
@@ -52,6 +58,15 @@ def _load_reports(
     edition: str,
     output_language: str = "zh-CN",
 ) -> tuple[list[dict[str, Any]], list[str], set[str]]:
+    """处理：按版本顺序读取历史报告 JSON，并分离正文报告与独立评估记录。
+    输入：
+    - ``reports_dir``：历史版本化报告目录；用于寻找连续性和语义复用候选。
+    - ``date``：日报日期字符串；用于选择历史记录和版本化目录。
+    - ``edition``：日报版本标识，通常为 morning 或 evening；参与窗口和产物命名。
+    - ``output_language``：目标报告语言；决定标题译文字段、校验规则和界面文本。
+    输出：“按版本顺序读取历史报告 JSON，并分离正文报告与独立评估记录”得到的固定结构结果；
+      返回位置依次对应 entries、warnings、reported_item_ids。
+    """
     reports: list[tuple[str, Path, dict[str, Any]]] = []
     warnings: list[str] = []
     for path in reports_dir.glob("*/*.json"):
@@ -94,6 +109,13 @@ def _load_reports(
 
 
 def _separate_evaluation(path: Path, report: dict[str, Any]) -> dict[str, Any] | None:
+    """处理：从历史报告副本剥离质量评估，避免污染语义上下文。
+    输入：
+    - ``path``：当前函数要读取、校验或写入的本地文件路径。
+    - ``report``：当前报告结构；包含栏目、简报或事件、来源引用及质量元数据。
+    输出：“从历史报告副本剥离质量评估，避免污染语义上下文”形成的结构化字典；
+      键值表达该处理定义的业务记录或查找关系。
+    """
     evaluation_dir = path.parents[2] / "evaluations" / str(report.get("date", ""))
     candidates: list[tuple[int, dict[str, Any]]] = []
     for evaluation_path in evaluation_dir.glob(f"{report.get('edition')}-r*.json"):
@@ -111,6 +133,14 @@ def _separate_evaluation(path: Path, report: dict[str, Any]) -> dict[str, Any] |
 
 
 def _continuity_entry(path: Path, report: dict[str, Any]) -> dict[str, Any]:
+    """处理：把历史报告压缩成跨版本连续性摘要。
+    输入：
+    - ``path``：当前函数要读取、校验或写入的本地文件路径。
+    - ``report``：当前报告结构；包含栏目、简报或事件、来源引用及质量元数据。
+    输出：“把历史报告压缩成跨版本连续性摘要”形成的结构化字典；
+      典型键包括 analyses、continuity_override、date、edition、event_id、events、excluded、impor
+      tance、language、path、quality_evaluation、report_id。
+    """
     evaluation = _separate_evaluation(path, report) or report.get("quality_evaluation")
     if isinstance(evaluation, dict):
         decision, excluded, continuity_override = evaluation_continuity_floor(evaluation)
@@ -176,6 +206,16 @@ def _compact_candidates(
     report_targets: dict[str, int],
     reported_item_ids: set[str],
 ) -> list[dict[str, Any]]:
+    """处理：按来源限额、时间和报告历史压缩索引候选。
+    输入：
+    - ``index``：当前来源索引对象；包含规范条目、来源结果、策略和采集时间。
+    - ``per_source``：每个来源允许进入情境包的默认候选数量。
+    - ``report_targets``：按来源 ID 记录的报告目标数；用于平衡情境候选。
+    - ``reported_item_ids``：历史报告已经使用的条目 ID；用于标记连续报道和避免重复。
+    输出：“按来源限额、时间和报告历史压缩索引候选”得到的有序结构化记录；
+      典型字段包括 previously_reported、semantic_fingerprint、source_candidate_rank、source_lang
+      uage、source_rank，可直接交给下一阶段。
+    """
     grouped: dict[str, list[dict[str, Any]]] = {}
     for item in index.get("items", []):
         if isinstance(item, dict) and item.get("source_id"):
@@ -198,6 +238,13 @@ def _compact_candidates(
             )
 
         def sort_key(row: tuple[dict[str, Any], int]) -> tuple[int, int, float, int]:
+            """处理：生成用于稳定排序的比较键。
+            输入：
+            - ``row``：一条上游结构化记录；包含当前排序或转换步骤需要的字段。
+            输出：“生成用于稳定排序的比较键”得到的固定结构结果；
+              返回位置依次对应 0 if enriched else 1、0 if published_timestamp is not 、-(publish
+              ed_timestamp or 0.0)、source_rank。
+            """
             item, source_rank = row
             enriched = item.get("content_status") in {"full_text", "partial"}
             published_at = str(item.get("published_at") or "").strip()
@@ -252,6 +299,14 @@ def _source_limit(
     field: str,
     default: int,
 ) -> int:
+    """处理：读取来源级整数限额，异常或缺失时采用默认值。
+    输入：
+    - ``source_configs``：按来源 ID 索引的来源配置，用于读取配额和策略。
+    - ``source_id``：来源的稳定 ID；用于配置查找、索引关联和状态分区。
+    - ``field``：来源配置中待读取的配额字段名，例如 report_target 或 report_max。
+    - ``default``：配置字段缺失或非法时采用的受控默认值。
+    输出：上述规则计算出的计数、分数、排名或限制值，供确定性决策使用。
+    """
     source = source_configs.get(str(source_id))
     return int(getattr(source, field, default))
 
@@ -259,6 +314,13 @@ def _source_limit(
 def _balanced_source_batches(
     candidates: list[dict[str, Any]], maximum_batches: int = 3
 ) -> list[dict[str, Any]]:
+    """处理：以轮询方式把候选均衡分配到写作批次。
+    输入：
+    - ``candidates``：情境阶段筛选出的候选记录；每项含条目身份、来源、证据、正文和语义缓存。
+    - ``maximum_batches``：写作阶段允许创建的最大批次数；用于限制并行委派规模。
+    输出：“以轮询方式把候选均衡分配到写作批次”得到的有序结构化记录；
+      典型字段包括 batch_id、candidate_count、source_ids，可直接交给下一阶段。
+    """
     counts: dict[str, int] = {}
     for item in candidates:
         source_id = str(item.get("source_id") or "")
@@ -287,6 +349,16 @@ def _build_brief_plan(
     batches: list[dict[str, Any]],
     reusable_briefs: dict[str, dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
+    """处理：结合来源目标、复用结果和批次分配生成逐条写作计划。
+    输入：
+    - ``candidates``：情境阶段筛选出的候选记录；每项含条目身份、来源、证据、正文和语义缓存。
+    - ``source_configs``：按来源 ID 索引的来源配置，用于读取配额和策略。
+    - ``batches``：平衡算法生成的写作批次；每批声明来源、候选 ID 和预计规模。
+    - ``reusable_briefs``：按 item_id 索引且指纹匹配的历史语义简报；可跳过重复写作。
+    输出：“结合来源目标、复用结果和批次分配生成逐条写作计划”得到的有序结构化记录；
+      典型字段包括 author_item_ids、batch_id、default_item_ids、reuse_item_ids、section_id、sour
+      ce_id、target_count，可直接交给下一阶段。
+    """
     reusable_briefs = reusable_briefs or {}
     grouped: dict[str, list[dict[str, Any]]] = {}
     for item in candidates:
@@ -341,6 +413,20 @@ def _write_brief_authoring_packets(
     edition: str,
     output_language: str,
 ) -> list[dict[str, Any]]:
+    """处理：为每个均衡批次写入有界候选、权限和提交命令。
+    输入：
+    - ``candidates``：情境阶段筛选出的候选记录；每项含条目身份、来源、证据、正文和语义缓存。
+    - ``brief_plan``：每个候选的写作计划；标明复用、委派、批次和降级策略。
+    - ``batches``：平衡算法生成的写作批次；每批声明来源、候选 ID 和预计规模。
+    - ``context_dir``：当前日期和版本的情境产物目录；保存批次包和计划文件。
+    - ``context_stem``：情境文件的稳定主文件名；派生批次包沿用此前缀。
+    - ``edition``：日报版本标识，通常为 morning 或 evening；参与窗口和产物命名。
+    - ``output_language``：目标报告语言；决定标题译文字段、校验规则和界面文本。
+    输出：“为每个均衡批次写入有界候选、权限和提交命令”得到的有序结构化记录；
+      典型字段包括 accepted_result_path、author_item_count、author_item_ids、batch_id、brief_pla
+      n、candidates、draft_result_path、edition、output_language、packet_path、repair_policy、re
+      quired_output_fields，可直接交给下一阶段。
+    """
     candidates_by_id = {
         str(item.get("item_id")): item
         for item in candidates
@@ -433,6 +519,17 @@ def build_context(
     collection_window: dict[str, str] | None = None,
     output_language: str | None = None,
 ) -> Path:
+    """处理：从权威索引、历史报告和语义缓存构建有界写作情境及批次任务包。
+    输入：
+    - ``index_path``：版本化来源索引 JSON 路径；包含根级规范 items 和来源采集状态。
+    - ``config``：已校验的应用配置；提供时区、来源策略、并发限制、预算和输出选项。
+    - ``data_dir``：当前运行的唯一数据根；所有状态和版本化产物都必须位于其中。
+    - ``edition``：日报版本标识，通常为 morning 或 evening；参与窗口和产物命名。
+    - ``collection_window``：本次日报允许纳入内容的起止时间；用于候选时效过滤。
+    - ``output_language``：目标报告语言；决定标题译文字段、校验规则和界面文本。
+    输出：指向“从权威索引、历史报告和语义缓存构建有界写作情境及批次任务包”所生成、定位或确认产物
+      的本地路径。
+    """
     target_language = validate_output_language(
         output_language or config.output.language
     )
@@ -471,6 +568,7 @@ def build_context(
         reported_item_ids,
     )
     semantic_cache = load_semantic_cache(data_dir)
+    # 只有条目指纹与目标语言均匹配的已验证简报才能复用，防止内容变化后沿用旧语义。
     reusable_briefs = {
         str(item["item_id"]): reusable
         for item in candidates
@@ -484,6 +582,7 @@ def build_context(
     authoring_candidates = [
         item for item in candidates if str(item.get("item_id")) not in reusable_briefs
     ]
+    # 按来源均衡分批，避免单一高产来源吞掉有限的写作上下文与并行槽位。
     brief_batches = _balanced_source_batches(authoring_candidates)
     brief_plan = _build_brief_plan(
         candidates,
@@ -686,6 +785,7 @@ def build_context(
         },
     }
     output = context_dir / f"{context_stem}.json"
+    # 带修订号的情境包是不可变记录；latest 仅用于方便定位当前版本。
     write_immutable_json(output, bundle)
     write_json(data_dir / "context" / f"latest-{edition}.json", bundle)
     return output

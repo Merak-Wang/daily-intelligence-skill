@@ -12,7 +12,7 @@ turns scattered signals into a reviewable decision trail that teams can brief,
 archive, and revisit.
 
 [Report gallery](#report-gallery) · [Quick start](#quick-start) ·
-[Developer wiki](https://github.com/Merak-Wang/signaltrail-skill/blob/main/wiki/Home.md) ·
+[Engineering records](https://github.com/Merak-Wang/signaltrail-skill/blob/main/docs/README.md) ·
 [Hermes skill](SKILL.md)
 
 [![Hermes Agent](https://img.shields.io/badge/Hermes-Agent-6C5CE7?style=flat-square)](https://hermes-agent.nousresearch.com/)
@@ -254,7 +254,7 @@ the community pull request.
   [references/system-design.md](references/system-design.md)
 - Windows setup: [references/windows-setup.md](references/windows-setup.md)
 - Notion setup: [references/notion-setup.md](references/notion-setup.md)
-- Developer wiki: [wiki/Home.md](https://github.com/Merak-Wang/signaltrail-skill/blob/main/wiki/Home.md)
+- Engineering records: [docs/README.md](https://github.com/Merak-Wang/signaltrail-skill/blob/main/docs/README.md)
 - Release history: [CHANGELOG.md](CHANGELOG.md)
 
 ## Development

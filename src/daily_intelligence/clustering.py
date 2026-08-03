@@ -62,17 +62,40 @@ _SEVERITY_TERMS = {
 
 
 class _UnionFind:
+    """处理：维护确定性文章聚类使用的并查集。
+    输入：
+    - ``size``：并查集需要管理的候选数量；初始化时每个下标独立成组。
+    输出：构造后的 ``_UnionFind`` 实例或枚举定义；其字段和方法共同承担上述职责。
+    """
     def __init__(self, size: int) -> None:
+        """处理：初始化当前实例及其内部状态。
+        输入：
+        - ``size``：并查集需要管理的候选数量；初始化时每个下标独立成组。
+        输出：不返回新数据；完成“初始化当前实例及其内部状态”，
+          副作用限于该处理声明的受控对象或产物。
+        """
         self.parent = list(range(size))
         self.rank = [0] * size
 
     def find(self, value: int) -> int:
+        """处理：查找并返回当前并查集节点的根节点。
+        输入：
+        - ``value``：待解析或规范化的单个输入值；非法值按函数契约返回空值或报错。
+        输出：上述规则计算出的计数、分数、排名或限制值，供确定性决策使用。
+        """
         while self.parent[value] != value:
             self.parent[value] = self.parent[self.parent[value]]
             value = self.parent[value]
         return value
 
     def union(self, left: int, right: int) -> None:
+        """处理：合并两个并查集节点所属的集合。
+        输入：
+        - ``left``：待合并集合中第一个元素的整数下标。
+        - ``right``：待合并集合中第二个元素的整数下标。
+        输出：不返回新数据；完成“合并两个并查集节点所属的集合”，
+          副作用限于该处理声明的受控对象或产物。
+        """
         left_root = self.find(left)
         right_root = self.find(right)
         if left_root == right_root:
@@ -85,12 +108,24 @@ class _UnionFind:
 
 
 def _normalized_title(value: str) -> str:
+    """处理：统一标题大小写、空白和标点，保留可比较字符。
+    输入：
+    - ``value``：待解析或规范化的单个输入值；非法值按函数契约返回空值或报错。
+    输出：“统一标题大小写、空白和标点，保留可比较字符”得到的规范字符串，
+      供调用方存储、比较或展示。
+    """
     return " ".join(
         re.sub(r"[^\w\u3400-\u9fff]+", " ", (value or "").casefold()).split()
     )
 
 
 def lexical_tokens(value: str) -> list[str]:
+    """处理：把中英文标题拆成去停用词的词项和中文二元组。
+    输入：
+    - ``value``：待解析或规范化的单个输入值；非法值按函数契约返回空值或报错。
+    输出：“把中英文标题拆成去停用词的词项和中文二元组”得到的字符串列表；
+      顺序保持确定并可供下一步骤逐项处理。
+    """
     normalized = _normalized_title(value)
     tokens = [
         token
@@ -106,12 +141,26 @@ def lexical_tokens(value: str) -> list[str]:
 
 
 def _hash_feature(feature: str, dimensions: int) -> tuple[int, float]:
+    """处理：把词法特征稳定映射到带符号的固定维度位置。
+    输入：
+    - ``feature``：从文章标题提取的词法特征；会被稳定哈希到固定向量维度。
+    - ``dimensions``：词法哈希向量的维度数；决定碰撞率与计算开销。
+    输出：“把词法特征稳定映射到带符号的固定维度位置”得到的固定结构结果；
+      返回位置依次对应 number % dimensions、-1.0 if number & 1 << 63 else 1.。
+    """
     digest = hashlib.blake2b(feature.encode("utf-8"), digest_size=8).digest()
     number = int.from_bytes(digest, "big")
     return number % dimensions, -1.0 if number & (1 << 63) else 1.0
 
 
 def lexical_vector(value: str, dimensions: int = 512) -> dict[int, float]:
+    """处理：用词项、相邻词和字符特征构建归一化稀疏向量。
+    输入：
+    - ``value``：待解析或规范化的单个输入值；非法值按函数契约返回空值或报错。
+    - ``dimensions``：词法哈希向量的维度数；决定碰撞率与计算开销。
+    输出：“用词项、相邻词和字符特征构建归一化稀疏向量”形成的结构化字典；
+      键值表达该处理定义的业务记录或查找关系。
+    """
     tokens = lexical_tokens(value)
     features = [f"u:{token}" for token in tokens]
     features.extend(
@@ -133,12 +182,25 @@ def lexical_vector(value: str, dimensions: int = 512) -> dict[int, float]:
 
 
 def cosine_similarity(left: dict[int, float], right: dict[int, float]) -> float:
+    """处理：计算两个稀疏归一化向量的余弦相似度。
+    输入：
+    - ``left``：第一篇候选文章的稀疏词法向量；键是哈希维度，值是归一化词频。
+    - ``right``：第二篇候选文章的稀疏词法向量；与 left 在相同哈希空间比较。
+    输出：上述规则计算出的连续数值，例如相似度、耗时或比例。
+    """
     if len(left) > len(right):
         left, right = right, left
     return sum(weight * right.get(position, 0.0) for position, weight in left.items())
 
 
 def _parse_time(item: dict[str, Any]) -> datetime | None:
+    """处理：把可选 ISO 时间文本解析为带时区时间，空值或非法值返回 None。
+    输入：
+    - ``item``：单个规范条目对象；通常包含 item_id、来源、标题、URL、时间和元数据。
+    输出：封装“把可选 ISO 时间文本解析为带时区时间，
+      空值或非法值返回 None”业务结果的 ``datetime | None`` 对象；
+      调用方据此继续相邻阶段或识别无结果状态。
+    """
     value = item.get("published_at") or item.get("discovered_at")
     if not value:
         return None
@@ -150,6 +212,12 @@ def _parse_time(item: dict[str, Any]) -> datetime | None:
 
 
 def _containment_match(left: str, right: str) -> bool:
+    """处理：判断一个具有足够长度的规范标题是否包含于另一个标题。
+    输入：
+    - ``left``：第一条已清理标题；用于判断它是否完整包含另一标题。
+    - ``right``：第二条已清理标题；用于判断它是否完整包含另一标题。
+    输出：布尔判断；True 表示满足处理说明中的条件，False 表示不满足且不产生该结果。
+    """
     left_compact = re.sub(r"\s+", "", _normalized_title(left))
     right_compact = re.sub(r"\s+", "", _normalized_title(right))
     shorter, longer = sorted((left_compact, right_compact), key=len)
@@ -157,6 +225,11 @@ def _containment_match(left: str, right: str) -> bool:
 
 
 def _role_score(item: dict[str, Any]) -> int:
+    """处理：把来源角色转换为聚类重要性分值。
+    输入：
+    - ``item``：单个规范条目对象；通常包含 item_id、来源、标题、URL、时间和元数据。
+    输出：上述规则计算出的计数、分数、排名或限制值，供确定性决策使用。
+    """
     metadata = item.get("metadata", {}) if isinstance(item.get("metadata"), dict) else {}
     role = str(metadata.get("role") or "discovery")
     return {"primary": 10, "evidence": 8, "corroboration": 7, "discovery": 4}.get(
@@ -165,6 +238,11 @@ def _role_score(item: dict[str, Any]) -> int:
 
 
 def _tier(item: dict[str, Any]) -> int:
+    """处理：把来源层级规范到 1 至 3，异常值回退到第二层。
+    输入：
+    - ``item``：单个规范条目对象；通常包含 item_id、来源、标题、URL、时间和元数据。
+    输出：上述规则计算出的计数、分数、排名或限制值，供确定性决策使用。
+    """
     metadata = item.get("metadata", {}) if isinstance(item.get("metadata"), dict) else {}
     try:
         return min(3, max(1, int(metadata.get("tier", 2))))
@@ -173,6 +251,12 @@ def _tier(item: dict[str, Any]) -> int:
 
 
 def _representative(items: list[dict[str, Any]]) -> dict[str, Any]:
+    """处理：按层级、角色、标题信息量和 ID 稳定选择代表条目。
+    输入：
+    - ``items``：规范条目列表；每项带稳定身份并可进入聚类、报告或渲染步骤。
+    输出：“按层级、角色、标题信息量和 ID 稳定选择代表条目”形成的结构化字典；
+      键值表达该处理定义的业务记录或查找关系。
+    """
     return min(
         items,
         key=lambda item: (
@@ -189,6 +273,13 @@ def _cluster_importance(
     generated_at: datetime,
     prior_item_ids: set[str],
 ) -> int:
+    """处理：综合来源层级、佐证、时效、严重性和新颖度计算聚类分数。
+    输入：
+    - ``items``：规范条目列表；每项带稳定身份并可进入聚类、报告或渲染步骤。
+    - ``generated_at``：当前快照或产物的生成时间；用于时效计算和确定性排序。
+    - ``prior_item_ids``：历史报告已经出现的条目 ID；命中后降低故事新鲜度评分。
+    输出：上述规则计算出的计数、分数、排名或限制值，供确定性决策使用。
+    """
     representative = _representative(items)
     tier_score = {1: 25, 2: 18, 3: 12}[_tier(representative)]
     role_score = _role_score(representative)
@@ -217,7 +308,17 @@ def cluster_articles(
     threshold: float = 0.68,
     previous_clusters: list[dict[str, Any]] | None = None,
 ) -> list[dict[str, Any]]:
-    """Cluster same-story headlines with deterministic, model-free lexical features."""
+    """处理：使用确定性的零模型词法特征聚合同一事件的标题。
+    输入：
+    - ``items``：规范条目列表；每项带稳定身份并可进入聚类、报告或渲染步骤。
+    - ``generated_at``：当前快照或产物的生成时间；用于时效计算和确定性排序。
+    - ``threshold``：聚类判定阈值；相似度达到该值时可合并候选。
+    - ``previous_clusters``：上一份监控快照的故事簇；用于复用稳定 story_id 和连续性状态。
+    输出：“使用确定性的零模型词法特征聚合同一事件的标题”得到的有序结构化记录；
+      典型字段包括 category、first_seen_at、image_url、importance、item_ids、last_seen_at、modul
+      e、phase、published_at、representative_item_id、source_count、source_ids，
+      可直接交给下一阶段。
+    """
     if not items:
         return []
     generated = datetime.fromisoformat(generated_at.replace("Z", "+00:00"))
@@ -234,6 +335,7 @@ def cluster_articles(
         elif canonical:
             canonical_to_index[canonical] = index
         candidates: set[int] = set()
+        # 倒排索引只比较共享词项的近期候选，避免对全部标题做平方级两两比较。
         for token in sorted(token_sets[index]):
             candidates.update(inverted[token][-80:])
         for candidate in candidates:
@@ -242,6 +344,7 @@ def cluster_articles(
             inverted[token].append(index)
 
     union = _UnionFind(len(items))
+    # 排序后合并保证相同输入产生相同的并查集结构与聚类结果。
     for left, right in sorted(pairs):
         left_item = items[left]
         right_item = items[right]
@@ -292,8 +395,10 @@ def cluster_articles(
             }
         )
         if old_story_ids:
+            # 只要与旧聚类共享条目，就沿用最小的稳定 story_id，保持跨快照连续性。
             story_id = old_story_ids[0]
         else:
+            # 新故事由确定性的代表标题生成身份，不依赖本次列表顺序。
             identity = _normalized_title(str(representative.get("title") or ""))
             digest = hashlib.sha256(identity.encode("utf-8")).hexdigest()[:12]
             story_id = f"story-{digest}"

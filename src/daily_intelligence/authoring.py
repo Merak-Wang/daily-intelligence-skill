@@ -26,6 +26,12 @@ _ALLOWED_BRIEF_STATUSES = {"NEW", "UPD", "CONF", "REV", "WATCH", "CLOSED"}
 
 
 class AuthoringStatus(StrEnum):
+    """处理：定义写作状态的可用枚举值。
+    输入：
+    - 无显式业务参数：不声明额外构造字段；该定义以 ``StrEnum`` 为基础，
+      通过类成员承担“定义写作状态的可用枚举值”职责。
+    输出：构造后的 ``AuthoringStatus`` 实例或枚举定义；其字段和方法共同承担上述职责。
+    """
     DISPATCHED = "dispatched"
     ANALYSIS_PENDING = "analysis_pending"
     READY = "ready"
@@ -33,6 +39,13 @@ class AuthoringStatus(StrEnum):
 
 
 def _parse_timestamp(value: object) -> datetime | None:
+    """处理：把可选 ISO 时间文本解析为带时区时间，空值或非法值返回 None。
+    输入：
+    - ``value``：待解析或规范化的单个输入值；非法值按函数契约返回空值或报错。
+    输出：封装“把可选 ISO 时间文本解析为带时区时间，
+      空值或非法值返回 None”业务结果的 ``datetime | None`` 对象；
+      调用方据此继续相邻阶段或识别无结果状态。
+    """
     try:
         parsed = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
     except (TypeError, ValueError):
@@ -43,6 +56,13 @@ def _parse_timestamp(value: object) -> datetime | None:
 
 
 def _seconds_between(start: object, end: object) -> float | None:
+    """处理：计算两个 ISO 时间戳之间的非负秒数。
+    输入：
+    - ``start``：上游记录的流程开始时间；与 end 一起计算非负耗时。
+    - ``end``：上游记录的流程结束时间；早于 start 时耗时按零处理。
+    输出：封装“计算两个 ISO 时间戳之间的非负秒数”业务结果的 ``float | None`` 对象；
+      调用方据此继续相邻阶段或识别无结果状态。
+    """
     start_time = _parse_timestamp(start)
     end_time = _parse_timestamp(end)
     if start_time is None or end_time is None:
@@ -51,6 +71,13 @@ def _seconds_between(start: object, end: object) -> float | None:
 
 
 def _authoring_paths(context_path: Path) -> dict[str, Path]:
+    """处理：根据情境包位置派生写作会话、骨架、分析和草稿文件路径。
+    输入：
+    - ``context_path``：版本化写作情境包路径；包含候选、预算、批次和历史连续性信息。
+    输出：“根据情境包位置派生写作会话、骨架、分析和草稿文件路径”形成的结构化字典；
+      典型键包括 analysis_draft、analysis_packet、delegation_metrics、delegation_metrics_draft、
+      directory、media_prefetch、report_draft、session、skeleton。
+    """
     stem = context_path.stem
     directory = context_path.parent / f"{stem}-authoring"
     return {
@@ -67,6 +94,12 @@ def _authoring_paths(context_path: Path) -> dict[str, Path]:
 
 
 def batch_result_paths(packet_path: Path) -> tuple[Path, Path]:
+    """处理：根据批次数据包路径派生草稿提交路径和不可变回执路径。
+    输入：
+    - ``packet_path``：写作任务包 JSON 路径；同目录下保存模型结果和校验回执。
+    输出：“根据批次数据包路径派生草稿提交路径和不可变回执路径”得到的固定结构结果；
+      返回位置依次对应 packet_path.with_name(f'{stem}-r、packet_path.with_name(f'{stem}-r。
+    """
     stem = packet_path.stem
     return (
         packet_path.with_name(f"{stem}-result.draft.json"),
@@ -81,6 +114,15 @@ def begin_authoring_session(
     *,
     analysis_reserve_seconds: int = 120,
 ) -> Path:
+    """处理：校验情境身份并创建带截止时间和批次清单的写作会话。
+    输入：
+    - ``run``：当前运行清单对象；包含状态、尝试次数、截止时间和产物路径。
+    - ``context_path``：版本化写作情境包路径；包含候选、预算、批次和历史连续性信息。
+    - ``data_dir``：当前运行的唯一数据根；所有状态和版本化产物都必须位于其中。
+    - ``analysis_reserve_seconds``：总截止时间中专门留给跨栏目分析和最终组装的秒数。
+    输出：指向“校验情境身份并创建带截止时间和批次清单的写作会话”所生成、定位或确认产物的本地路径
+      。
+    """
     context_path = require_data_root_path(context_path, data_dir, "Authoring context")
     context = read_json(context_path)
     if not isinstance(context, dict):
@@ -99,6 +141,7 @@ def begin_authoring_session(
                 "Existing authoring session belongs to a different context path"
             )
         if existing_hash is not None and existing_hash != context_sha256:
+            # 分发后情境不可变化，否则不同批次会基于互相矛盾的输入写作。
             raise RuntimeError(
                 "Authoring context changed after dispatch; start a new run/revision "
                 "instead of mixing batch results"
@@ -119,6 +162,7 @@ def begin_authoring_session(
     timezone = str(run.get("timezone") or "Asia/Shanghai")
     started_at = now_iso(timezone)
     deadline = _parse_timestamp(run.get("deadline_at"))
+    # 从总截止时间中预留分析和组装窗口，批次不能占用最后的收尾预算。
     analysis_deadline = (
         deadline - timedelta(seconds=max(0, analysis_reserve_seconds))
         if deadline is not None
@@ -166,6 +210,13 @@ def begin_authoring_session(
 
 
 def _batch_entry(session: dict[str, Any], batch_id: str) -> dict[str, Any]:
+    """处理：按批次 ID 从写作会话中查找唯一批次记录。
+    输入：
+    - ``session``：写作会话对象；记录情境哈希、批次回执、截止时间和委派遥测。
+    - ``batch_id``：情境计划分配的写作批次 ID；连接授权包、模型结果和接收回执。
+    输出：“按批次 ID 从写作会话中查找唯一批次记录”形成的结构化字典；
+      键值表达该处理定义的业务记录或查找关系。
+    """
     for batch in session.get("batches", []):
         if isinstance(batch, dict) and str(batch.get("batch_id")) == batch_id:
             return batch
@@ -176,6 +227,12 @@ def validate_authoring_batch(
     packet: dict[str, Any],
     payload: object,
 ) -> list[str]:
+    """处理：校验写作批次并在不满足约束时报告错误。
+    输入：
+    - ``packet``：Python 生成的批次授权包；声明允许撰写的 item_id、候选证据和输出语言。
+    - ``payload``：模型提交的批次 JSON；应包含 briefs，并精确覆盖授权的 item_id 集合。
+    输出：所有发现的批次契约错误；空列表表示条目覆盖、语言、摘要、重要性和状态均通过校验。
+    """
     errors: list[str] = []
     if not isinstance(payload, dict):
         return ["batch payload must be a JSON object"]
@@ -187,6 +244,7 @@ def validate_authoring_batch(
 
     expected = [str(value) for value in packet.get("author_item_ids", [])]
     submitted = [str(brief.get("item_id") or "") for brief in briefs]
+    # 批次必须精确覆盖其获授权的条目集合，既不能漏写，也不能越界夹带。
     duplicates = sorted(item_id for item_id, count in Counter(submitted).items() if count > 1)
     if duplicates:
         errors.append(f"brief item_id values must be unique; duplicates {duplicates}")
@@ -251,6 +309,15 @@ def submit_authoring_batch(
     input_path: Path,
     data_dir: Path,
 ) -> Path:
+    """处理：校验模型批次结果与当前授权包匹配后，创建不可变接收回执。
+    输入：
+    - ``run``：当前运行清单对象；包含状态、尝试次数、截止时间和产物路径。
+    - ``batch_id``：情境计划分配的写作批次 ID；连接授权包、模型结果和接收回执。
+    - ``input_path``：上游阶段生成的输入文件路径；读取前会执行存在性或数据根校验。
+    - ``data_dir``：当前运行的唯一数据根；所有状态和版本化产物都必须位于其中。
+    输出：指向“校验模型批次结果与当前授权包匹配后，
+      创建不可变接收回执”所生成、定位或确认产物的本地路径。
+    """
     authoring = run.get("artifacts", {}).get("authoring", {})
     session_path = require_data_root_path(
         Path(str(authoring.get("session_path") or "")),
@@ -289,6 +356,7 @@ def submit_authoring_batch(
     if result_path.exists():
         existing = read_json(result_path)
         if isinstance(existing, dict) and existing.get("briefs") == payload.get("briefs"):
+            # 完全相同的重试保持幂等；不同内容不得覆盖已接收的批次凭据。
             return result_path
         raise FileExistsError(
             f"Refusing to overwrite accepted authoring batch: {result_path}"
@@ -303,6 +371,7 @@ def submit_authoring_batch(
         "brief_count": len(payload["briefs"]),
         "briefs": payload["briefs"],
     }
+    # 通过完整校验后才创建不可变回执，后续组装只读取这种受控产物。
     return write_immutable_json(result_path, accepted)
 
 
@@ -312,6 +381,14 @@ def _non_negative_number(
     *,
     integer: bool = False,
 ) -> int | float | None:
+    """处理：解析非负数值，并按要求限制为整数。
+    输入：
+    - ``value``：待解析或规范化的单个输入值；非法值按函数契约返回空值或报错。
+    - ``label``：用于错误消息的字段或产物名称，使失败能定位到具体输入。
+    - ``integer``：是否要求输入数值必须为整数；否则允许非负浮点数。
+    输出：封装“解析非负数值，并按要求限制为整数”业务结果的 ``int | float | None`` 对象；
+      调用方据此继续相邻阶段或识别无结果状态。
+    """
     if value is None:
         return None
     if isinstance(value, bool):
@@ -334,7 +411,13 @@ def record_authoring_metrics(
     input_path: Path,
     data_dir: Path,
 ) -> Path:
-    """Persist the bounded observability subset of a Hermes delegation result."""
+    """处理：持久化 Hermes 委派结果中受限且可审计的观测指标。
+    输入：
+    - ``run``：当前运行清单对象；包含状态、尝试次数、截止时间和产物路径。
+    - ``input_path``：上游阶段生成的输入文件路径；读取前会执行存在性或数据根校验。
+    - ``data_dir``：当前运行的唯一数据根；所有状态和版本化产物都必须位于其中。
+    输出：指向“持久化 Hermes 委派结果中受限且可审计的观测指标”所生成、定位或确认产物的本地路径。
+    """
 
     authoring = run.get("artifacts", {}).get("authoring", {})
     session_path = require_data_root_path(
@@ -519,6 +602,12 @@ def record_authoring_metrics(
 
 
 def _delegation_metrics_by_batch(session: dict[str, Any]) -> dict[str, dict[str, Any]]:
+    """处理：把已接收的委派遥测按批次 ID 建立索引。
+    输入：
+    - ``session``：写作会话对象；记录情境哈希、批次回执、截止时间和委派遥测。
+    输出：“把已接收的委派遥测按批次 ID 建立索引”形成的结构化字典；
+      键值表达该处理定义的业务记录或查找关系。
+    """
     path_value = session.get("delegation_metrics_path")
     if not path_value:
         return {}
@@ -533,6 +622,15 @@ def _delegation_metrics_by_batch(session: dict[str, Any]) -> dict[str, dict[str,
 
 
 def authoring_status(run: dict[str, Any], data_dir: Path) -> dict[str, Any]:
+    """处理：汇总各批次回执、委派遥测和分析截止时间形成写作进度。
+    输入：
+    - ``run``：当前运行清单对象；包含状态、尝试次数、截止时间和产物路径。
+    - ``data_dir``：当前运行的唯一数据根；所有状态和版本化产物都必须位于其中。
+    输出：“汇总各批次回执、委派遥测和分析截止时间形成写作进度”形成的结构化字典；
+      典型键包括 analysis_deadline_at、api_calls、batch_id、batches、brief_count、completed_batc
+      hes、deadline_exceeded、duration_seconds、duration_source、expected_batches、input_tokens
+      、output_tokens。
+    """
     authoring = run.get("artifacts", {}).get("authoring", {})
     session_path = require_data_root_path(
         Path(str(authoring.get("session_path") or "")),
@@ -601,6 +699,14 @@ def _merge_briefs(
     *,
     allow_degraded: bool,
 ) -> tuple[list[dict[str, Any]], list[str], dict[str, int]]:
+    """处理：合并可复用简报与批次回执，并按栏目和覆盖目标整理。
+    输入：
+    - ``context``：浏览器、写作或报告上下文对象；包含当前阶段已经绑定的受控状态。
+    - ``session``：写作会话对象；记录情境哈希、批次回执、截止时间和委派遥测。
+    - ``allow_degraded``：达到截止条件后是否允许使用明确标记的降级内容继续组装。
+    输出：“合并可复用简报与批次回执，并按栏目和覆盖目标整理”得到的固定结构结果；
+      返回位置依次对应 sections、missing_batches、coverage_targets。
+    """
     available = {
         str(brief.get("item_id")): brief
         for brief in context.get("reusable_briefs", [])
@@ -658,6 +764,15 @@ def _analysis_candidates(
     context: dict[str, Any],
     maximum: int,
 ) -> list[dict[str, Any]]:
+    """处理：从已接收简报中选出有界的分析候选集合。
+    输入：
+    - ``sections``：报告各栏目的候选记录；读取候选身份、证据、摘要和重要性字段。
+    - ``context``：浏览器、写作或报告上下文对象；包含当前阶段已经绑定的受控状态。
+    - ``maximum``：本步骤最多返回的候选或记录数；选择顺序仍由业务排序决定。
+    输出：“从已接收简报中选出有界的分析候选集合”得到的有序结构化记录；
+      典型字段包括 content_path、content_status、discovered_at、importance、item_id、published_a
+      t、section_id、source_id、source_name、status、title、title_en，可直接交给下一阶段。
+    """
     candidates_by_id = {
         str(item.get("item_id")): item
         for item in context.get("candidate_items", [])
@@ -721,6 +836,17 @@ def prepare_analysis_packet(
     allow_degraded: bool = False,
     max_candidates: int = 18,
 ) -> dict[str, Any]:
+    """处理：合并写作回执并生成供主分析阶段读取的紧凑数据包。
+    输入：
+    - ``run``：当前运行清单对象；包含状态、尝试次数、截止时间和产物路径。
+    - ``data_dir``：当前运行的唯一数据根；所有状态和版本化产物都必须位于其中。
+    - ``allow_degraded``：达到截止条件后是否允许使用明确标记的降级内容继续组装。
+    - ``max_candidates``：分析任务包允许携带的最大候选数，防止挤占写作情境。
+    输出：“合并写作回执并生成供主分析阶段读取的紧凑数据包”形成的结构化字典；
+      典型键包括 active_theses、active_watchlist、analyses、analysis_packet_path、analysis_proto
+      col、analysis_result_path、analysis_started_at、batch_id、batch_metrics、brief_assembly_se
+      conds、brief_count、briefs_completed_at。
+    """
     authoring = run.get("artifacts", {}).get("authoring", {})
     session_path = require_data_root_path(
         Path(str(authoring.get("session_path") or "")),
@@ -740,6 +866,7 @@ def prepare_analysis_packet(
         raise ValueError("Authoring context must be a JSON object")
     status = authoring_status(run, data_dir)
     if allow_degraded and not status["deadline_exceeded"]:
+        # 降级交付只在预留截止时间之后开放，正常时段必须等待完整批次。
         raise RuntimeError(
             "--allow-degraded is available only after analysis_deadline_at; "
             f"{status['remaining_seconds']} seconds remain"
@@ -892,6 +1019,16 @@ def assemble_report_draft(
     analysis_path: Path,
     data_dir: Path,
 ) -> dict[str, Any]:
+    """处理：把分析结果和写作骨架组装成可交给确定性编译器的报告草稿。
+    输入：
+    - ``run``：当前运行清单对象；包含状态、尝试次数、截止时间和产物路径。
+    - ``analysis_path``：上游模型生成并已通过契约校验的跨栏目分析 JSON 路径。
+    - ``data_dir``：当前运行的唯一数据根；所有状态和版本化产物都必须位于其中。
+    输出：“把分析结果和写作骨架组装成可交给确定性编译器的报告草稿”形成的结构化字典；
+      典型键包括 analysis_completed_at、analysis_seconds、batch_metrics、brief_assembly_seconds
+      、brief_count、coverage_targets、delegation_metrics、media_prefetch、metrics、missing_batc
+      hes、report_draft_path、session_path。
+    """
     authoring = run.get("artifacts", {}).get("authoring", {})
     session_path = require_data_root_path(
         Path(str(authoring.get("session_path") or "")),

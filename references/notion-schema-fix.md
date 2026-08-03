@@ -1,5 +1,9 @@
 # Notion Schema Compatibility Migration
 
+**Status:** Historical compatibility note
+**Last code verification:** 2026-08-02
+**Current setup:** [`references/notion-setup.md`](notion-setup.md)
+
 This file is retained for backward-compatible links. Do not rename, delete, or recreate properties
 in a shared Notion data source merely to satisfy the publisher.
 

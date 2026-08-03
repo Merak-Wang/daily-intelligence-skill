@@ -1,5 +1,9 @@
 # Notion 配置
 
+**状态：** 运行参考（外部 Notion 界面可能变化）
+**最后对照代码：** 2026-08-02
+**文档目录：** [`docs/README.md`](../docs/README.md)
+
 Notion 是可选输出。未设置凭证时，日报仍会保存为本地 JSON、Markdown、HTML 和 PDF。
 
 ## 创建 Connection 并获取 Token

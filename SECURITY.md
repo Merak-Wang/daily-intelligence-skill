@@ -1,5 +1,9 @@
 # Security
 
+**Status:** Verified
+**Last verified:** 2026-08-02
+**Architecture:** [ARCHITECTURE.md](ARCHITECTURE.md)
+
 ## Threat model
 
 The workflow processes adversarial web content and controls a persistent browser profile. Source pages may contain prompt injection, misleading claims, tracking links, or content intended to trigger unsafe actions.

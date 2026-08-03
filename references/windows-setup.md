@@ -1,5 +1,9 @@
 # Native Windows Setup
 
+**Status:** Operational reference
+**Last code verification:** 2026-08-02
+**Documentation catalog:** [`docs/README.md`](../docs/README.md)
+
 ## Hermes Home
 
 Native Windows Hermes stores its active profile under `%LOCALAPPDATA%\hermes`, not

@@ -2,6 +2,9 @@
 
 ## Unreleased
 
+- Added semantic Chinese logic/input/output docstrings to all 439 maintained Python functions and classes. Inputs name their provenance and consumed fields; outputs explain their downstream meaning. Critical safety/state/concurrency/compatibility decisions are documented inline and protected by an AST-based regression gate.
+- Audited the repository for readability and determinism: centralized typed JSON-object reads and CLI JSON output, unified collision-safe atomic writers, made immutable JSON creation no-overwrite under concurrency, and injected the monitor clock in time-sensitive tests.
+- Replaced the deleted developer Wiki/reading guide with a concise `AGENTS.md`, a top-level architecture map, indexed English engineering records, matching Chinese translations under `docs/zh-CN/`, a quality score, a technical-debt tracker, and mechanical documentation checks.
 - Renamed the public Hermes skill and reader-facing report brand to **迹简情报台 · SignalTrail** (`signaltrail`) while retaining the `daily-intel` CLI, `daily_intelligence` package, report identifiers, legacy data root, and legacy `merak-brief`/`daily-intelligence` install-path discovery for backward compatibility.
 - Reorganized `SKILL.md` to the Hermes/Agent Skills metadata layout, added a tracked-file-only community package builder, and documented an auditable GitHub publication workflow.
 - Made Simplified Chinese the default repository README, added full English README and example documentation, and reframed the report gallery around product outcomes and operating scale.
@@ -9,7 +12,7 @@
 - Moved story images below their headlines, using an image-and-summary layout on desktop and a stacked layout on narrow screens; updated both historical HTML examples without changing their report content.
 - Added an explicit `zh-CN` / `en` output-language choice across run manifests, authoring packets, semantic caches, validation, Markdown, HTML, PDF, and Notion; cross-language semantic reuse is rejected.
 - Simplified `SKILL.md`, removed checked-in runtime brief batches and a superseded dated audit, and moved the README preview into the stable `assets/readme/` tree.
-- Updated the complete developer Wiki for the current zero-token monitor, deterministic clustering, schema 2.0 authoring sessions, foreground HTML/desktop delivery, background tail, media cache, recovery model, configuration, and test layout.
+- Updated the engineering records for the current zero-token monitor, deterministic clustering, schema 2.0 authoring sessions, foreground HTML/desktop delivery, background tail, media cache, recovery model, configuration, and test layout.
 - Added automatic, atomic HTML delivery to the user's Desktop after each finalized edition, with absolute local media/archive/PDF links, an explicit directory override, and non-silent delivery errors.
 - Shortened the edition critical path with pre-media semantic validation, real completion timestamps, non-duplicating stage history, resumable post-persistence projections, and per-stage save metrics.
 - Added timed authoring sessions: model workers submit one packet-assigned JSON result, Python validates and atomically merges batches, and the main model reads only an 18-candidate analysis packet instead of reloading the full brief corpus.
@@ -31,7 +34,7 @@
 - Added a bounded public-news image pipeline: capture card/Open Graph images, validate and store raster files locally by content hash, render vertical image-and-text stories, and upload local copies to resumable Notion image blocks with external fallback.
 - Added fail-closed public-DNS confirmation for proxy fake-IP environments, continued past failed image candidates until the success budget is filled, allowed same-edition report revisions to retain their original event identities, and added idempotent in-place Notion image backfill for previously published text-only reports.
 - Raised the default successful-image limit from 40 to 1000 while retaining the 8 MiB per-image, 80 MiB per-edition, raster-format, and pixel-count safety limits.
-- Reworked the README as a concise capability overview and rewrote the Wiki as developer documentation tied to current modules, states, commands, and tests.
+- Reworked the README as a concise capability overview and tied engineering records to current modules, states, commands, and tests.
 - Expanded repository ignores for runtime artifacts, browser data, coverage output, editor state, and local build audits; removed the machine-specific build report from the public tree.
 - Replaced real-looking media URLs in synthetic fixtures with reserved `.example` domains and documented the fixture boundary.
 - Removed the unused `DAILY_INTEL_TIMEZONE` entry from `.env.example`; timezone remains configured through `sources.yaml` or `--timezone`.

@@ -1,5 +1,8 @@
 # Examples
 
+**Status:** Historical samples and synthetic test fixtures
+**Last verified:** 2026-08-02
+
 [简体中文](README.md) | [English](README.en.md)
 
 This directory contains two complementary product views.

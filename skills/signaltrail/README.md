@@ -10,7 +10,7 @@
 把分散信号整理成可复核、可汇报、可持续跟踪的判断路径，适合日常研究、产品汇报和团队晨会。
 
 [报告展厅](#报告展厅) · [快速开始](#快速开始) ·
-[开发者 Wiki](https://github.com/Merak-Wang/signaltrail-skill/blob/main/wiki/Home.md) ·
+[工程文档](https://github.com/Merak-Wang/signaltrail-skill/blob/main/docs/zh-CN/README.md) ·
 [Hermes Skill](SKILL.md)
 
 [![Hermes Agent](https://img.shields.io/badge/Hermes-Agent-6C5CE7?style=flat-square)](https://hermes-agent.nousresearch.com/)
@@ -233,7 +233,7 @@ hermes skills publish ABSOLUTE_PATH/dist/signaltrail --to github --repo OWNER/RE
 - 架构与状态模型：[references/system-design.md](references/system-design.md)
 - Windows 安装：[references/windows-setup.md](references/windows-setup.md)
 - Notion 配置：[references/notion-setup.md](references/notion-setup.md)
-- 开发者 Wiki：[wiki/Home.md](https://github.com/Merak-Wang/signaltrail-skill/blob/main/wiki/Home.md)
+- 工程文档：[docs/zh-CN/README.md](https://github.com/Merak-Wang/signaltrail-skill/blob/main/docs/zh-CN/README.md)
 - 版本记录：[CHANGELOG.md](CHANGELOG.md)
 
 ## 开发与验证

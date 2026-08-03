@@ -12,7 +12,7 @@ turns scattered signals into a reviewable decision trail that teams can brief,
 archive, and revisit.
 
 [Report gallery](#report-gallery) · [Quick start](#quick-start) ·
-[Developer wiki](https://github.com/Merak-Wang/signaltrail-skill/blob/main/wiki/Home.md) ·
+[Engineering records](docs/README.md) ·
 [Hermes skill](SKILL.md)
 
 [![Hermes Agent](https://img.shields.io/badge/Hermes-Agent-6C5CE7?style=flat-square)](https://hermes-agent.nousresearch.com/)
@@ -246,15 +246,18 @@ the community pull request.
 
 ## Documentation
 
+- Repository map: [AGENTS.md](AGENTS.md)
+- Architecture: [ARCHITECTURE.md](ARCHITECTURE.md)
+- Engineering record catalog: [docs/README.md](docs/README.md)
 - Skill procedure: [SKILL.md](SKILL.md)
 - Operations and recovery: [references/runbook.md](references/runbook.md)
 - Editorial and evidence policy:
   [references/editorial-policy.md](references/editorial-policy.md)
-- Architecture and state model:
+- Detailed architecture and state model:
   [references/system-design.md](references/system-design.md)
 - Windows setup: [references/windows-setup.md](references/windows-setup.md)
 - Notion setup: [references/notion-setup.md](references/notion-setup.md)
-- Developer wiki: [wiki/Home.md](https://github.com/Merak-Wang/signaltrail-skill/blob/main/wiki/Home.md)
+- Current quality score: [docs/quality-score.md](docs/quality-score.md)
 - Release history: [CHANGELOG.md](CHANGELOG.md)
 
 ## Development
@@ -264,6 +267,8 @@ python -m pip install -e ".[dev]"
 python -m ruff check .
 python -m pytest
 python -m compileall -q src tests scripts
+python scripts/check_code_comments.py
+python scripts/check_docs.py
 ```
 
 Update tests for any source filter, status model, validation, or publishing change.

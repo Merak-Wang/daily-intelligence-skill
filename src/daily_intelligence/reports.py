@@ -150,6 +150,13 @@ EVALUATION_LABELS_EN = {
 
 
 def ordered_sections(report: dict[str, Any], module: str) -> list[dict[str, Any]]:
+    """处理：按报告契约顺序返回现有栏目。
+    输入：
+    - ``report``：当前报告结构；包含栏目、简报或事件、来源引用及质量元数据。
+    - ``module``：报告顶层领域 ID，例如 information 或 technology。
+    输出：“按报告契约顺序返回现有栏目”得到的有序结构化记录；
+      每项承载处理说明所定义的身份、证据或状态字段，可直接交给下一阶段。
+    """
     sections = [section for section in report["sections"] if section.get("module") == module]
     if report.get("schema_version") not in {"1.3", "1.4", "1.5", "2.0"}:
         return sections
@@ -161,6 +168,14 @@ def group_items_by_source(
     section: dict[str, Any],
     language: object = "zh-CN",
 ) -> list[tuple[dict[str, str], list[dict]]]:
+    """处理：按来源 ID 组织报告条目，供 Markdown 分区渲染。
+    输入：
+    - ``section``：报告中的栏目对象；包含栏目 ID、标题、简报或事件列表。
+    - ``language``：规范语言标识；用于本地化选择或语言一致性判断。
+    输出：按“按来源 ID 组织报告条目，
+      供 Markdown 分区渲染”规则得到的 ``tuple[dict[str, str`` 列表；
+      列表顺序表达配置优先级、业务排名或稳定扫描顺序。
+    """
     groups: dict[str, tuple[dict[str, str], list[dict]]] = {}
     values = section.get("briefs") if "briefs" in section else section.get("items", [])
     for item in values or []:
@@ -185,6 +200,12 @@ def group_items_by_source(
 
 
 def _image_markdown_url(image: dict[str, Any], media_path_prefix: str | None) -> str:
+    """处理：把本地图片路径或安全公网地址转换为 Markdown URL。
+    输入：
+    - ``image``：报告或索引中的图片元数据；包含 URL、本地路径、哈希、尺寸和说明。
+    - ``media_path_prefix``：HTML 或 Markdown 相对引用本地媒体文件时添加的路径前缀。
+    输出：经过选择、规范化或安全处理的 URL 字符串，供后续访问或渲染使用。
+    """
     local_path = str(image.get("local_path") or "").replace("\\", "/")
     local_parts = [part for part in local_path.split("/") if part]
     if (
@@ -203,6 +224,15 @@ def _brief_markdown(
     media_path_prefix: str | None = None,
     language: object = "zh-CN",
 ) -> list[str]:
+    """处理：把单条简报渲染为含来源和图片的 Markdown。
+    输入：
+    - ``item``：单个规范条目对象；通常包含 item_id、来源、标题、URL、时间和元数据。
+    - ``rank``：简报或来源在当前栏目中的一基排序号。
+    - ``media_path_prefix``：HTML 或 Markdown 相对引用本地媒体文件时添加的路径前缀。
+    - ``language``：规范语言标识；用于本地化选择或语言一致性判断。
+    输出：“把单条简报渲染为含来源和图片的 Markdown”得到的字符串列表；
+      顺序保持确定并可供下一步骤逐项处理。
+    """
     colon = "：" if is_chinese_output(language) else ":"
     ref = item["source_ref"]
     status_labels = STATUS_LABELS if is_chinese_output(language) else STATUS_LABELS_EN
@@ -246,6 +276,14 @@ def _event_markdown(
     title: str,
     language: object = "zh-CN",
 ) -> list[str]:
+    """处理：把单个事件渲染为兼容旧 schema 的 Markdown。
+    输入：
+    - ``item``：单个规范条目对象；通常包含 item_id、来源、标题、URL、时间和元数据。
+    - ``title``：来源提供的标题文本；会清理空白，并用于过滤、身份或展示。
+    - ``language``：规范语言标识；用于本地化选择或语言一致性判断。
+    输出：“把单个事件渲染为兼容旧 schema 的 Markdown”得到的字符串列表；
+      顺序保持确定并可供下一步骤逐项处理。
+    """
     colon = "：" if is_chinese_output(language) else ":"
     separator = "，" if is_chinese_output(language) else ", "
     access_labels = ACCESS_LABELS if is_chinese_output(language) else ACCESS_LABELS_EN
@@ -308,6 +346,13 @@ def render_report_markdown(
     report: dict[str, Any],
     media_path_prefix: str | None = None,
 ) -> str:
+    """处理：把已验证报告栏目、来源引用和本地图片投影为可追踪的 Markdown。
+    输入：
+    - ``report``：当前报告结构；包含栏目、简报或事件、来源引用及质量元数据。
+    - ``media_path_prefix``：HTML 或 Markdown 相对引用本地媒体文件时添加的路径前缀。
+    输出：“把已验证报告栏目、来源引用和本地图片投影为可追踪的 Markdown”得到的规范字符串，
+      供调用方存储、比较或展示。
+    """
     language = report.get("language") or "zh-CN"
     chinese = is_chinese_output(language)
     colon = "：" if chinese else ":"
@@ -768,6 +813,19 @@ def save_report(
     media_config: MediaConfig | None = None,
     coverage_targets: dict[str, int] | None = None,
 ) -> dict[str, Any]:
+    """处理：编译模型报告草稿、绑定权威索引、执行校验并创建不可变报告修订。
+    输入：
+    - ``input_path``：待编译的模型报告草稿 JSON 路径；其日期、版本和条目必须与索引一致。
+    - ``index_path``：草稿所引用的不可变来源索引路径；用于恢复权威身份并验证证据。
+    - ``data_dir``：当前运行的唯一数据根；所有状态和版本化产物都必须位于其中。
+    - ``output_config``：本地 HTML、PDF、桌面交付和打开行为配置。
+    - ``media_config``：图片下载、格式、安全、缓存和报告预算配置。
+    - ``coverage_targets``：按来源 ID 指定的最小报告覆盖数；由运行情境拥有。
+    输出：“编译模型报告草稿、绑定权威索引、执行校验并创建不可变报告修订”形成的结构化字典；
+      典型键包括 compile_and_validation_seconds、content_hash、evaluation_status、json_path、loc
+      al_output_error、local_output_seconds、markdown_path、media_seconds、persistence_seconds、
+      report_id、save_metrics、semantic_cache_path。
+    """
     save_started = time.perf_counter()
     raw = read_json(input_path)
     index = read_json(index_path)
@@ -793,6 +851,7 @@ def save_report(
     report["report_id"] = f"daily-{date}-{edition}-r{revision}"
 
     compile_started = time.perf_counter()
+    # 先把模型草稿编译进确定性外壳，再统一规范化和校验。
     compile_warnings = compile_report_data(report, index, load_semantic_cache(data_dir))
     normalize_report_data(report, index)
     evaluation = report.get("quality_evaluation")
@@ -808,7 +867,7 @@ def save_report(
                 item for item in existing_payload["items"] if isinstance(item, dict)
             ]
 
-    # Reject semantic and source-identity errors before network-bound media work.
+    # 在触发网络图片处理前拒绝语义和来源身份错误，避免无效草稿产生外部副作用。
     errors, pre_media_validation_warnings = validate_report_data(
         report,
         index,
@@ -851,6 +910,7 @@ def save_report(
     persistence_started = time.perf_counter()
     json_path = report_dir / f"{edition}-r{revision}.json"
     markdown_path = report_dir / f"{edition}-r{revision}.md"
+    # JSON 是权威记录，Markdown/HTML/PDF 都是可由它重新生成的投影。
     write_immutable_json(json_path, report)
     write_text_atomic(
         markdown_path,
@@ -879,6 +939,7 @@ def save_report(
     semantic_cache_path = None
     state_paths: dict[str, Any] = {}
     try:
+        # 报告已经安全持久化；派生语义/连续性状态失败只降级为警告，不回滚记录。
         semantic_cache_path = update_semantic_cache_from_report(report, index, data_dir)
         state_paths = (
             update_continuity_state(report, data_dir)
@@ -927,6 +988,16 @@ def save_evaluation(
     data_dir: Path,
     output_config: OutputConfig | None = None,
 ) -> dict[str, Any]:
+    """处理：校验独立评估与报告身份和内容哈希一致后，创建不可变评估修订。
+    输入：
+    - ``input_path``：上游阶段生成的输入文件路径；读取前会执行存在性或数据根校验。
+    - ``report_path``：版本化报告 JSON 路径；本地报告是 HTML、PDF 和 Notion 的事实源。
+    - ``data_dir``：当前运行的唯一数据根；所有状态和版本化产物都必须位于其中。
+    - ``output_config``：本地 HTML、PDF、桌面交付和打开行为配置。
+    输出：“校验独立评估与报告身份和内容哈希一致后，创建不可变评估修订”形成的结构化字典；
+      典型键包括 content_hash、evaluation_id、evaluation_path、local_outputs、semantic_cache_pat
+      h、state_paths、status。
+    """
     raw = read_json(input_path)
     report = read_json(report_path)
     if not isinstance(raw, dict) or not isinstance(report, dict):

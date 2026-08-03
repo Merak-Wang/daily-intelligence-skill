@@ -10,7 +10,7 @@
 把分散信号整理成可复核、可汇报、可持续跟踪的判断路径，适合日常研究、产品汇报和团队晨会。
 
 [报告展厅](#报告展厅) · [快速开始](#快速开始) ·
-[开发者 Wiki](https://github.com/Merak-Wang/signaltrail-skill/blob/main/wiki/Home.md) ·
+[工程文档](docs/zh-CN/README.md) ·
 [Hermes Skill](SKILL.md)
 
 [![Hermes Agent](https://img.shields.io/badge/Hermes-Agent-6C5CE7?style=flat-square)](https://hermes-agent.nousresearch.com/)
@@ -227,13 +227,16 @@ hermes skills publish ABSOLUTE_PATH/dist/signaltrail --to github --repo OWNER/RE
 
 ## 文档
 
+- 仓库地图：[AGENTS.md](docs/zh-CN/AGENTS.md)
+- 顶层架构：[ARCHITECTURE.md](docs/zh-CN/ARCHITECTURE.md)
+- 工程记录目录：[docs/zh-CN/README.md](docs/zh-CN/README.md)
 - Skill 执行流程：[SKILL.md](SKILL.md)
 - 日常运行与恢复：[references/runbook.md](references/runbook.md)
 - 编辑与证据规则：[references/editorial-policy.md](references/editorial-policy.md)
-- 架构与状态模型：[references/system-design.md](references/system-design.md)
+- 详细架构与状态模型：[references/system-design.md](references/system-design.md)
 - Windows 安装：[references/windows-setup.md](references/windows-setup.md)
 - Notion 配置：[references/notion-setup.md](references/notion-setup.md)
-- 开发者 Wiki：[wiki/Home.md](https://github.com/Merak-Wang/signaltrail-skill/blob/main/wiki/Home.md)
+- 当前质量评分：[docs/zh-CN/quality-score.md](docs/zh-CN/quality-score.md)
 - 版本记录：[CHANGELOG.md](CHANGELOG.md)
 
 ## 开发与验证
@@ -243,6 +246,8 @@ python -m pip install -e ".[dev]"
 python -m ruff check .
 python -m pytest
 python -m compileall -q src tests scripts
+python scripts/check_code_comments.py
+python scripts/check_docs.py
 ```
 
 修改来源过滤、状态模型、校验或发布逻辑时必须同步更新测试。运行时 `data/`、浏览器

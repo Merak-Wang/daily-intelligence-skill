@@ -108,6 +108,8 @@ def test_html_projection_is_atomically_delivered_to_configured_desktop(
     assert f'{data_dir.resolve().as_uri()}/media/images/aa/example.jpg' not in html
     assert "../../media/images/aa/example.jpg" not in html
     assert html.index('class="brief-heading"') < html.index("<figure>")
+    assert ".analysis-domain>h3{break-after:avoid}" in html
+    assert ".analysis-card{break-inside:auto}" in html
     reader = PdfReader(outputs["pdf_path"])
     assert sum(len(page.images) for page in reader.pages) >= 1
 

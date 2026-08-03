@@ -33,10 +33,16 @@ from .notion import publish_report, sync_user_feedback
 from .reports import save_report
 from .runtime import require_data_root_path, validate_run_data_root
 from .storage import exclusive_lock
-from .utils import now_iso, read_json, today_str, write_json
+from .utils import now_iso, read_json, read_json_object, today_str, write_json
 
 
 class RunStatus(StrEnum):
+    """处理：定义运行状态的可用枚举值。
+    输入：
+    - 无显式业务参数：不声明额外构造字段；该定义以 ``StrEnum`` 为基础，
+      通过类成员承担“定义运行状态的可用枚举值”职责。
+    输出：构造后的 ``RunStatus`` 实例或枚举定义；其字段和方法共同承担上述职责。
+    """
     CREATED = "created"
     COLLECTING = "collecting"
     BUILDING_CONTEXT = "building_context"
@@ -57,6 +63,43 @@ TERMINAL_STATUSES = {
 }
 
 
+def _completion_status(run: dict[str, Any]) -> RunStatus:
+    """处理：根据待处理来源和预算状态确定运行的最终状态。
+    输入：
+    - ``run``：当前运行清单对象；包含状态、尝试次数、截止时间和产物路径。
+    输出：封装“根据待处理来源和预算状态确定运行的最终状态”业务结果的 ``RunStatus`` 对象；
+      调用方据此继续相邻阶段或识别无结果状态。
+    """
+    if run.get("pending_sources") or run.get("budget_exhausted"):
+        return RunStatus.COMPLETED_PARTIAL
+    return RunStatus.COMPLETED
+
+
+def _pending_evaluation(
+    artifacts: dict[str, Any],
+    next_action: str,
+    *,
+    scheduler_status: str | None = None,
+) -> dict[str, Any]:
+    """处理：创建与当前报告身份绑定的待评估状态。
+    输入：
+    - ``artifacts``：当前运行已生成的产物路径和状态映射。
+    - ``next_action``：运行清单记录的下一条可恢复操作。
+    - ``scheduler_status``：独立评估调度器最近一次返回的显式状态。
+    输出：“创建与当前报告身份绑定的待评估状态”形成的结构化字典；
+      典型键包括 content_hash、next_action、report_id、status。
+    """
+    evaluation = {
+        "status": "pending",
+        "report_id": artifacts.get("report_id"),
+        "content_hash": artifacts.get("content_hash"),
+        "next_action": next_action,
+    }
+    if scheduler_status:
+        evaluation["scheduler"] = {"status": scheduler_status}
+    return evaluation
+
+
 def schedule_independent_evaluation(
     report_path: Path,
     index_path: Path,
@@ -65,7 +108,17 @@ def schedule_independent_evaluation(
     content_hash: str,
     publish_notion: bool = False,
 ) -> dict[str, Any]:
-    """Create a bounded evaluator job after local delivery; remote publishing is optional."""
+    """处理：在本地交付后创建有界独立评估任务，远程发布保持可选。
+    输入：
+    - ``report_path``：版本化报告 JSON 路径；本地报告是 HTML、PDF 和 Notion 的事实源。
+    - ``index_path``：版本化来源索引 JSON 路径；包含根级规范 items 和来源采集状态。
+    - ``data_dir``：当前运行的唯一数据根；所有状态和版本化产物都必须位于其中。
+    - ``report_id``：报告或报告系列的稳定 ID；用于推导跨修订关联键。
+    - ``content_hash``：权威报告 JSON 的内容哈希；用于评估调度幂等键。
+    - ``publish_notion``：独立评估完成后是否允许追加到已发布 Notion 页面。
+    输出：“在本地交付后创建有界独立评估任务，远程发布保持可选”形成的结构化字典；
+      典型键包括 attempts、detail、error、interval、job_id、status。
+    """
     draft_path = data_dir / "evaluations" / "drafts" / f"{report_id}.json"
     notion_flag = " --publish" if publish_notion else ""
     report = read_json(report_path) if report_path.is_file() else None
@@ -145,6 +198,13 @@ def schedule_independent_evaluation(
 
 
 def edition_window(date_value: str, edition: str, timezone: str) -> dict[str, str]:
+    """处理：计算早报或晚报在指定时区内的采集时间窗口。
+    输入：
+    - ``date_value``：目标日报日期；结合版本计算采集窗口起止时间。
+    - ``edition``：日报版本标识，通常为 morning 或 evening；参与窗口和产物命名。
+    - ``timezone``：IANA 时区名称；用于解析无时区时间并生成日报时间边界。
+    输出：“计算早报或晚报在指定时区内的采集时间窗口”形成的结构化字典；典型键包括 end、start。
+    """
     zone = ZoneInfo(timezone)
     date = datetime.fromisoformat(date_value).date()
     if edition == "morning":
@@ -159,6 +219,15 @@ def edition_window(date_value: str, edition: str, timezone: str) -> dict[str, st
 
 
 def _update_run(path: Path, run: dict[str, Any], status: RunStatus, **fields: Any) -> None:
+    """处理：原子更新运行清单、状态时间戳和迁移历史。
+    输入：
+    - ``path``：当前函数要读取、校验或写入的本地文件路径。
+    - ``run``：当前运行清单对象；包含状态、尝试次数、截止时间和产物路径。
+    - ``status``：当前操作或来源状态；值必须属于对应的显式状态模型。
+    - ``**fields``：需要原子写入运行清单的字段更新；键受调用阶段控制。
+    输出：不返回新数据；完成“原子更新运行清单、状态时间戳和迁移历史”，
+      副作用限于该处理声明的受控对象或产物。
+    """
     timestamp = fields.get("updated_at") or datetime.now().astimezone().isoformat(
         timespec="seconds"
     )
@@ -167,6 +236,7 @@ def _update_run(path: Path, run: dict[str, Any], status: RunStatus, **fields: An
     run["status"] = status
     run["updated_at"] = timestamp
     if previous_status != status.value:
+        # 只有真实状态迁移才追加历史；同状态检查点仅更新字段和时间。
         run.setdefault("stage_timestamps", {})[status.value] = timestamp
         run.setdefault("stage_history", []).append(
             {"status": status.value, "timestamp": timestamp}
@@ -175,6 +245,13 @@ def _update_run(path: Path, run: dict[str, Any], status: RunStatus, **fields: An
 
 
 def _lock_payload(edition: str, timestamp: str) -> dict[str, Any]:
+    """处理：构建日报互斥锁中记录的进程与版本信息。
+    输入：
+    - ``edition``：日报版本标识，通常为 morning 或 evening；参与窗口和产物命名。
+    - ``timestamp``：用于锁、截止时间或状态迁移的 ISO 时间字符串。
+    输出：“构建日报互斥锁中记录的进程与版本信息”形成的结构化字典；
+      典型键包括 created_at、edition、pid。
+    """
     return {
         "pid": os.getpid(),
         "edition": edition,
@@ -183,6 +260,12 @@ def _lock_payload(edition: str, timestamp: str) -> dict[str, Any]:
 
 
 def _deadline_exceeded(run: dict[str, Any], timestamp: str | None = None) -> bool:
+    """处理：判断当前运行是否已经超过确定性截止时间。
+    输入：
+    - ``run``：当前运行清单对象；包含状态、尝试次数、截止时间和产物路径。
+    - ``timestamp``：用于锁、截止时间或状态迁移的 ISO 时间字符串。
+    输出：布尔判断；True 表示满足处理说明中的条件，False 表示不满足且不产生该结果。
+    """
     deadline = run.get("deadline_at")
     if not deadline:
         return False
@@ -191,6 +274,15 @@ def _deadline_exceeded(run: dict[str, Any], timestamp: str | None = None) -> boo
 
 
 def _runtime_metrics(run: dict[str, Any], completed_at: str) -> dict[str, Any]:
+    """处理：根据状态历史计算运行阶段耗时和汇总指标。
+    输入：
+    - ``run``：当前运行清单对象；包含状态、尝试次数、截止时间和产物路径。
+    - ``completed_at``：运行完成时间；用于计算总耗时和截止状态。
+    输出：“根据状态历史计算运行阶段耗时和汇总指标”形成的结构化字典；
+      典型键包括 agent_authoring_wait、attempt、authoring、collection、content_enrichment、conte
+      xt_building、deadline_exceeded、elapsed_seconds、phase_durations_seconds、publication、sel
+      ected_fulltext_items、stage_durations_seconds。
+    """
     completed = datetime.fromisoformat(completed_at)
     started = datetime.fromisoformat(str(run.get("created_at", completed_at)))
     history = [
@@ -259,9 +351,15 @@ def _runtime_metrics(run: dict[str, Any], completed_at: str) -> dict[str, Any]:
 
 
 def _enrichment_evidence(index_path: Path, selected_ids: list[str]) -> dict[str, Any]:
-    index = read_json(index_path)
-    if not isinstance(index, dict):
-        raise ValueError("Enriched index must be a JSON object")
+    """处理：从富化索引提取成功条目及其正文证据统计。
+    输入：
+    - ``index_path``：版本化来源索引 JSON 路径；包含根级规范 items 和来源采集状态。
+    - ``selected_ids``：调用方按重要性排序选中的条目 ID；正文阶段只处理这些授权条目。
+    输出：“从富化索引提取成功条目及其正文证据统计”形成的结构化字典；
+      典型键包括 full_text_item_ids、partial_item_ids、successful_item_ids、unsuccessful_item_id
+      s。
+    """
+    index = read_json_object(index_path, "Enriched index")
     items = {
         str(item.get("item_id")): item
         for item in index.get("items", [])
@@ -288,6 +386,13 @@ def _enrichment_evidence(index_path: Path, selected_ids: list[str]) -> dict[str,
 
 
 def _validate_enrichment_lineage(run: dict[str, Any], index_path: Path) -> None:
+    """处理：确认富化索引直接派生自当前运行登记的原索引。
+    输入：
+    - ``run``：当前运行清单对象；包含状态、尝试次数、截止时间和产物路径。
+    - ``index_path``：版本化来源索引 JSON 路径；包含根级规范 items 和来源采集状态。
+    输出：不返回新数据；完成“确认富化索引直接派生自当前运行登记的原索引”，
+      副作用限于该处理声明的受控对象或产物。
+    """
     enrichment = run.get("artifacts", {}).get("enrichment", {})
     if not isinstance(enrichment, dict):
         return
@@ -305,16 +410,20 @@ def _validate_enrichment_lineage(run: dict[str, Any], index_path: Path) -> None:
 
 
 def adopt_index_for_run(config: AppConfig, data_dir: Path, index_path: Path) -> Path | None:
+    """处理：校验新索引的血缘后把它登记为当前运行产物。
+    输入：
+    - ``config``：已校验的应用配置；提供时区、来源策略、并发限制、预算和输出选项。
+    - ``data_dir``：当前运行的唯一数据根；所有状态和版本化产物都必须位于其中。
+    - ``index_path``：版本化来源索引 JSON 路径；包含根级规范 items 和来源采集状态。
+    输出：指向“校验新索引的血缘后把它登记为当前运行产物”所生成、定位或确认产物的本地路径；
+      条件不满足时返回 None。
+    """
     index_path = require_data_root_path(index_path, data_dir, "Verified index")
-    index = read_json(index_path)
-    if not isinstance(index, dict):
-        raise ValueError("Index must be a JSON object")
+    index = read_json_object(index_path, "Index")
     run_path = data_dir / "runs" / str(index["date"]) / f"{index['edition']}.json"
     if not run_path.exists():
         return None
-    run = read_json(run_path)
-    if not isinstance(run, dict):
-        raise ValueError("Run manifest must be a JSON object")
+    run = read_json_object(run_path, "Run manifest")
     validate_run_data_root(run, run_path, data_dir)
     context_config = replace(
         config,
@@ -375,10 +484,14 @@ def adopt_index_for_run(config: AppConfig, data_dir: Path, index_path: Path) -> 
 
 
 def begin_authoring(run_path: Path, data_dir: Path) -> Path:
+    """处理：为当前运行创建写作会话并登记全部批次产物路径。
+    输入：
+    - ``run_path``：运行清单 JSON 路径；记录当前阶段、产物血缘、截止时间和恢复动作。
+    - ``data_dir``：当前运行的唯一数据根；所有状态和版本化产物都必须位于其中。
+    输出：指向“为当前运行创建写作会话并登记全部批次产物路径”所生成、定位或确认产物的本地路径。
+    """
     run_path = require_data_root_path(run_path, data_dir, "Run manifest")
-    run = read_json(run_path)
-    if not isinstance(run, dict):
-        raise ValueError("Run manifest must be a JSON object")
+    run = read_json_object(run_path, "Run manifest")
     validate_run_data_root(run, run_path, data_dir)
     if run.get("status") != RunStatus.AWAITING_AUTHORING:
         raise RuntimeError(
@@ -420,10 +533,16 @@ def accept_authoring_batch(
     result_path: Path,
     data_dir: Path,
 ) -> Path:
+    """处理：校验并持久化一个模型写作批次的不可变回执。
+    输入：
+    - ``run_path``：运行清单 JSON 路径；记录当前阶段、产物血缘、截止时间和恢复动作。
+    - ``batch_id``：情境计划分配的写作批次 ID；连接授权包、模型结果和接收回执。
+    - ``result_path``：模型批次结果 JSON 路径；必须对应当前情境哈希和批次 ID。
+    - ``data_dir``：当前运行的唯一数据根；所有状态和版本化产物都必须位于其中。
+    输出：指向“校验并持久化一个模型写作批次的不可变回执”所生成、定位或确认产物的本地路径。
+    """
     run_path = require_data_root_path(run_path, data_dir, "Run manifest")
-    run = read_json(run_path)
-    if not isinstance(run, dict):
-        raise ValueError("Run manifest must be a JSON object")
+    run = read_json_object(run_path, "Run manifest")
     validate_run_data_root(run, run_path, data_dir)
     if run.get("status") != RunStatus.AWAITING_AUTHORING:
         raise RuntimeError(
@@ -437,10 +556,15 @@ def accept_authoring_metrics(
     metrics_path: Path,
     data_dir: Path,
 ) -> Path:
+    """处理：校验并持久化 Hermes 委派任务的批次遥测。
+    输入：
+    - ``run_path``：运行清单 JSON 路径；记录当前阶段、产物血缘、截止时间和恢复动作。
+    - ``metrics_path``：模型委派遥测 JSON 路径；记录 Token、耗时和批次状态。
+    - ``data_dir``：当前运行的唯一数据根；所有状态和版本化产物都必须位于其中。
+    输出：指向“校验并持久化 Hermes 委派任务的批次遥测”所生成、定位或确认产物的本地路径。
+    """
     run_path = require_data_root_path(run_path, data_dir, "Run manifest")
-    run = read_json(run_path)
-    if not isinstance(run, dict):
-        raise ValueError("Run manifest must be a JSON object")
+    run = read_json_object(run_path, "Run manifest")
     validate_run_data_root(run, run_path, data_dir)
     if run.get("status") != RunStatus.AWAITING_AUTHORING:
         raise RuntimeError(
@@ -450,10 +574,15 @@ def accept_authoring_metrics(
 
 
 def get_authoring_status(run_path: Path, data_dir: Path) -> dict[str, Any]:
+    """处理：读取会话回执和截止时间，返回当前写作进度。
+    输入：
+    - ``run_path``：运行清单 JSON 路径；记录当前阶段、产物血缘、截止时间和恢复动作。
+    - ``data_dir``：当前运行的唯一数据根；所有状态和版本化产物都必须位于其中。
+    输出：“读取会话回执和截止时间，返回当前写作进度”形成的结构化字典；
+      键值表达该处理定义的业务记录或查找关系。
+    """
     run_path = require_data_root_path(run_path, data_dir, "Run manifest")
-    run = read_json(run_path)
-    if not isinstance(run, dict):
-        raise ValueError("Run manifest must be a JSON object")
+    run = read_json_object(run_path, "Run manifest")
     validate_run_data_root(run, run_path, data_dir)
     return inspect_authoring_status(run, data_dir)
 
@@ -463,10 +592,16 @@ def prefetch_authoring_media(
     data_dir: Path,
     media_config: MediaConfig | None = None,
 ) -> dict[str, Any]:
+    """处理：根据当前情境候选预热安全图片缓存，并把警告和统计写回运行清单。
+    输入：
+    - ``run_path``：运行清单 JSON 路径；记录当前阶段、产物血缘、截止时间和恢复动作。
+    - ``data_dir``：当前运行的唯一数据根；所有状态和版本化产物都必须位于其中。
+    - ``media_config``：图片下载、格式、安全、缓存和报告预算配置。
+    输出：“根据当前情境候选预热安全图片缓存，并把警告和统计写回运行清单”形成的结构化字典；
+      典型键包括 completed_at、receipt_path、schema_version。
+    """
     run_path = require_data_root_path(run_path, data_dir, "Run manifest")
-    run = read_json(run_path)
-    if not isinstance(run, dict):
-        raise ValueError("Run manifest must be a JSON object")
+    run = read_json_object(run_path, "Run manifest")
     validate_run_data_root(run, run_path, data_dir)
     authoring = run.get("artifacts", {}).get("authoring", {})
     session_path = require_data_root_path(
@@ -474,25 +609,19 @@ def prefetch_authoring_media(
         data_dir,
         "Authoring session",
     )
-    session = read_json(session_path)
-    if not isinstance(session, dict):
-        raise ValueError("Authoring session must be a JSON object")
+    session = read_json_object(session_path, "Authoring session")
     context_path = require_data_root_path(
         Path(str(session["context_path"])),
         data_dir,
         "Authoring context",
     )
-    context = read_json(context_path)
-    if not isinstance(context, dict):
-        raise ValueError("Authoring context must be a JSON object")
+    context = read_json_object(context_path, "Authoring context")
     index_path = require_data_root_path(
         Path(str(run["artifacts"]["index_path"])),
         data_dir,
         "Run index",
     )
-    index = read_json(index_path)
-    if not isinstance(index, dict):
-        raise ValueError("Run index must be a JSON object")
+    index = read_json_object(index_path, "Run index")
     item_ids = [
         str(item_id)
         for plan in context.get("brief_plan", [])
@@ -527,10 +656,16 @@ def prepare_authoring_analysis(
     *,
     allow_degraded: bool = False,
 ) -> Path:
+    """处理：汇总已接收写作批次并创建受情境哈希约束的跨栏目分析任务包。
+    输入：
+    - ``run_path``：运行清单 JSON 路径；记录当前阶段、产物血缘、截止时间和恢复动作。
+    - ``data_dir``：当前运行的唯一数据根；所有状态和版本化产物都必须位于其中。
+    - ``allow_degraded``：达到截止条件后是否允许使用明确标记的降级内容继续组装。
+    输出：指向“汇总已接收写作批次并创建受情境哈希约束的跨栏目分析任务包”所生成、定位或确认产物的
+      本地路径。
+    """
     run_path = require_data_root_path(run_path, data_dir, "Run manifest")
-    run = read_json(run_path)
-    if not isinstance(run, dict):
-        raise ValueError("Run manifest must be a JSON object")
+    run = read_json_object(run_path, "Run manifest")
     validate_run_data_root(run, run_path, data_dir)
     if run.get("status") != RunStatus.AWAITING_AUTHORING:
         raise RuntimeError(
@@ -583,10 +718,16 @@ def assemble_authoring(
     analysis_path: Path,
     data_dir: Path,
 ) -> Path:
+    """处理：合并已验证简报与分析结果，生成可交给确定性报告编译器的草稿。
+    输入：
+    - ``run_path``：运行清单 JSON 路径；记录当前阶段、产物血缘、截止时间和恢复动作。
+    - ``analysis_path``：上游模型生成并已通过契约校验的跨栏目分析 JSON 路径。
+    - ``data_dir``：当前运行的唯一数据根；所有状态和版本化产物都必须位于其中。
+    输出：指向“合并已验证简报与分析结果，
+      生成可交给确定性报告编译器的草稿”所生成、定位或确认产物的本地路径。
+    """
     run_path = require_data_root_path(run_path, data_dir, "Run manifest")
-    run = read_json(run_path)
-    if not isinstance(run, dict):
-        raise ValueError("Run manifest must be a JSON object")
+    run = read_json_object(run_path, "Run manifest")
     validate_run_data_root(run, run_path, data_dir)
     if run.get("status") != RunStatus.AWAITING_AUTHORING:
         raise RuntimeError(
@@ -631,6 +772,18 @@ def prepare_edition(
     browser_channel: str | None = None,
     restart: bool = False,
 ) -> Path:
+    """处理：创建或恢复日报运行，确定采集窗口并生成权威来源索引与写作情境。
+    输入：
+    - ``config``：已校验的应用配置；提供时区、来源策略、并发限制、预算和输出选项。
+    - ``data_dir``：当前运行的唯一数据根；所有状态和版本化产物都必须位于其中。
+    - ``edition``：日报版本标识，通常为 morning 或 evening；参与窗口和产物命名。
+    - ``headed``：是否显示真实浏览器窗口；人工登录或验证场景需要开启。
+    - ``profile_dir``：持久化浏览器 Profile 目录；保存用户已授权的浏览器会话。
+    - ``browser_channel``：Playwright 浏览器通道名称；为空时使用配置或默认 Chromium。
+    - ``restart``：是否放弃可恢复的未完成运行并显式创建新运行。
+    输出：指向“创建或恢复日报运行，
+      确定采集窗口并生成权威来源索引与写作情境”所生成、定位或确认产物的本地路径。
+    """
     date = today_str(config.timezone)
     run_path = data_dir / "runs" / date / f"{edition}.json"
     lock_path = data_dir / "locks" / f"{date}-{edition}.lock"
@@ -728,7 +881,7 @@ def prepare_edition(
                 profile_dir=profile_dir,
                 browser_channel=browser_channel,
             )
-            index = read_json(index_path)
+            index = read_json_object(index_path, "Collected index")
             source_rows = [
                 row for row in index.get("sources", []) if isinstance(row, dict)
             ]
@@ -824,10 +977,20 @@ def enrich_edition(
     profile_dir: Path | None = None,
     browser_channel: str | None = None,
 ) -> Path:
+    """处理：按预算提取正文，并生成新的不可变富化索引修订。
+    输入：
+    - ``run_path``：运行清单 JSON 路径；记录当前阶段、产物血缘、截止时间和恢复动作。
+    - ``config``：已校验的应用配置；提供时区、来源策略、并发限制、预算和输出选项。
+    - ``data_dir``：当前运行的唯一数据根；所有状态和版本化产物都必须位于其中。
+    - ``selected_ids``：调用方按重要性排序选中的条目 ID；正文阶段只处理这些授权条目。
+    - ``max_items``：本步骤允许处理或返回的最大条目数；同时受全局预算限制。
+    - ``headed``：是否显示真实浏览器窗口；人工登录或验证场景需要开启。
+    - ``profile_dir``：持久化浏览器 Profile 目录；保存用户已授权的浏览器会话。
+    - ``browser_channel``：Playwright 浏览器通道名称；为空时使用配置或默认 Chromium。
+    输出：指向“按预算提取正文，并生成新的不可变富化索引修订”所生成、定位或确认产物的本地路径。
+    """
     run_path = require_data_root_path(run_path, data_dir, "Run manifest")
-    run = read_json(run_path)
-    if not isinstance(run, dict):
-        raise ValueError("Run manifest must be a JSON object")
+    run = read_json_object(run_path, "Run manifest")
     validate_run_data_root(run, run_path, data_dir)
     if run.get("status") not in {
         RunStatus.AWAITING_SELECTION,
@@ -900,7 +1063,7 @@ def enrich_edition(
             collection_window=run["collection_window"],
         )
         evidence = _enrichment_evidence(index_path, cumulative_ids)
-        enriched_index = read_json(index_path)
+        enriched_index = read_json_object(index_path, "Enriched index")
         content_metrics = (
             enriched_index.get("content_metrics", {})
             if isinstance(enriched_index, dict)
@@ -943,6 +1106,13 @@ def _coverage_targets_for_run(
     run: dict[str, Any],
     data_dir: Path,
 ) -> dict[str, int] | None:
+    """处理：从当前情境或降级状态读取来源覆盖目标。
+    输入：
+    - ``run``：当前运行清单对象；包含状态、尝试次数、截止时间和产物路径。
+    - ``data_dir``：当前运行的唯一数据根；所有状态和版本化产物都必须位于其中。
+    输出：“从当前情境或降级状态读取来源覆盖目标”形成的结构化字典；
+      键值表达该处理定义的业务记录或查找关系。
+    """
     authoring = run.get("artifacts", {}).get("authoring", {})
     values = authoring.get("coverage_targets")
     if values is None and authoring.get("session_path"):
@@ -964,6 +1134,14 @@ def _require_current_context_schema(
     run: dict[str, Any],
     data_dir: Path,
 ) -> None:
+    """处理：确认草稿声明当前情境 schema 版本，防止旧任务包进入报告编译。
+    输入：
+    - ``draft``：待完成的报告草稿对象；必须带当前情境 schema 和血缘字段。
+    - ``run``：当前运行清单对象；包含状态、尝试次数、截止时间和产物路径。
+    - ``data_dir``：当前运行的唯一数据根；所有状态和版本化产物都必须位于其中。
+    输出：不返回新数据；完成“确认草稿声明当前情境 schema 版本，防止旧任务包进入报告编译”，
+      副作用限于该处理声明的受控对象或产物。
+    """
     context_value = run.get("artifacts", {}).get("context_path")
     if not context_value:
         return
@@ -995,10 +1173,22 @@ def finalize_edition(
     media_config: MediaConfig | None = None,
     defer_tail: bool = False,
 ) -> Path:
+    """处理：编译并校验写作草稿，创建不可变报告及本地投影，再登记可恢复发布状态。
+    输入：
+    - ``run_path``：运行清单 JSON 路径；记录当前阶段、产物血缘、截止时间和恢复动作。
+    - ``report_path``：版本化报告 JSON 路径；本地报告是 HTML、PDF 和 Notion 的事实源。
+    - ``data_dir``：当前运行的唯一数据根；所有状态和版本化产物都必须位于其中。
+    - ``publish``：本地定稿后是否执行已配置的远程发布。
+    - ``force_publish``：是否绕过相同内容哈希的远程发布幂等跳过。
+    - ``notion_config``：可选 Notion 映射配置路径；提供时覆盖默认 configs/notion.yaml。
+    - ``output_config``：本地 HTML、PDF、桌面交付和打开行为配置。
+    - ``media_config``：图片下载、格式、安全、缓存和报告预算配置。
+    - ``defer_tail``：是否把 PDF、Notion 和独立评估移到可恢复的后台尾阶段。
+    输出：指向“编译并校验写作草稿，创建不可变报告及本地投影，
+      再登记可恢复发布状态”所生成、定位或确认产物的本地路径。
+    """
     run_path = require_data_root_path(run_path, data_dir, "Run manifest")
-    run = read_json(run_path)
-    if not isinstance(run, dict):
-        raise ValueError("Run manifest must be a JSON object")
+    run = read_json_object(run_path, "Run manifest")
     validate_run_data_root(run, run_path, data_dir)
     date = str(run["date"])
     edition = str(run["edition"])
@@ -1050,11 +1240,10 @@ def finalize_edition(
             RunStatus.PUBLISHING,
         }
         if run.get("status") not in recoverable:
+            # 终态和前置阶段都不能隐式跳转，恢复入口只接受明确列出的阶段。
             raise RuntimeError(f"Run is not ready to finalize, got {run.get('status')!r}")
 
-        draft = read_json(report_path)
-        if not isinstance(draft, dict):
-            raise ValueError("Report draft must be a JSON object")
+        draft = read_json_object(report_path, "Report draft")
         draft.setdefault("date", date)
         draft.setdefault("edition", edition)
         if draft.get("date") != date or draft.get("edition") != edition:
@@ -1067,6 +1256,7 @@ def finalize_edition(
         )
         _validate_enrichment_lineage(run, index_path)
         if not artifacts.get("json_path"):
+            # 本地权威报告尚未产生时才执行编译；重试会复用已保存的不可变报告。
             _update_run(run_path, run, RunStatus.FINALIZING)
             try:
                 requested_output = output_config or OutputConfig()
@@ -1109,18 +1299,19 @@ def finalize_edition(
             artifacts = run["artifacts"]
             milestones = dict(run.get("milestones", {}))
             milestones["local_html_ready_at"] = now_iso(timezone)
-            saved_report = read_json(Path(artifacts["json_path"]))
-            if isinstance(saved_report, dict):
-                successful = artifacts.get("enrichment", {}).get(
-                    "successful_item_ids", []
-                )
-                artifacts["evidence_metrics"] = {
-                    "featured_events": int(saved_report.get("event_count", 0)),
-                    "successful_fulltext_items": len(successful),
-                    "analysis_without_fulltext": bool(
-                        saved_report.get("analyses") and not successful
-                    ),
-                }
+            saved_report = read_json_object(
+                Path(artifacts["json_path"]), "Saved report"
+            )
+            successful = artifacts.get("enrichment", {}).get(
+                "successful_item_ids", []
+            )
+            artifacts["evidence_metrics"] = {
+                "featured_events": int(saved_report.get("event_count", 0)),
+                "successful_fulltext_items": len(successful),
+                "analysis_without_fulltext": bool(
+                    saved_report.get("analyses") and not successful
+                ),
+            }
             _update_run(
                 run_path,
                 run,
@@ -1130,16 +1321,13 @@ def finalize_edition(
             )
 
         if defer_tail:
+            # HTML 是前台交付物；PDF、Notion 与独立评估作为可重试尾部工作延后。
             local_ready_at = str(
                 run.get("milestones", {}).get("local_html_ready_at")
                 or now_iso(timezone)
             )
             requested_output = output_config or OutputConfig()
-            final_status = (
-                RunStatus.COMPLETED_PARTIAL
-                if run.get("pending_sources") or run.get("budget_exhausted")
-                else RunStatus.COMPLETED
-            )
+            final_status = _completion_status(run)
             tail_command = (
                 f'daily-intel --data-dir "{data_dir}" complete-edition-tail '
                 f'--run "{run_path}"'
@@ -1150,15 +1338,11 @@ def finalize_edition(
                     else ""
                 )
             )
-            evaluation_state = {
-                "status": "pending",
-                "report_id": run["artifacts"].get("report_id"),
-                "content_hash": run["artifacts"].get("content_hash"),
-                "scheduler": {"status": "deferred_until_tail"},
-                "next_action": (
-                    "The isolated evaluator will be scheduled by complete-edition-tail."
-                ),
-            }
+            evaluation_state = _pending_evaluation(
+                run["artifacts"],
+                "The isolated evaluator will be scheduled by complete-edition-tail.",
+                scheduler_status="deferred_until_tail",
+            )
             tail = {
                 "status": "pending",
                 "requested_at": local_ready_at,
@@ -1213,20 +1397,14 @@ def finalize_edition(
             run["artifacts"]["notion"] = publication
             run.setdefault("milestones", {})["notion_ready_at"] = now_iso(timezone)
 
-        final_status = (
-            RunStatus.COMPLETED_PARTIAL
-            if run.get("pending_sources") or run.get("budget_exhausted")
-            else RunStatus.COMPLETED
-        )
-        evaluation_state: dict[str, Any] = {
-            "status": "pending",
-            "report_id": run["artifacts"].get("report_id"),
-            "content_hash": run["artifacts"].get("content_hash"),
-            "next_action": (
+        final_status = _completion_status(run)
+        evaluation_state = _pending_evaluation(
+            run["artifacts"],
+            (
                 "Wait for the isolated post-publication evaluator; evaluation advice never "
                 "blocks this report."
             ),
-        }
+        )
         completed_at = now_iso(timezone)
         _update_run(
             run_path,
@@ -1273,10 +1451,18 @@ def complete_edition_tail(
     notion_config: Path | None = None,
     output_config: OutputConfig | None = None,
 ) -> Path:
+    """处理：在本地报告完成后补做 PDF、Notion 和独立评估调度。
+    输入：
+    - ``run_path``：运行清单 JSON 路径；记录当前阶段、产物血缘、截止时间和恢复动作。
+    - ``data_dir``：当前运行的唯一数据根；所有状态和版本化产物都必须位于其中。
+    - ``publish``：本地定稿后是否执行已配置的远程发布。
+    - ``notion_config``：可选 Notion 映射配置路径；提供时覆盖默认 configs/notion.yaml。
+    - ``output_config``：本地 HTML、PDF、桌面交付和打开行为配置。
+    输出：指向“在本地报告完成后补做 PDF、Notion 和独立评估调度”所生成、定位或确认产物的本地路径
+      。
+    """
     run_path = require_data_root_path(run_path, data_dir, "Run manifest")
-    run = read_json(run_path)
-    if not isinstance(run, dict):
-        raise ValueError("Run manifest must be a JSON object")
+    run = read_json_object(run_path, "Run manifest")
     validate_run_data_root(run, run_path, data_dir)
     if run.get("status") not in {
         RunStatus.COMPLETED,
@@ -1290,9 +1476,7 @@ def complete_edition_tail(
     timezone = str(run.get("timezone", "Asia/Shanghai"))
     lock_path = data_dir / "locks" / f"{date}-{edition}.lock"
     with exclusive_lock(lock_path, _lock_payload(edition, now_iso(timezone))):
-        run = read_json(run_path)
-        if not isinstance(run, dict):
-            raise ValueError("Run manifest must be a JSON object")
+        run = read_json_object(run_path, "Run manifest")
         tail = dict(run.get("tail") or {})
         if tail.get("status") == "completed":
             return run_path
@@ -1302,9 +1486,7 @@ def complete_edition_tail(
             data_dir,
             "Saved report",
         )
-        report = read_json(report_path)
-        if not isinstance(report, dict):
-            raise ValueError("Saved report must be a JSON object")
+        report = read_json_object(report_path, "Saved report")
         tail_started_at = now_iso(timezone)
         tail.update({"status": "running", "started_at": tail_started_at})
         _update_run(
@@ -1329,6 +1511,7 @@ def complete_edition_tail(
         )
         local_projection_seconds = None
         if "pdf" in requested_formats and not artifacts.get("pdf_path"):
+            # PDF 是可重建投影，失败记录到 tail.errors，不影响已持久化的本地 HTML/JSON。
             projection_started = perf_counter()
             try:
                 local_outputs = write_local_outputs(
@@ -1361,6 +1544,7 @@ def complete_edition_tail(
         if configured_notion_path is None and tail.get("notion_config"):
             configured_notion_path = Path(str(tail["notion_config"]))
         if publish_requested and not publication:
+            # 已存在发布回执时保持幂等；只有缺失时才触发远程写入。
             try:
                 page_id, publication_status = publish_report(
                     report_path,
@@ -1378,11 +1562,10 @@ def complete_edition_tail(
 
         evaluation = run.get("evaluation")
         if not isinstance(evaluation, dict):
-            evaluation = {
-                "status": "pending",
-                "report_id": artifacts.get("report_id"),
-                "content_hash": artifacts.get("content_hash"),
-            }
+            evaluation = _pending_evaluation(
+                artifacts,
+                "Independent evaluation is pending and will run asynchronously.",
+            )
         scheduler = evaluation.get("scheduler")
         if (
             evaluation.get("status") != "completed"
@@ -1391,6 +1574,7 @@ def complete_edition_tail(
                 or scheduler.get("status") not in {"scheduled", "completed"}
             )
         ):
+            # 调度状态本身也是检查点，避免尾部重试重复创建评估任务。
             evaluation["scheduler"] = schedule_independent_evaluation(
                 report_path,
                 Path(artifacts["index_path"]),

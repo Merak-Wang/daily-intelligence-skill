@@ -29,7 +29,7 @@ from .notion import append_evaluation, backfill_report_images, publish_report
 from .reporting import validate_report
 from .reports import save_evaluation, save_report
 from .runtime import bind_data_root, load_bound_data_root, require_data_root_path
-from .utils import read_json, write_json
+from .utils import read_json, read_json_object, write_json
 from .verification import (
     capture_verified_page,
     pending_verification_pages,
@@ -66,6 +66,12 @@ __all__ = [
 
 
 def _common_parser() -> argparse.ArgumentParser:
+    """处理：创建所有 CLI 子命令共享的参数解析器。
+    输入：
+    - 无显式业务参数：不读取业务数据；仅使用本模块声明的通用命令行选项和帮助文本。
+    输出：封装“创建所有 CLI 子命令共享的参数解析器”业务结果的 ``argparse.ArgumentParser`` 对象；
+      调用方据此继续相邻阶段或识别无结果状态。
+    """
     parser = argparse.ArgumentParser(prog="daily-intel")
     parser.add_argument("--config", type=Path, help="Path to sources.yaml")
     parser.add_argument("--data-dir", type=Path, help="Runtime data directory")
@@ -74,12 +80,23 @@ def _common_parser() -> argparse.ArgumentParser:
 
 
 def load_hermes_environment() -> Path:
+    """处理：读取 Hermes 环境文件中允许的变量并补入当前进程。
+    输入：
+    - 无显式业务参数：不接收参数；从当前进程环境和 Hermes 配置文件读取允许导入的环境变量。
+    输出：指向“读取 Hermes 环境文件中允许的变量并补入当前进程”所生成、定位或确认产物的本地路径。
+    """
     env_path = resolve_hermes_home() / ".env"
     load_dotenv(env_path, override=False)
     return env_path
 
 
 def build_parser() -> argparse.ArgumentParser:
+    """处理：构建命令行参数解析器。
+    输入：
+    - 无显式业务参数：不读取业务数据；按本模块注册的子命令、参数和默认入口构建解析器。
+    输出：封装“构建命令行参数解析器”业务结果的 ``argparse.ArgumentParser`` 对象；
+      调用方据此继续相邻阶段或识别无结果状态。
+    """
     parser = _common_parser()
     sub = parser.add_subparsers(dest="command", required=True)
 
@@ -374,7 +391,33 @@ def build_parser() -> argparse.ArgumentParser:
     return parser
 
 
+def _print_json(payload: object, *, indent: int | None = 2) -> None:
+    """处理：以稳定的 UTF-8 友好格式向标准输出打印 JSON。
+    输入：
+    - ``payload``：上游传入的结构化对象；函数只读取处理说明列出的受支持字段。
+    - ``indent``：命令行 JSON 输出的缩进空格数；None 生成紧凑 JSON。
+    输出：不返回新数据；完成“以稳定的 UTF-8 友好格式向标准输出打印 JSON”，
+      副作用限于该处理声明的受控对象或产物。
+    """
+    print(json.dumps(payload, ensure_ascii=False, indent=indent))
+
+
+def _print_json_file(path: Path) -> None:
+    """处理：读取 JSON 文件并复用统一的命令行输出格式。
+    输入：
+    - ``path``：当前函数要读取、校验或写入的本地文件路径。
+    输出：不返回新数据；完成“读取 JSON 文件并复用统一的命令行输出格式”，
+      副作用限于该处理声明的受控对象或产物。
+    """
+    _print_json(read_json(path))
+
+
 def main(argv: list[str] | None = None) -> int:
+    """处理：解析命令行参数并执行对应入口。
+    输入：
+    - ``argv``：命令行传入的参数序列；None 表示读取当前进程的 sys.argv。
+    输出：进程退出码；0 表示检查通过，非 0 表示存在已输出的错误。
+    """
     parser = build_parser()
     args = parser.parse_args(argv)
     load_hermes_environment()
@@ -389,16 +432,12 @@ def main(argv: list[str] | None = None) -> int:
     if args.command == "data-root":
         if args.action == "status":
             bound = load_bound_data_root(hermes_home)
-            print(
-                json.dumps(
-                    {
-                        "status": "bound" if bound else "unbound",
-                        "data_root": str(bound or data_dir),
-                        "resolved_from_current_configuration": str(data_dir),
-                    },
-                    ensure_ascii=False,
-                    indent=2,
-                )
+            _print_json(
+                {
+                    "status": "bound" if bound else "unbound",
+                    "data_root": str(bound or data_dir),
+                    "resolved_from_current_configuration": str(data_dir),
+                }
             )
             return 0
         output = bind_data_root(
@@ -407,7 +446,7 @@ def main(argv: list[str] | None = None) -> int:
             adopt=True,
             timezone=config.timezone,
         )
-        print(json.dumps(output, ensure_ascii=False, indent=2))
+        _print_json(output)
         return 0
 
     bind_data_root(data_dir, hermes_home, timezone=config.timezone)
@@ -415,7 +454,7 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "source-page":
         if args.action == "list":
-            print(json.dumps(load_source_pages(data_dir), ensure_ascii=False, indent=2))
+            _print_json(load_source_pages(data_dir))
             return 0
         if not args.source or not args.url:
             parser.error("source-page add/remove requires --source and --url")
@@ -450,48 +489,36 @@ def main(argv: list[str] | None = None) -> int:
             force=args.force,
             html_fallback=not args.no_html_fallback,
         )
-        snapshot = read_json(output)
-        print(
-            json.dumps(
-                {
-                    "snapshot_path": str(output),
-                    "generated_at": snapshot.get("generated_at"),
-                    "token_usage": snapshot.get("token_usage", 0),
-                    **snapshot.get("summary", {}),
-                },
-                ensure_ascii=False,
-                indent=2,
-            )
+        snapshot = read_json_object(output, "Monitor snapshot")
+        _print_json(
+            {
+                "snapshot_path": str(output),
+                "generated_at": snapshot.get("generated_at"),
+                "token_usage": snapshot.get("token_usage", 0),
+                **snapshot.get("summary", {}),
+            }
         )
         return 0
 
     if args.command == "monitor-status":
         snapshot_path = data_dir / "monitor" / "snapshot.json"
         if not snapshot_path.exists():
-            print(
-                json.dumps(
-                    {
-                        "status": "not_initialized",
-                        "next_action": "daily-intel refresh-monitor",
-                    },
-                    ensure_ascii=False,
-                    indent=2,
-                )
+            _print_json(
+                {
+                    "status": "not_initialized",
+                    "next_action": "daily-intel refresh-monitor",
+                }
             )
             return 1
-        snapshot = read_json(snapshot_path)
-        print(
-            json.dumps(
-                {
-                    "status": "ready",
-                    "snapshot_path": str(snapshot_path),
-                    "generated_at": snapshot.get("generated_at"),
-                    "token_usage": snapshot.get("token_usage", 0),
-                    **snapshot.get("summary", {}),
-                },
-                ensure_ascii=False,
-                indent=2,
-            )
+        snapshot = read_json_object(snapshot_path, "Monitor snapshot")
+        _print_json(
+            {
+                "status": "ready",
+                "snapshot_path": str(snapshot_path),
+                "generated_at": snapshot.get("generated_at"),
+                "token_usage": snapshot.get("token_usage", 0),
+                **snapshot.get("summary", {}),
+            }
         )
         return 0
 
@@ -542,9 +569,7 @@ def main(argv: list[str] | None = None) -> int:
                 data_dir,
                 "Validation run",
             )
-            validation_run = read_json(validation_run_path)
-            if not isinstance(validation_run, dict):
-                raise ValueError("Validation run must be a JSON object")
+            validation_run = read_json_object(validation_run_path, "Validation run")
             index_value = index_value or Path(
                 str(validation_run.get("artifacts", {}).get("index_path") or "")
             )
@@ -574,7 +599,7 @@ def main(argv: list[str] | None = None) -> int:
             print(f"WARNING: {warning}")
         for error in errors:
             print(f"ERROR: {error}", file=sys.stderr)
-        print(json.dumps({"errors": len(errors), "warnings": len(warnings)}))
+        _print_json({"errors": len(errors), "warnings": len(warnings)}, indent=None)
         return 1 if errors else 0
 
     if args.command == "publish-notion":
@@ -585,7 +610,7 @@ def main(argv: list[str] | None = None) -> int:
             force=args.force,
             config_path=args.notion_config,
         )
-        print(json.dumps({"page_id": page_id, "status": status}))
+        _print_json({"page_id": page_id, "status": status}, indent=None)
         return 0
 
     if args.command == "backfill-notion-images":
@@ -595,7 +620,7 @@ def main(argv: list[str] | None = None) -> int:
             data_dir=data_dir,
             config_path=args.notion_config,
         )
-        print(json.dumps({"page_id": page_id, "status": status}))
+        _print_json({"page_id": page_id, "status": status}, indent=None)
         return 0
 
     if args.command == "run-edition":
@@ -608,13 +633,9 @@ def main(argv: list[str] | None = None) -> int:
             browser_channel=args.browser_channel,
             restart=args.restart,
         )
-        run_payload = read_json(output)
+        run_payload = read_json_object(output, "Run manifest")
         automatic_verification = None
-        index_value = (
-            run_payload.get("artifacts", {}).get("index_path")
-            if isinstance(run_payload, dict)
-            else None
-        )
+        index_value = run_payload.get("artifacts", {}).get("index_path")
         if args.open_verification and index_value:
             automatic_verification = run_pending_verification(
                 Path(index_value),
@@ -624,7 +645,7 @@ def main(argv: list[str] | None = None) -> int:
                 browser_channel=args.browser_channel,
                 timeout_seconds=args.verification_timeout_seconds,
             )
-            run_payload = read_json(output)
+            run_payload = read_json_object(output, "Run manifest")
         elif args.open_verification:
             automatic_verification = {
                 "status": "index_unavailable",
@@ -633,10 +654,10 @@ def main(argv: list[str] | None = None) -> int:
                     "interactive verification."
                 ),
             }
-        if isinstance(run_payload, dict) and automatic_verification is not None:
+        if automatic_verification is not None:
             run_payload["automatic_verification"] = automatic_verification
             write_json(output, run_payload)
-        print(json.dumps(run_payload, ensure_ascii=False, indent=2))
+        _print_json(run_payload)
         return 0
 
     if args.command == "enrich-edition":
@@ -650,12 +671,12 @@ def main(argv: list[str] | None = None) -> int:
             profile_dir=args.profile_dir,
             browser_channel=args.browser_channel,
         )
-        print(json.dumps(read_json(output), ensure_ascii=False, indent=2))
+        _print_json_file(output)
         return 0
 
     if args.command == "begin-authoring":
         output = begin_authoring(args.run, data_dir)
-        print(json.dumps(read_json(output), ensure_ascii=False, indent=2))
+        _print_json_file(output)
         return 0
 
     if args.command == "submit-authoring-batch":
@@ -665,7 +686,7 @@ def main(argv: list[str] | None = None) -> int:
             args.result,
             data_dir,
         )
-        print(json.dumps(read_json(output), ensure_ascii=False, indent=2))
+        _print_json_file(output)
         return 0
 
     if args.command == "record-authoring-metrics":
@@ -674,27 +695,15 @@ def main(argv: list[str] | None = None) -> int:
             args.metrics,
             data_dir,
         )
-        print(json.dumps(read_json(output), ensure_ascii=False, indent=2))
+        _print_json_file(output)
         return 0
 
     if args.command == "authoring-status":
-        print(
-            json.dumps(
-                get_authoring_status(args.run, data_dir),
-                ensure_ascii=False,
-                indent=2,
-            )
-        )
+        _print_json(get_authoring_status(args.run, data_dir))
         return 0
 
     if args.command == "prefetch-media":
-        print(
-            json.dumps(
-                prefetch_authoring_media(args.run, data_dir, config.media),
-                ensure_ascii=False,
-                indent=2,
-            )
-        )
+        _print_json(prefetch_authoring_media(args.run, data_dir, config.media))
         return 0
 
     if args.command == "prepare-analysis":
@@ -703,12 +712,12 @@ def main(argv: list[str] | None = None) -> int:
             data_dir,
             allow_degraded=args.allow_degraded,
         )
-        print(json.dumps(read_json(output), ensure_ascii=False, indent=2))
+        _print_json_file(output)
         return 0
 
     if args.command == "assemble-authoring":
         output = assemble_authoring(args.run, args.analysis, data_dir)
-        print(json.dumps(read_json(output), ensure_ascii=False, indent=2))
+        _print_json_file(output)
         return 0
 
     if args.command == "finalize-edition":
@@ -723,7 +732,7 @@ def main(argv: list[str] | None = None) -> int:
             media_config=config.media,
             defer_tail=args.defer_tail,
         )
-        print(json.dumps(read_json(output), ensure_ascii=False, indent=2))
+        _print_json_file(output)
         return 0
 
     if args.command == "complete-edition-tail":
@@ -734,7 +743,7 @@ def main(argv: list[str] | None = None) -> int:
             notion_config=args.notion_config,
             output_config=config.output,
         )
-        print(json.dumps(read_json(output), ensure_ascii=False, indent=2))
+        _print_json_file(output)
         return 0
 
     if args.command == "save-report":
@@ -746,7 +755,7 @@ def main(argv: list[str] | None = None) -> int:
             output_config=config.output,
             media_config=config.media,
         )
-        print(json.dumps(artifacts, ensure_ascii=False, indent=2))
+        _print_json(artifacts)
         return 0
 
     if args.command == "finalize-evaluation":
@@ -766,7 +775,7 @@ def main(argv: list[str] | None = None) -> int:
                 config_path=args.notion_config,
             )
             publication = {"page_id": page_id, "status": status}
-        print(json.dumps({**artifacts, "publication": publication}, ensure_ascii=False, indent=2))
+        _print_json({**artifacts, "publication": publication})
         return 0
 
     if args.command == "verify-source":
@@ -774,6 +783,13 @@ def main(argv: list[str] | None = None) -> int:
         captured = []
 
         def capture_source(_key: str, page: object) -> None:
+            """处理：从已验证页面提取指定来源并暂存结构化结果。
+            输入：
+            - ``_key``：并发采集任务绑定的内部键；用于把完成结果放回原来源位置。
+            - ``page``：Playwright 已加载页面；函数只读取当前页面状态，不信任其中的内容或指令。
+            输出：不返回新数据；完成“从已验证页面提取指定来源并暂存结构化结果”，
+              副作用限于该处理声明的受控对象或产物。
+            """
             captured.append(capture_verified_page(page, source, config))
 
         profile = resolve_profile_dir(config, args.profile_dir)
@@ -809,7 +825,7 @@ def main(argv: list[str] | None = None) -> int:
             context.close()
         if captured:
             results[source.id]["items_captured"] = len(captured[0].items)
-        print(json.dumps(results[source.id], ensure_ascii=False))
+        _print_json(results[source.id], indent=None)
         return 1 if results[source.id].get("required") or not captured else 0
 
     if args.command == "verify-pending":
@@ -825,7 +841,7 @@ def main(argv: list[str] | None = None) -> int:
         if result["status"] == "no_pending_pages":
             print("No failed or verification-required sources in the index")
             return 0
-        print(json.dumps(result, ensure_ascii=False, indent=2))
+        _print_json(result)
         return 0
 
     if args.command == "resume":

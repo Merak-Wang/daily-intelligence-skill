@@ -9,6 +9,12 @@ from .utils import read_json, write_json
 
 
 def _items(path: Path) -> list[dict[str, Any]]:
+    """处理：展开报告全部栏目中的事件或简报条目。
+    输入：
+    - ``path``：当前函数要读取、校验或写入的本地文件路径。
+    输出：“展开报告全部栏目中的事件或简报条目”得到的有序结构化记录；
+      每项承载处理说明所定义的身份、证据或状态字段，可直接交给下一阶段。
+    """
     if not path.exists():
         return []
     raw = read_json(path)
@@ -20,6 +26,12 @@ def _items(path: Path) -> list[dict[str, Any]]:
 
 
 def _watch_id(analysis_id: str, signal: str) -> str:
+    """处理：根据观察类型和稳定键生成连续性状态 ID。
+    输入：
+    - ``analysis_id``：外部分析任务的稳定 ID；与 signal 一起生成可观察任务键。
+    - ``signal``：需要监测的分析信号名称。
+    输出：可跨修订关联的稳定字符串标识，供索引、状态或发布记录使用。
+    """
     digest = hashlib.sha256(f"{analysis_id}|{signal}".encode()).hexdigest()[:12]
     return f"WATCH-{digest}"
 
@@ -28,6 +40,14 @@ def update_continuity_state(
     report: dict[str, Any],
     data_dir: Path,
 ) -> dict[str, str]:
+    """处理：从已评估报告更新论点、观察列表和预测状态。
+    输入：
+    - ``report``：当前报告结构；包含栏目、简报或事件、来源引用及质量元数据。
+    - ``data_dir``：当前运行的唯一数据根；所有状态和版本化产物都必须位于其中。
+    输出：“从已评估报告更新论点、观察列表和预测状态”形成的结构化字典；
+      典型键包括 analysis_id、category、claim、confidence、counter_evidence、domain、event_id、e
+      vents、evidence_event_ids、first_seen_at、generated_at、history。
+    """
     state_dir = data_dir / "state"
     generated_at = report["generated_at"]
     report_id = report["report_id"]

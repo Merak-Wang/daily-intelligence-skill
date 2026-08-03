@@ -47,6 +47,7 @@ def _config() -> AppConfig:
 
 
 def test_monitor_snapshot_is_zero_token_and_reusable_by_editions(tmp_path: Path):
+    now = datetime(2026, 7, 24, 10, 0, tzinfo=ZoneInfo("Asia/Shanghai"))
     rss = b"""<rss><channel><item>
       <title>Major regional agreement receives a detailed official update</title>
       <link>https://news.example/agreement</link>
@@ -68,6 +69,7 @@ def test_monitor_snapshot_is_zero_token_and_reusable_by_editions(tmp_path: Path)
         include_discovery=False,
         force=True,
         transport=transport,
+        now=now,
     )
     snapshot = read_json(output)
 
@@ -83,6 +85,7 @@ def test_monitor_snapshot_is_zero_token_and_reusable_by_editions(tmp_path: Path)
         config.sources,
         config.timezone,
         max_age_minutes=90,
+        now=now,
     )
     assert len(cached["monitor_example"].items) == 1
     assert cached["monitor_example"].challenge["monitor_cache"] is True
