@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import base64
 import os
 import re
 import subprocess
@@ -121,6 +122,20 @@ def schedule_independent_evaluation(
     """
     draft_path = data_dir / "evaluations" / "drafts" / f"{report_id}.json"
     notion_flag = " --publish" if publish_notion else ""
+    repository_root = project_root()
+    source_root = repository_root / "src"
+    contract_path = repository_root / "templates" / "report-contract.md"
+    encoded_source_root = base64.urlsafe_b64encode(
+        str(source_root).encode("utf-8")
+    ).decode("ascii")
+    # Hermes may execute a Windows-hosted job through Git Bash. Injecting sys.path inside
+    # Python avoids choosing shell-specific PYTHONPATH syntax and binds the evaluator to src/.
+    cli_prefix = (
+        'python -c "import base64,runpy,sys; '
+        f"sys.path.insert(0, base64.urlsafe_b64decode('{encoded_source_root}').decode()); "
+        "sys.argv=['daily-intel']+sys.argv[1:]; "
+        "runpy.run_module('daily_intelligence.cli', run_name='__main__')\""
+    )
     report = read_json(report_path) if report_path.is_file() else None
     language = (
         report.get("language")
@@ -131,11 +146,15 @@ def schedule_independent_evaluation(
         language,
         (
             "你是发布后独立评估 Agent，不参与日报生成，也不得修改主报告。"
-            f"只读不可变报告 {report_path}、索引 {index_path} 和技能中的 "
-            "templates/report-contract.md；按九个固定维度各给 1—5 分，总分必须等于"
+            f"只读不可变报告 {report_path}、索引 {index_path} 和仓库权威契约 "
+            f"{contract_path}；按九个固定维度各给 1—5 分，总分必须等于"
             "九项之和，简洁指出主要缺陷、证据不足和改进建议。"
+            "importance_ordering 维度必须检查精选事件按 importance 排序，并检查普通 "
+            "brief 严格保持 index/brief_plan 顺序；不得要求普通 brief 按 importance "
+            "二次重排。"
             f"被评报告 ID 是 {report_id}，内容 SHA-256 是 {content_hash}。"
-            f"把评估 JSON 写到 {draft_path}，然后执行：daily-intel --data-dir "
+            f"把评估 JSON 写到 {draft_path}，然后用当前仓库规范源码执行："
+            f"{cli_prefix} --data-dir "
             f"\"{data_dir}\" finalize-evaluation --report \"{report_path}\" "
             f"--evaluation \"{draft_path}\" {notion_flag}。若该 report_id 已有 "
             "completed 评估则直接退出；不得要求用户点击。该任务最多由调度器尝试"
@@ -144,12 +163,16 @@ def schedule_independent_evaluation(
         (
             "You are an independent post-publication evaluator. You did not author the "
             "report and must not modify it. Read only the immutable report "
-            f"{report_path}, index {index_path}, and templates/report-contract.md. "
+            f"{report_path}, index {index_path}, and the canonical contract "
+            f"{contract_path}. "
             "Score each of the nine fixed dimensions from 1 to 5; total_score must equal "
             "their sum. Write concise findings, main defects, evidence gaps, and "
-            f"improvements in English. The report ID is {report_id}; its SHA-256 is "
+            "improvements. For importance_ordering, verify featured events are ordered by "
+            "importance and ordinary briefs preserve index/brief_plan order; never require "
+            "ordinary briefs to be re-sorted by importance. "
+            f"Write findings in English. The report ID is {report_id}; its SHA-256 is "
             f"{content_hash}. Write the evaluation JSON to {draft_path}, then run: "
-            f"daily-intel --data-dir \"{data_dir}\" finalize-evaluation --report "
+            f"{cli_prefix} --data-dir \"{data_dir}\" finalize-evaluation --report "
             f"\"{report_path}\" --evaluation \"{draft_path}\" {notion_flag}. Exit if a "
             "completed evaluation already exists for this report_id. Do not ask the user "
             "to click anything. The scheduler may attempt this job up to three times to "
@@ -696,6 +719,7 @@ def prepare_authoring_analysis(
                 "brief_count": prepared["brief_count"],
                 "batch_metrics": prepared["batch_metrics"],
                 "missing_batches": prepared["missing_batches"],
+                "recovered_batches": prepared["recovered_batches"],
                 "coverage_targets": prepared["coverage_targets"],
             }
         )
@@ -1129,6 +1153,39 @@ def _coverage_targets_for_run(
     return {str(key): value for key, value in values.items()}
 
 
+def brief_plan_item_ids_for_run(
+    run: dict[str, Any],
+    data_dir: Path,
+) -> dict[str, list[str]] | None:
+    """处理：从当前运行绑定的 context 读取每来源有序 brief 选择边界。
+    输入：
+    - ``run``：当前运行清单；artifacts.context_path 指向本轮唯一情境产物。
+    - ``data_dir``：当前运行的唯一数据根；context 路径必须受其约束。
+    输出：source_id 到 default_item_ids 有序列表的映射；没有当前 context 时返回 None，
+      使旧的独立校验流程保持兼容，但正式定稿不会自行扩大选择范围。
+    """
+    context_value = run.get("artifacts", {}).get("context_path")
+    if not context_value:
+        return None
+    context_path = require_data_root_path(
+        Path(str(context_value)),
+        data_dir,
+        "Brief plan context",
+    )
+    context = read_json(context_path)
+    if not isinstance(context, dict):
+        raise ValueError("Brief plan context must be a JSON object")
+    planned: dict[str, list[str]] = {}
+    for row in context.get("brief_plan", []):
+        if not isinstance(row, dict) or not row.get("source_id"):
+            continue
+        item_ids = row.get("default_item_ids", [])
+        if not isinstance(item_ids, list):
+            raise ValueError("brief_plan.default_item_ids must be an array")
+        planned[str(row["source_id"])] = [str(item_id) for item_id in item_ids]
+    return planned
+
+
 def _require_current_context_schema(
     draft: dict[str, Any],
     run: dict[str, Any],
@@ -1284,6 +1341,7 @@ def finalize_edition(
                     output_config=local_output,
                     media_config=media_config,
                     coverage_targets=_coverage_targets_for_run(run, data_dir),
+                    brief_plan_item_ids=brief_plan_item_ids_for_run(run, data_dir),
                 )
             except Exception as exc:
                 _update_run(

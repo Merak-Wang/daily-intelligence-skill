@@ -1,6 +1,9 @@
+from dataclasses import replace
+
 from daily_intelligence.adapters import (
     _published_at,
     arxiv_items_from_rows,
+    browser_items_from_rows,
     collect_browser_index,
     latest_year_url,
     seed_items_from_payload,
@@ -8,7 +11,7 @@ from daily_intelligence.adapters import (
 )
 from daily_intelligence.collector import classify_source_status, is_eligible
 from daily_intelligence.config import load_config
-from daily_intelligence.models import SourceStatus
+from daily_intelligence.models import SourceStatus, order_source_items
 from daily_intelligence.utils import canonicalize_url, url_for_source_filter
 
 
@@ -19,6 +22,53 @@ def test_tracking_parameters_are_removed():
         url_for_source_filter(url)
         == "https://www.yahoo.com/news/a.html?keep=yes"
     )
+
+
+def test_news_ordering_keeps_source_top_by_default_and_can_use_publication_time():
+    items = [
+        {
+            "item_id": "top-old",
+            "published_at": "2023-09-12",
+            "metadata": {"source_rank": 1},
+        },
+        {
+            "item_id": "second-new",
+            "published_at": "2026-08-03T02:00:00Z",
+            "metadata": {"source_rank": 2},
+        },
+        {
+            "item_id": "missing-time",
+            "published_at": None,
+            "metadata": {"source_rank": 3},
+        },
+    ]
+
+    assert [item["item_id"] for item in order_source_items(items, "source")] == [
+        "top-old",
+        "second-new",
+        "missing-time",
+    ]
+    assert [
+        item["item_id"] for item in order_source_items(items, "published_at")
+    ] == ["second-new", "top-old", "missing-time"]
+
+
+def test_source_order_places_retained_monitor_history_after_current_top_items():
+    items = [
+        {
+            "item_id": "retained-top",
+            "metadata": {
+                "source_rank": 1,
+                "retained_from_previous_snapshot": True,
+            },
+        },
+        {"item_id": "current-second", "metadata": {"source_rank": 2}},
+    ]
+
+    assert [item["item_id"] for item in order_source_items(items, "source")] == [
+        "current-second",
+        "retained-top",
+    ]
 
 
 def test_source_filter_ignores_tracking_parameters_without_changing_host_shape():
@@ -392,6 +442,38 @@ def test_generic_browser_adapter_persists_relative_publication_time():
     items = collect_browser_index(Page(), source, "2026-07-14T06:00:00+08:00")
 
     assert items[0].published_at == "2026-07-14T04:00:00+08:00"
+
+
+def test_browser_adapter_exposes_full_candidate_window_for_publication_order():
+    source = replace(
+        load_config().source_by_id("bbc_world"),
+        max_items=1,
+        item_order="published_at",
+    )
+    rows = [
+        {
+            "title": "Older headline remains first on the source page",
+            "href": "https://www.bbc.com/news/articles/older-first",
+            "context": "Published September 12, 2023",
+        },
+        {
+            "title": "Newer headline appears second on the source page",
+            "href": "https://www.bbc.com/news/articles/newer-second",
+            "context": "Published August 3, 2026",
+        },
+    ]
+
+    items = browser_items_from_rows(
+        rows,
+        source,
+        "2026-08-03T10:00:00+08:00",
+        source.url,
+    )
+
+    assert [item.url for item in items] == [
+        "https://www.bbc.com/news/articles/older-first",
+        "https://www.bbc.com/news/articles/newer-second",
+    ]
 
 
 def test_http_5xx_is_failed_not_no_items():

@@ -247,7 +247,7 @@ def browser_items_from_rows(
             continue
         seen.add(article.canonical_url)
         items.append(article)
-        if len(items) >= source.max_items:
+        if source.item_order != "published_at" and len(items) >= source.max_items:
             break
     return items
 

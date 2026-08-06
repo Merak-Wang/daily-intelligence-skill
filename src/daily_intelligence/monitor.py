@@ -21,7 +21,7 @@ from .feeds import (
     fetch_feed,
     looks_like_feed,
 )
-from .models import ArticleItem, SourceResult, SourceStatus
+from .models import ArticleItem, SourceResult, SourceStatus, order_source_items
 from .prefetch import prefetch_browser_pages
 from .utils import read_json_object, write_json
 
@@ -85,14 +85,14 @@ def _current_time(timezone: str, now: datetime | None = None) -> datetime:
 
 
 def _item_time(item: dict[str, Any], timezone: str) -> datetime | None:
-    """处理：从条目发布时间或发现时间解析排序时间。
+    """处理：从条目发现时间或发布时间解析监控保留时间。
     输入：
     - ``item``：单个规范条目对象；通常包含 item_id、来源、标题、URL、时间和元数据。
     - ``timezone``：IANA 时区名称；用于解析无时区时间并生成日报时间边界。
-    输出：封装“从条目发布时间或发现时间解析排序时间”业务结果的 ``datetime | None`` 对象；
-      调用方据此继续相邻阶段或识别无结果状态。
+    输出：优先采用本地发现时间的 ``datetime | None``；这样本轮仍在来源 Top 中的旧文章
+      不会因论文或新闻原始发布日期较早而被误删，缺少发现时间时才回退发布时间。
     """
-    return _parse_time(item.get("published_at") or item.get("discovered_at"), timezone)
+    return _parse_time(item.get("discovered_at") or item.get("published_at"), timezone)
 
 
 async def _read_bounded_response(response: httpx.Response, max_bytes: int) -> bytes:
@@ -451,7 +451,7 @@ def _merge_source_items(
     - ``feed_results``：同一来源各 Feed 的抓取结果；包含缓存、失败和规范条目。
     - ``html_results``：同一来源静态 HTML 或浏览器回退的采集结果。
     输出：可写入监控快照的规范文章记录；
-      已按 canonical_url 去重、按发布时间稳定倒序、补齐来源策略与 source_rank，
+      已按 canonical_url 去重、保留原始 source_rank、执行来源所选排序，
       并受 source.max_items 限制。
     """
     by_canonical: dict[str, dict[str, Any]] = {}
@@ -475,18 +475,11 @@ def _merge_source_items(
                 )
             by_canonical.setdefault(article.canonical_url, payload)
     items = list(by_canonical.values())
-    items.sort(
-        key=lambda item: (
-            str(item.get("published_at") or item.get("discovered_at") or ""),
-            str(item.get("item_id") or ""),
-        ),
-        reverse=True,
-    )
-    for rank, item in enumerate(items[: source.max_items], start=1):
+    for rank, item in enumerate(items, start=1):
         metadata = item.setdefault("metadata", {})
         if isinstance(metadata, dict):
             metadata["source_rank"] = rank
-    return items[: source.max_items]
+    return order_source_items(items, source.item_order)[: source.max_items]
 
 
 def _source_record(
@@ -535,6 +528,7 @@ def _source_record(
         "module": source.module,
         "category": source.category,
         "region": source.region,
+        "item_order": source.item_order,
         "methods": methods,
         "feed_urls": [result.feed_url for result in feed_results],
         "items_count": len(items),
@@ -591,9 +585,7 @@ def _merge_history_items(
     for item in new_items:
         if not item.get("item_id"):
             continue
-        observed = _item_time(item, config.timezone)
-        if observed is not None and observed < cutoff:
-            continue
+        # 本轮来源仍返回的条目即为当前候选；发布日期较早不能覆盖来源的 Top 语义。
         metadata = item.setdefault("metadata", {})
         if isinstance(metadata, dict):
             metadata.pop("retained_from_previous_snapshot", None)
@@ -904,11 +896,20 @@ def load_monitor_results(
     for row in snapshot.get("items", []):
         if not isinstance(row, dict) or str(row.get("source_id")) not in allowed:
             continue
+        metadata = row.get("metadata")
+        if isinstance(metadata, dict) and metadata.get(
+            "retained_from_previous_snapshot"
+        ):
+            # 历史保留项只服务监控连续性；正式日报必须触发实时回退来补足当前 Top。
+            continue
         with contextlib.suppress(TypeError, ValueError):
             items_by_source[str(row["source_id"])].append(article_from_dict(row))
     results: dict[str, SourceResult] = {}
     for source in sources:
-        items = items_by_source.get(source.id, [])
+        items = order_source_items(
+            items_by_source.get(source.id, []),
+            source.item_order,
+        )
         if not items:
             continue
         row = source_rows.get(source.id, {})

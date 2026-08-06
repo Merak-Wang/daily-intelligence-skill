@@ -764,12 +764,15 @@ def compile_report_data(
     report: dict,
     index: dict,
     semantic_cache: dict[str, dict[str, Any]] | None = None,
+    brief_plan_item_ids: dict[str, list[str]] | None = None,
 ) -> list[str]:
     """处理：把模型撰写的语义编译进当前确定性报告外壳。
     输入：
     - ``report``：模型生成的报告语义草稿；Python 将补齐身份、来源、排序、计数和约束字段。
     - ``index``：本次运行的权威来源索引；提供条目身份、来源信息、时间和访问证据。
     - ``semantic_cache``：按 item_id 保存且带内容指纹、语言和审核状态的语义缓存。
+    - ``brief_plan_item_ids``：当前 context 按来源固定的有序 default_item_ids；传入后
+      同时限定缓存复用、草稿保留和最终普通 brief 顺序。
     输出：编译过程中产生的非阻断警告；report 会被就地改造成身份和来源均与索引绑定的确定性报告。
     """
     warnings: list[str] = []
@@ -833,46 +836,93 @@ def compile_report_data(
         for row in index.get("items", [])
         if isinstance(row, dict) and row.get("item_id")
     }
-    if semantic_cache:
+    source_positions = {
+        str(row.get("source_id")): position
+        for position, row in enumerate(index.get("sources", []))
+        if isinstance(row, dict) and row.get("source_id")
+    }
+    indexed_source_names = {
+        str(row.get("source_id")): str(
+            row.get("source_name") or row.get("source_id") or ""
+        )
+        for row in index.get("sources", [])
+        if isinstance(row, dict) and row.get("source_id")
+    }
+    source_item_counts: Counter[str] = Counter()
+    source_item_positions: dict[str, int] = {}
+    indexed_section_candidate_counts: Counter[str] = Counter()
+    for row in index.get("items", []):
+        if not isinstance(row, dict) or not row.get("item_id"):
+            continue
+        source_id = str(row.get("source_id") or "")
+        source_item_counts[source_id] += 1
+        source_item_positions[str(row["item_id"])] = source_item_counts[source_id]
+        source_positions.setdefault(source_id, len(source_positions))
+        module = str(row.get("module") or "")
+        category = str(row.get("category") or "")
+        if module and category:
+            indexed_section_candidate_counts[
+                canonical_section_id(f"{module}.{category}")
+            ] += 1
+    normalized_plan = (
+        {
+            str(source_id): [str(item_id) for item_id in item_ids]
+            for source_id, item_ids in brief_plan_item_ids.items()
+        }
+        if brief_plan_item_ids is not None
+        else None
+    )
+    allowed_brief_ids = (
+        {
+            item_id
+            for item_ids in normalized_plan.values()
+            for item_id in item_ids
+        }
+        if normalized_plan is not None
+        else None
+    )
+    planned_positions = {
+        item_id: position
+        for item_ids in (normalized_plan or {}).values()
+        for position, item_id in enumerate(item_ids, start=1)
+    }
+    ordered_plan = sorted(
+        (normalized_plan or {}).items(),
+        key=lambda row: (source_positions.get(row[0], 1_000_000), row[0]),
+    )
+    if semantic_cache and normalized_plan is not None:
         existing_ids = {
             str(brief.get("item_id"))
             for section in provided_sections.values()
             for brief in section.get("briefs", [])
             if isinstance(brief, dict) and brief.get("item_id")
         }
-        source_counts = Counter(
-            str(indexed_items[item_id].get("source_id"))
-            for item_id in existing_ids
-            if item_id in indexed_items
-        )
-        source_policies = index.get("source_policies", {})
-        for indexed in index.get("items", []):
-            if not isinstance(indexed, dict) or not indexed.get("item_id"):
-                continue
-            item_id = str(indexed["item_id"])
-            source_id = str(indexed.get("source_id") or "")
-            policy = source_policies.get(source_id, {}) if isinstance(source_policies, dict) else {}
-            target = int(policy.get("report_target", 0)) if isinstance(policy, dict) else 0
-            if item_id in existing_ids or source_counts[source_id] >= target:
-                continue
-            cached = reusable_semantic_brief(
-                indexed, semantic_cache, output_language
-            )
-            if not cached:
-                continue
-            # reusable_semantic_brief 已同时校验条目指纹、审核状态和输出语言。
-            section_id = canonical_section_id(
-                f"{indexed.get('module', '')}.{indexed.get('category', '')}"
-            )
-            if section_id not in SECTION_ORDER_V13:
-                continue
-            target_section = provided_sections.setdefault(
-                section_id, {"id": section_id, "briefs": [], "items": []}
-            )
-            target_section.setdefault("briefs", []).append(cached)
-            existing_ids.add(item_id)
-            source_counts[source_id] += 1
-            warnings.append(f"reused approved semantic cache for brief {item_id!r}")
+        for source_id, planned_ids in ordered_plan:
+            for item_id in planned_ids:
+                if item_id in existing_ids:
+                    continue
+                indexed = indexed_items.get(item_id)
+                if not indexed or str(indexed.get("source_id") or "") != source_id:
+                    continue
+                cached = reusable_semantic_brief(
+                    indexed, semantic_cache, output_language
+                )
+                if not cached:
+                    continue
+                # 只有 brief_plan 明确授权的条目才能进入当前版本，避免旧缓存越过 Top 窗口。
+                section_id = canonical_section_id(
+                    f"{indexed.get('module', '')}.{indexed.get('category', '')}"
+                )
+                if section_id not in SECTION_ORDER_V13:
+                    continue
+                target_section = provided_sections.setdefault(
+                    section_id, {"id": section_id, "briefs": [], "items": []}
+                )
+                target_section.setdefault("briefs", []).append(cached)
+                existing_ids.add(item_id)
+                warnings.append(
+                    f"reused approved semantic cache for brief {item_id!r}"
+                )
     fallback_ranks: dict[str, int] = {}
     item_ranks: dict[str, int] = {}
     for item in index.get("items", []):
@@ -926,6 +976,12 @@ def compile_report_data(
                 warnings.append(
                     f"omitted brief with unknown or missing item_id {item_id!r}; use an exact "
                     "item_id from context.brief_plan"
+                )
+                continue
+            if allowed_brief_ids is not None and item_id not in allowed_brief_ids:
+                warnings.append(
+                    f"omitted brief {item_id!r} because it is outside the current "
+                    "context.brief_plan default_item_ids"
                 )
                 continue
             indexed_module = indexed.get("module")
@@ -1042,6 +1098,10 @@ def compile_report_data(
             }
             rank = item_ranks.get(item_id, 1)
             brief["source_rank"] = rank
+            brief["selection_rank"] = planned_positions.get(
+                item_id,
+                source_item_positions.get(item_id, rank),
+            )
             brief["source_rank_label"] = _source_rank_label(
                 source_id, rank, output_language
             )
@@ -1140,20 +1200,80 @@ def compile_report_data(
         section["items"].sort(key=lambda item: item.get("importance", 0), reverse=True)
         section["briefs"].sort(
             key=lambda item: (
-                item.get("importance", 0),
-                -int(item.get("source_rank", 1_000_000)),
-            ),
-            reverse=True,
+                source_positions.get(
+                    str(item.get("primary_source", {}).get("id") or ""),
+                    1_000_000,
+                ),
+                int(item.get("selection_rank", 1_000_000)),
+                str(item.get("item_id") or ""),
+            )
         )
-        if not section["items"] and not section["briefs"]:
-            section.setdefault(
-                "coverage_note",
+        selected_source_counts = Counter(
+            str(brief.get("primary_source", {}).get("id") or "")
+            for brief in section["briefs"]
+            if isinstance(brief, dict)
+        )
+        incomplete_sources: list[tuple[str, int, int]] = []
+        for source_id, planned_ids in ordered_plan:
+            current_section_ids = [
+                item_id
+                for item_id in planned_ids
+                if item_id in indexed_items
+                and str(indexed_items[item_id].get("source_id") or "") == source_id
+                and canonical_section_id(
+                    f"{indexed_items[item_id].get('module', '')}."
+                    f"{indexed_items[item_id].get('category', '')}"
+                )
+                == section_id
+            ]
+            planned_count = len(current_section_ids)
+            selected_count = selected_source_counts[source_id]
+            if planned_count and selected_count < planned_count:
+                source_name = indexed_source_names.get(source_id)
+                if not source_name and current_section_ids:
+                    source_name = str(
+                        indexed_items[current_section_ids[0]].get("source_name")
+                        or source_id
+                    )
+                incomplete_sources.append(
+                    (source_name or source_id, selected_count, planned_count)
+                )
+        if incomplete_sources:
+            details = (
+                "、".join(
+                    f"{name}（已验证摘要 {selected}/{planned}）"
+                    for name, selected, planned in incomplete_sources
+                )
+                if is_chinese_output(output_language)
+                else "; ".join(
+                    f"{name} (validated summaries {selected}/{planned})"
+                    for name, selected, planned in incomplete_sources
+                )
+            )
+            section["coverage_note"] = localized(
+                output_language,
+                "以下来源已采集到候选内容，但写作或校验未完成，因此未发布未经验证的摘要："
+                f"{details}。",
+                "The following sources had collected candidates, but authoring or validation "
+                f"did not finish, so unverified summaries were withheld: {details}.",
+            )
+        elif not section["items"] and not section["briefs"]:
+            section["coverage_note"] = (
                 localized(
+                    output_language,
+                    "本时段已采集到候选内容，但写作或校验未完成，因此未发布未经验证的摘要。",
+                    "Candidates were collected in this window, but authoring or validation "
+                    "did not finish, so no unverified summaries were published.",
+                )
+                if indexed_section_candidate_counts[section_id]
+                else localized(
                     output_language,
                     "本时段未收集到可展示内容。",
                     "No publishable items were collected in this window.",
-                ),
+                )
             )
+        else:
+            section.pop("coverage_note", None)
         compiled_sections.append(section)
     report["sections"] = compiled_sections
 
@@ -1306,7 +1426,7 @@ def normalize_report_data(report: dict, index: dict | None) -> None:
                 "selected": brief_counts[source_id],
                 "target": min(
                     indexed_counts[source_id],
-                    int(policy.get("report_target", 10)),
+                    int(policy.get("report_target", 15)),
                 ),
                 "maximum": int(policy.get("report_max", 15)),
             }
@@ -1356,6 +1476,26 @@ def validate_report_data(
     brief_contract = schema_version in BRIEF_REPORT_SCHEMAS
     analysis_v2_contract = schema_version == "2.0"
     output_language = str(report.get("language") or "zh-CN")
+    validation_source_positions: dict[str, int] = {}
+    validation_item_positions: dict[str, int] = {}
+    if isinstance(index, dict):
+        validation_source_positions = {
+            str(row.get("source_id")): position
+            for position, row in enumerate(index.get("sources", []))
+            if isinstance(row, dict) and row.get("source_id")
+        }
+        validation_source_counts: Counter[str] = Counter()
+        for row in index.get("items", []):
+            if not isinstance(row, dict) or not row.get("item_id"):
+                continue
+            source_id = str(row.get("source_id") or "")
+            validation_source_counts[source_id] += 1
+            validation_item_positions[str(row["item_id"])] = (
+                validation_source_counts[source_id]
+            )
+            validation_source_positions.setdefault(
+                source_id, len(validation_source_positions)
+            )
 
     def require_output_language(value: object, location: str) -> None:
         """处理：读取当前校验节点的输出语言，并把缺失或非法值加入报告错误列表。
@@ -1485,20 +1625,35 @@ def validate_report_data(
             errors.append(
                 f"{prefix}.briefs: required by brief-based schema {schema_version}"
             )
-        if strict_contract and not section["items"] and not briefs:
-            note = section.get("coverage_note")
-            if not note:
-                errors.append(f"{prefix}: empty section requires coverage_note")
-            else:
-                require_output_language(note, f"{prefix}.coverage_note")
+        note = section.get("coverage_note")
+        if strict_contract and not section["items"] and not briefs and not note:
+            errors.append(f"{prefix}: empty section requires coverage_note")
+        if note:
+            require_output_language(note, f"{prefix}.coverage_note")
 
         importance_values = [item["importance"] for item in section["items"]]
         if importance_values != sorted(importance_values, reverse=True):
             errors.append(f"{prefix}: items must be sorted by importance descending")
 
-        brief_importance_values = [item["importance"] for item in briefs]
-        if brief_importance_values != sorted(brief_importance_values, reverse=True):
-            errors.append(f"{prefix}: briefs must be sorted by importance descending")
+        if validation_item_positions:
+            brief_order_values = [
+                (
+                    validation_source_positions.get(
+                        str(brief.get("primary_source", {}).get("id") or ""),
+                        1_000_000,
+                    ),
+                    validation_item_positions.get(
+                        str(brief.get("item_id") or ""),
+                        1_000_000,
+                    ),
+                )
+                for brief in briefs
+                if isinstance(brief, dict)
+            ]
+            if brief_order_values != sorted(brief_order_values):
+                errors.append(
+                    f"{prefix}: briefs must preserve the current index source order"
+                )
 
         for brief_index, brief in enumerate(briefs):
             brief_prefix = f"{prefix}.briefs[{brief_index}]"
@@ -1823,7 +1978,7 @@ def validate_report_data(
             if len(values) >= 3 and len(set(values)) == 1:
                 warnings.append(
                     f"source {source_id!r} has {len(values)} briefs with identical importance; "
-                    "source_rank is used as the deterministic tie-breaker"
+                    "the current index order remains authoritative"
                 )
         if isinstance(index, dict):
             indexed_counts = Counter(
@@ -1841,7 +1996,7 @@ def validate_report_data(
                     continue
                 target = min(
                     indexed_counts[source_id],
-                    int(policy.get("report_target", 10)),
+                    int(policy.get("report_target", 15)),
                     int(policy.get("report_max", 15)),
                     15,
                 )
@@ -2228,6 +2383,7 @@ def validate_report(
     index_path: Path | None = None,
     events_path: Path | None = None,
     coverage_targets: dict[str, int] | None = None,
+    brief_plan_item_ids: dict[str, list[str]] | None = None,
 ) -> tuple[list[str], list[str]]:
     """处理：校验报告并在不满足约束时报告错误。
     输入：
@@ -2235,6 +2391,7 @@ def validate_report(
     - ``index_path``：版本化来源索引 JSON 路径；包含根级规范 items 和来源采集状态。
     - ``events_path``：可选历史事件 JSON 路径；提供时参与报告语义校验。
     - ``coverage_targets``：按来源 ID 指定的最小报告覆盖数；由运行情境拥有。
+    - ``brief_plan_item_ids``：当前 context 固定的每来源有序条目；用于按同一边界编译验证副本。
     输出：“校验报告并在不满足约束时报告错误”得到的固定结构结果；
       返回位置依次对应 errors、[*compile_warnings, *validation_。
     """
@@ -2243,8 +2400,23 @@ def validate_report(
     compile_warnings: list[str] = []
     if isinstance(report, dict) and isinstance(index, dict):
         report = deepcopy(report)
+        # 草稿契约禁止模型预先分配不可变身份；只读校验使用内存占位身份来执行完整
+        # schema/语义检查，真实 revision 仍只能由 save_report() 在持久化时分配。
+        report.setdefault("date", index.get("date"))
+        report.setdefault("edition", index.get("edition"))
+        if "revision" not in report:
+            report["revision"] = 1
+        if "report_id" not in report:
+            report["report_id"] = (
+                f"daily-{report.get('date')}-{report.get('edition')}-"
+                f"r{report.get('revision')}"
+            )
         try:
-            compile_warnings = compile_report_data(report, index)
+            compile_warnings = compile_report_data(
+                report,
+                index,
+                brief_plan_item_ids=brief_plan_item_ids,
+            )
         except ValueError as exc:
             return [f"Report draft compilation failed: {exc}"], []
     existing_events: list[dict] = []

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from math import ceil
 from pathlib import Path
 from typing import Any
 
@@ -206,13 +206,13 @@ def _compact_candidates(
     report_targets: dict[str, int],
     reported_item_ids: set[str],
 ) -> list[dict[str, Any]]:
-    """处理：按来源限额、时间和报告历史压缩索引候选。
+    """处理：按来源限额、当前索引顺序和报告历史压缩索引候选。
     输入：
     - ``index``：当前来源索引对象；包含规范条目、来源结果、策略和采集时间。
     - ``per_source``：每个来源允许进入情境包的默认候选数量。
     - ``report_targets``：按来源 ID 记录的报告目标数；用于平衡情境候选。
     - ``reported_item_ids``：历史报告已经使用的条目 ID；用于标记连续报道和避免重复。
-    输出：“按来源限额、时间和报告历史压缩索引候选”得到的有序结构化记录；
+    输出：“按来源限额、当前索引顺序和报告历史压缩索引候选”得到的有序结构化记录；
       典型字段包括 previously_reported、semantic_fingerprint、source_candidate_rank、source_lang
       uage、source_rank，可直接交给下一阶段。
     """
@@ -237,34 +237,8 @@ def _compact_candidates(
                 )
             )
 
-        def sort_key(row: tuple[dict[str, Any], int]) -> tuple[int, int, float, int]:
-            """处理：生成用于稳定排序的比较键。
-            输入：
-            - ``row``：一条上游结构化记录；包含当前排序或转换步骤需要的字段。
-            输出：“生成用于稳定排序的比较键”得到的固定结构结果；
-              返回位置依次对应 0 if enriched else 1、0 if published_timestamp is not 、-(publish
-              ed_timestamp or 0.0)、source_rank。
-            """
-            item, source_rank = row
-            enriched = item.get("content_status") in {"full_text", "partial"}
-            published_at = str(item.get("published_at") or "").strip()
-            published_timestamp: float | None = None
-            if published_at:
-                try:
-                    parsed = datetime.fromisoformat(published_at.replace("Z", "+00:00"))
-                    if parsed.tzinfo is None:
-                        parsed = parsed.replace(tzinfo=UTC)
-                    published_timestamp = parsed.timestamp()
-                except ValueError:
-                    published_timestamp = None
-            return (
-                0 if enriched else 1,
-                0 if published_timestamp is not None else 1,
-                -(published_timestamp or 0.0),
-                source_rank,
-            )
-
-        ranked_items.sort(key=sort_key)
+        # 采集层已经按当前来源的 item_order 写好 index；这里必须保留该顺序，
+        # 否则正文状态或发布时间会把 brief_plan 从 Top1–15 改成另一组条目。
         base_limit = min(per_source, max(5, report_targets.get(source_id, 5) * 2))
         enriched_count = sum(
             item.get("content_status") in {"full_text", "partial"}
@@ -311,14 +285,50 @@ def _source_limit(
     return int(getattr(source, field, default))
 
 
-def _balanced_source_batches(
-    candidates: list[dict[str, Any]], maximum_batches: int = 3
+def _planned_authoring_candidates(
+    candidates: list[dict[str, Any]],
+    source_configs: dict[str, Any],
+    reusable_briefs: dict[str, dict[str, Any]],
 ) -> list[dict[str, Any]]:
-    """处理：以轮询方式把候选均衡分配到写作批次。
+    """处理：只保留每来源本轮 Top15 计划内且尚无可复用语义的写作候选。
     输入：
-    - ``candidates``：情境阶段筛选出的候选记录；每项含条目身份、来源、证据、正文和语义缓存。
-    - ``maximum_batches``：写作阶段允许创建的最大批次数；用于限制并行委派规模。
-    输出：“以轮询方式把候选均衡分配到写作批次”得到的有序结构化记录；
+    - ``candidates``：按当前 index 顺序压缩后的逐来源候选。
+    - ``source_configs``：来源配置映射；提供统一目标、上限和兼容默认值。
+    - ``reusable_briefs``：已通过指纹、语言和独立评估门槛的计划内缓存候选。
+    输出：需要交给模型写作的有序候选；Top15 之外的上下文备用项不会虚增批次负载。
+    """
+    selected_counts: dict[str, int] = {}
+    planned: list[dict[str, Any]] = []
+    for item in candidates:
+        source_id = str(item.get("source_id") or "")
+        if not source_id:
+            continue
+        source = source_configs.get(source_id)
+        target = min(
+            int(getattr(source, "report_target", 15)),
+            int(getattr(source, "report_max", 15)),
+            15,
+        )
+        current = selected_counts.get(source_id, 0)
+        if current >= target:
+            continue
+        selected_counts[source_id] = current + 1
+        if str(item.get("item_id") or "") not in reusable_briefs:
+            planned.append(item)
+    return planned
+
+
+def _balanced_source_batches(
+    candidates: list[dict[str, Any]],
+    maximum_batches: int = 12,
+    target_items_per_batch: int = 45,
+) -> list[dict[str, Any]]:
+    """处理：按来源完整分组并把大规模 Top15 写作负载均衡到有界批次。
+    输入：
+    - ``candidates``：仅包含本轮计划内、确实需要模型写作的候选记录。
+    - ``maximum_batches``：允许创建的批次数上限；默认 12，供默认三并发按波次执行。
+    - ``target_items_per_batch``：希望单个模型 packet 承担的条目数，用于动态决定批次数。
+    输出：“按来源完整分组并把大规模 Top15 写作负载均衡到有界批次”得到的有序结构化记录；
       典型字段包括 batch_id、candidate_count、source_ids，可直接交给下一阶段。
     """
     counts: dict[str, int] = {}
@@ -326,7 +336,14 @@ def _balanced_source_batches(
         source_id = str(item.get("source_id") or "")
         if source_id:
             counts[source_id] = counts.get(source_id, 0) + 1
-    bins: list[tuple[list[str], int]] = [([], 0) for _ in range(maximum_batches)]
+    if not counts:
+        return []
+    batch_count = min(
+        max(1, maximum_batches),
+        len(counts),
+        max(1, ceil(sum(counts.values()) / max(1, target_items_per_batch))),
+    )
+    bins: list[tuple[list[str], int]] = [([], 0) for _ in range(batch_count)]
     for source_id, count in sorted(counts.items(), key=lambda row: (-row[1], row[0])):
         target = min(range(len(bins)), key=lambda index: (bins[index][1], index))
         source_ids, total = bins[target]
@@ -375,7 +392,7 @@ def _build_brief_plan(
         source = source_configs.get(source_id)
         target = min(
             len(items),
-            int(getattr(source, "report_target", 10)),
+            int(getattr(source, "report_target", 15)),
             int(getattr(source, "report_max", 15)),
             15,
         )
@@ -462,8 +479,9 @@ def _write_brief_authoring_packets(
                 f"{localized(output_language, 'Chinese', 'English')} brief for every "
                 "author_item_id. "
                 "Write one JSON object with a briefs array to draft_result_path, run the "
-                "submission_command once, repair only reported validation errors at most once, "
-                "then return a short receipt instead of repeating the briefs."
+                "submission_command, and if it reports validation errors, repair only those "
+                "errors at most once and run the same submission_command again. Then return a "
+                "short receipt instead of repeating the briefs."
             ),
             "tool_policy": (
                 "Do not browse the web, call search, create scripts, validate the full report, "
@@ -473,7 +491,8 @@ def _write_brief_authoring_packets(
             ),
             "repair_policy": (
                 "The caller may request at most one repair containing only validation errors. "
-                "Do not restart research or rewrite already valid briefs."
+                "After that repair, resubmit the assigned draft once; do not restart research "
+                "or rewrite already valid briefs."
             ),
             "required_output_fields": [
                 "item_id",
@@ -525,7 +544,8 @@ def build_context(
     - ``config``：已校验的应用配置；提供时区、来源策略、并发限制、预算和输出选项。
     - ``data_dir``：当前运行的唯一数据根；所有状态和版本化产物都必须位于其中。
     - ``edition``：日报版本标识，通常为 morning 或 evening；参与窗口和产物命名。
-    - ``collection_window``：本次日报允许纳入内容的起止时间；用于候选时效过滤。
+    - ``collection_window``：本次 edition 的预定时段血缘；用于诊断和状态判断，但不改变
+      当前 index 的候选资格或来源 Top 顺序。
     - ``output_language``：目标报告语言；决定标题译文字段、校验规则和界面文本。
     输出：指向“从权威索引、历史报告和语义缓存构建有界写作情境及批次任务包”所生成、定位或确认产物
       的本地路径。
@@ -579,10 +599,13 @@ def build_context(
         )
         is not None
     }
-    authoring_candidates = [
-        item for item in candidates if str(item.get("item_id")) not in reusable_briefs
-    ]
-    # 按来源均衡分批，避免单一高产来源吞掉有限的写作上下文与并行槽位。
+    authoring_candidates = _planned_authoring_candidates(
+        candidates,
+        source_configs,
+        reusable_briefs,
+    )
+    # 只对计划内缺口按来源均衡分批；多批由默认三并发按波次完成，避免单个
+    # 约 160 条 packet 超出模型输出边界并放大整批重试成本。
     brief_batches = _balanced_source_batches(authoring_candidates)
     brief_plan = _build_brief_plan(
         candidates,
@@ -624,7 +647,7 @@ def build_context(
                     )
                 },
                 "report_target": _source_limit(
-                    source_configs, source.get("source_id"), "report_target", 10
+                    source_configs, source.get("source_id"), "report_target", 15
                 ),
                 "report_max": _source_limit(
                     source_configs, source.get("source_id"), "report_max", 15
@@ -648,16 +671,17 @@ def build_context(
             "details."
         ),
         "brief_authoring_rule": (
-            "After begin-authoring, call Hermes delegate_task exactly once with background=true "
-            "and one worker per brief_authoring_batch so the packets run concurrently while the "
-            "parent runs prefetch-media. Give each worker only its packet_path. The packet is the "
+            "After begin-authoring, dispatch brief_authoring_batches in ordered waves of at most "
+            "three Hermes delegate_task workers with background=true while the parent runs "
+            "prefetch-media. Wait for each wave before dispatching the next, and give each worker "
+            "only its packet_path. The packet is the "
             "complete data boundary: workers must not browse, search, create scripts, validate "
             "the full report, or inspect other batches. Each worker may write only the packet's "
             "draft_result_path, run only its submission_command, and return a short receipt "
             "without repeating briefs. Python validates and atomically accepts each batch, merges "
             "reusable_briefs without rewriting them, and prepares the compact analysis packet. "
-            "default_item_ids are the deterministic baseline and may be replaced only by "
-            "candidates from the same source. Preserve the indexed headline, naturally translate "
+            "default_item_ids are the immutable ordered selection boundary and may not be "
+            "replaced by other candidates. Preserve the indexed headline, naturally translate "
             f"each headline not already in the target language into "
             f"{translated_title_field(target_language)}, and write a "
             f"{localized(target_language, 'Chinese', 'English')} TL;DR from content_path "
@@ -678,8 +702,9 @@ def build_context(
         "selection_rule": (
             "For every successful source, fill report_target when that many real candidates exist; "
             "do not apply an importance-score cutoff. Keep no more than report_max per source, "
-            "sort displayed briefs by relative importance, and preserve source_rank for the "
-            "publisher's original popularity/order. Older items remain eligible when "
+            "preserve the current index and brief_plan order for displayed briefs, and retain "
+            "source_rank as the publisher's original popularity/order label. Older items remain "
+            "eligible when "
             "previously_reported is false. Reserve featured events/full-text loading for evidence "
             "used in analysis."
         ),

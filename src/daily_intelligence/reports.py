@@ -187,15 +187,8 @@ def group_items_by_source(
         key = str(source["id"])
         groups.setdefault(key, (source, []))[1].append(item)
     ordered = list(groups.values())
-    for _source, items in ordered:
-        items.sort(
-            key=lambda value: (
-                value["importance"],
-                -int(value.get("source_rank", 1_000_000)),
-            ),
-            reverse=True,
-        )
-    ordered.sort(key=lambda group: group[1][0]["importance"], reverse=True)
+    # 编译器已经按 context/index 的确定性选择顺序排列；Markdown 与 Notion 只投影，
+    # 不得再用 importance 改写来源 Top 或 published_at 顺序。
     return ordered
 
 
@@ -411,7 +404,7 @@ def render_report_markdown(
         lines.extend(["", f"## {group_labels[module]}", ""])
         for section in ordered_sections(report, module):
             lines.extend([f"### {section['title']}", ""])
-            if not section.get("items") and not section.get("briefs"):
+            if section.get("coverage_note"):
                 lines.extend([section["coverage_note"], ""])
             if report.get("schema_version") in BRIEF_REPORT_SCHEMAS:
                 for source, items in group_items_by_source(section, language):
@@ -812,6 +805,7 @@ def save_report(
     output_config: OutputConfig | None = None,
     media_config: MediaConfig | None = None,
     coverage_targets: dict[str, int] | None = None,
+    brief_plan_item_ids: dict[str, list[str]] | None = None,
 ) -> dict[str, Any]:
     """处理：编译模型报告草稿、绑定权威索引、执行校验并创建不可变报告修订。
     输入：
@@ -821,6 +815,7 @@ def save_report(
     - ``output_config``：本地 HTML、PDF、桌面交付和打开行为配置。
     - ``media_config``：图片下载、格式、安全、缓存和报告预算配置。
     - ``coverage_targets``：按来源 ID 指定的最小报告覆盖数；由运行情境拥有。
+    - ``brief_plan_item_ids``：当前 context 按来源固定的有序 default_item_ids；限制缓存与草稿边界。
     输出：“编译模型报告草稿、绑定权威索引、执行校验并创建不可变报告修订”形成的结构化字典；
       典型键包括 compile_and_validation_seconds、content_hash、evaluation_status、json_path、loc
       al_output_error、local_output_seconds、markdown_path、media_seconds、persistence_seconds、
@@ -852,7 +847,12 @@ def save_report(
 
     compile_started = time.perf_counter()
     # 先把模型草稿编译进确定性外壳，再统一规范化和校验。
-    compile_warnings = compile_report_data(report, index, load_semantic_cache(data_dir))
+    compile_warnings = compile_report_data(
+        report,
+        index,
+        load_semantic_cache(data_dir),
+        brief_plan_item_ids=brief_plan_item_ids,
+    )
     normalize_report_data(report, index)
     evaluation = report.get("quality_evaluation")
     if isinstance(evaluation, dict):

@@ -9,15 +9,18 @@ from urllib.parse import urlsplit
 import yaml
 
 from .localization import validate_output_language
+from .models import ITEM_ORDER_VALUES
 from .taxonomy import validate_content_taxonomy
 from .utils import environment_value, now_iso, read_json, write_json
 
 SOURCE_PAGE_REWRITES = {
     ("huggingface_papers", "https://huggingface.co/papers/month"): (
-        "https://huggingface.co/papers"
+        "https://huggingface.co/papers/trending"
+    ),
+    ("huggingface_papers", "https://huggingface.co/papers"): (
+        "https://huggingface.co/papers/trending"
     ),
 }
-
 
 @dataclass(slots=True)
 class SourceConfig:
@@ -50,6 +53,7 @@ class SourceConfig:
     - ``report_target``：正常报告希望从该来源选入的条目数。
     - ``report_max``：该来源在单份报告中允许出现的最大条目数。
     - ``wait_ms``：页面初次加载后等待动态内容稳定的毫秒数；为空时使用全局默认值。
+    - ``item_order``：可选来源级排序覆盖；为空时继承全局采集配置。
     输出：构造后的 ``SourceConfig`` 实例或枚举定义；其字段和方法共同承担上述职责。
     """
     id: str
@@ -76,9 +80,10 @@ class SourceConfig:
     explore_urls: list[str] = field(default_factory=list)
     content_selectors: list[str] = field(default_factory=lambda: ["article", "main"])
     max_items: int = 60
-    report_target: int = 10
+    report_target: int = 15
     report_max: int = 15
     wait_ms: int | None = None
+    item_order: str | None = None
 
     @property
     def adapter_name(self) -> str:
@@ -121,6 +126,18 @@ class BrowserConfig:
 
 
 @dataclass(slots=True)
+class CollectionConfig:
+    """处理：保存全来源统一的候选排序默认值。
+    输入：
+    - ``item_order``：来源未单独覆盖时的候选顺序；``source`` 保留网页或 Feed 的原始
+      Top 顺序，``published_at`` 按可用发布时间倒序。
+    输出：构造后的采集排序配置；AppConfig 会把该默认值补到所有正式与发现来源。
+    """
+
+    item_order: str = "source"
+
+
+@dataclass(slots=True)
 class BudgetConfig:
     """处理：保存预算配置及其默认值。
     输入：
@@ -131,7 +148,7 @@ class BudgetConfig:
     - ``max_fulltext_per_run``：单次运行允许提取全文的最大条目数。
     输出：构造后的 ``BudgetConfig`` 实例或枚举定义；其字段和方法共同承担上述职责。
     """
-    max_runtime_seconds: int = 600
+    max_runtime_seconds: int = 3600
     max_agent_tokens: int = 10_000_000
     context_items_per_source: int = 25
     report_items_per_source: int = 15
@@ -292,6 +309,7 @@ class AppConfig:
     - ``timezone``：IANA 时区名称；用于解析无时区时间并生成日报时间边界。
     - ``browser``：浏览器与 HTTP 正文提取配置。
     - ``sources``：本轮选择的来源配置列表；每项定义采集入口、策略和身份信息。
+    - ``collection``：所有正式与发现来源共用的默认候选排序策略。
     - ``budget``：运行时长、模型 Token、情境条目和全文提取预算。
     - ``output``：本地 HTML、PDF、桌面复制和打开行为配置。
     - ``media``：报告图片下载、缓存、安全和总量预算配置。
@@ -302,11 +320,27 @@ class AppConfig:
     timezone: str
     browser: BrowserConfig
     sources: list[SourceConfig]
+    collection: CollectionConfig = field(default_factory=CollectionConfig)
     budget: BudgetConfig = field(default_factory=BudgetConfig)
     output: OutputConfig = field(default_factory=OutputConfig)
     media: MediaConfig = field(default_factory=MediaConfig)
     monitor: MonitorConfig = field(default_factory=MonitorConfig)
     monitor_sources: list[SourceConfig] = field(default_factory=list)
+
+    def __post_init__(self) -> None:
+        """处理：把全局采集排序默认值解析到每个未覆盖的来源。
+        输入：
+        - 无显式业务参数：读取 ``collection.item_order`` 以及正式、发现来源配置。
+        输出：所有来源都得到已校验的具体 ``item_order``，供采集与监控路径一致执行。
+        """
+        validate_collection_config(self.collection)
+        for source in [*self.sources, *self.monitor_sources]:
+            if source.item_order is None:
+                source.item_order = self.collection.item_order
+            if source.item_order not in ITEM_ORDER_VALUES:
+                raise ValueError(
+                    f"Invalid item_order for {source.id!r}: use source or published_at"
+                )
 
     def source_by_id(self, source_id: str) -> SourceConfig:
         """处理：按来源 ID 返回对应的来源配置。
@@ -368,6 +402,17 @@ def validate_monitor_config(monitor: MonitorConfig) -> MonitorConfig:
     return monitor
 
 
+def validate_collection_config(collection: CollectionConfig) -> CollectionConfig:
+    """处理：校验全来源候选排序只能使用受支持的确定性模式。
+    输入：
+    - ``collection``：来自 sources.yaml 的 collection 段，提供默认候选排序值。
+    输出：原采集配置；非法值在读取配置时立即报出，避免不同采集路径静默分叉。
+    """
+    if collection.item_order not in ITEM_ORDER_VALUES:
+        raise ValueError("collection.item_order must be one of: source, published_at")
+    return collection
+
+
 def _load_source_rows(path: Path) -> list[dict[str, Any]]:
     """处理：读取 YAML 来源配置文件并返回 sources 数组中的原始来源记录。
     输入：
@@ -409,6 +454,10 @@ def _validate_source(source: SourceConfig, budget: BudgetConfig) -> None:
     if source.feed_item_limit is not None and not 1 <= source.feed_item_limit <= 200:
         raise ValueError(
             f"Invalid feed_item_limit for {source.id!r}: require 1 through 200"
+        )
+    if source.item_order is not None and source.item_order not in ITEM_ORDER_VALUES:
+        raise ValueError(
+            f"Invalid item_order for {source.id!r}: use source or published_at"
         )
     for feed_url in source.feed_urls:
         parsed = urlsplit(feed_url)
@@ -482,6 +531,9 @@ def load_config(path: Path | None = None, timezone: str | None = None) -> AppCon
     config_path = path or project_root() / "configs" / "sources.yaml"
     raw: dict[str, Any] = yaml.safe_load(config_path.read_text(encoding="utf-8"))
     browser = BrowserConfig(**raw.get("browser", {}))
+    collection = validate_collection_config(
+        CollectionConfig(**raw.get("collection", {}))
+    )
     budget = BudgetConfig(**raw.get("budget", {}))
     output_values = dict(raw.get("output", {}))
     output_values.setdefault("copy_html_to_desktop", True)
@@ -518,6 +570,7 @@ def load_config(path: Path | None = None, timezone: str | None = None) -> AppCon
         timezone=configured_timezone,
         browser=browser,
         sources=sources,
+        collection=collection,
         budget=budget,
         output=output,
         media=media,

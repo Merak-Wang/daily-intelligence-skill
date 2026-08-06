@@ -52,6 +52,45 @@ def test_sample_report_validates():
     assert errors == []
 
 
+def test_draft_validation_injects_identity_only_in_memory(
+    tmp_path: Path,
+    monkeypatch,
+):
+    draft_path = tmp_path / "draft.json"
+    index_path = tmp_path / "index.json"
+    draft = {"schema_version": "2.0"}
+    index = {
+        "date": "2026-08-05",
+        "edition": "morning",
+        "sources": [],
+        "items": [],
+    }
+    draft_path.write_text(json.dumps(draft), encoding="utf-8")
+    index_path.write_text(json.dumps(index), encoding="utf-8")
+    compiled: dict = {}
+
+    def fake_compile(report, _index, **_kwargs):
+        compiled.update(report)
+        return []
+
+    monkeypatch.setattr(
+        "daily_intelligence.reporting.compile_report_data",
+        fake_compile,
+    )
+    monkeypatch.setattr(
+        "daily_intelligence.reporting.validate_report_data",
+        lambda *_args, **_kwargs: ([], []),
+    )
+
+    errors, warnings = validate_report(draft_path, index_path)
+
+    assert errors == []
+    assert warnings == []
+    assert compiled["revision"] == 1
+    assert compiled["report_id"] == "daily-2026-08-05-morning-r1"
+    assert json.loads(draft_path.read_text(encoding="utf-8")) == draft
+
+
 def test_schema_rejects_missing_nested_required_field(tmp_path: Path):
     root = Path(__file__).resolve().parents[1]
     report = json.loads((root / "examples" / "sample_report.json").read_text(encoding="utf-8"))
@@ -127,6 +166,146 @@ def test_english_compiler_uses_english_defaults_and_section_titles():
     assert all(
         section["coverage_note"] == "No publishable items were collected in this window."
         for section in report["sections"]
+    )
+
+
+def test_empty_section_distinguishes_authoring_failure_from_collection_failure():
+    report = {
+        "schema_version": "2.0",
+        "language": "en",
+        "sections": [],
+        "analyses": [],
+    }
+    item_id = "weibo_hot-top1"
+    index = {
+        "date": "2026-07-25",
+        "edition": "morning",
+        "timezone": "Asia/Shanghai",
+        "sources": [
+            {
+                "source_id": "weibo_hot",
+                "source_name": "Weibo Hot Search",
+                "source_url": "https://m.weibo.cn/",
+                "status": "success",
+            }
+        ],
+        "items": [
+            {
+                "item_id": item_id,
+                "source_id": "weibo_hot",
+                "source_name": "Weibo Hot Search",
+                "title": "A collected domestic trending topic",
+                "url": "https://m.weibo.cn/search/example",
+                "module": "information",
+                "category": "domestic",
+                "content_status": "not_fetched",
+                "metadata": {"source_rank": 1},
+            }
+        ],
+    }
+
+    compile_report_data(
+        report,
+        index,
+        brief_plan_item_ids={"weibo_hot": [item_id]},
+    )
+
+    domestic = next(
+        section
+        for section in report["sections"]
+        if section["id"] == "information.domestic"
+    )
+    assert domestic["coverage_note"].startswith("The following sources had collected")
+    assert "No publishable items were collected" not in domestic["coverage_note"]
+
+
+def test_partial_source_authoring_failure_is_visible_when_section_has_other_briefs():
+    report = {
+        "schema_version": "2.0",
+        "language": "en",
+        "revision": 1,
+        "sections": [
+            {
+                "id": "information.domestic",
+                "items": [],
+                "briefs": [
+                    {
+                        "item_id": "yicai-top1",
+                        "title": "A collected financial news headline",
+                        "tldr": "A substantive validated summary for the available source item.",
+                        "importance": 80,
+                        "status": "NEW",
+                    }
+                ],
+            }
+        ],
+        "analyses": [],
+    }
+    index = {
+        "date": "2026-07-25",
+        "edition": "morning",
+        "timezone": "Asia/Shanghai",
+        "sources": [
+            {
+                "source_id": "weibo_hot",
+                "source_name": "Weibo Hot Search",
+                "source_url": "https://m.weibo.cn/",
+                "status": "success",
+            },
+            {
+                "source_id": "yicai_economy",
+                "source_name": "Yicai",
+                "source_url": "https://www.yicai.com/news/",
+                "status": "success",
+            },
+        ],
+        "items": [
+            {
+                "item_id": "weibo-top1",
+                "source_id": "weibo_hot",
+                "source_name": "Weibo Hot Search",
+                "title": "A collected social trend",
+                "url": "https://m.weibo.cn/search/example",
+                "module": "information",
+                "category": "domestic",
+                "content_status": "not_fetched",
+                "metadata": {"source_rank": 1},
+            },
+            {
+                "item_id": "yicai-top1",
+                "source_id": "yicai_economy",
+                "source_name": "Yicai",
+                "title": "A collected financial news headline",
+                "url": "https://www.yicai.com/news/example.html",
+                "module": "information",
+                "category": "domestic",
+                "content_status": "not_fetched",
+                "metadata": {"source_rank": 1},
+            },
+        ],
+    }
+
+    compile_report_data(
+        report,
+        index,
+        brief_plan_item_ids={
+            "weibo_hot": ["weibo-top1"],
+            "yicai_economy": ["yicai-top1"],
+        },
+    )
+
+    domestic = next(
+        section
+        for section in report["sections"]
+        if section["id"] == "information.domestic"
+    )
+    assert "Weibo Hot Search" in domestic["coverage_note"]
+    assert "0/1" in domestic["coverage_note"]
+    assert "Yicai" not in domestic["coverage_note"]
+    assert domestic["coverage_note"] in render_report_markdown(report)
+    assert domestic["coverage_note"] in render_report_html(report)
+    assert domestic["coverage_note"] in json.dumps(
+        report_to_blocks(report), ensure_ascii=False
     )
 
 
@@ -1022,7 +1201,7 @@ def test_v15_compiler_never_creates_missing_semantic_briefs():
     )
 
 
-def test_v15_flat_importance_uses_source_rank_as_non_blocking_tie_breaker():
+def test_v15_briefs_preserve_current_index_order_over_importance():
     report = _v15_report()
     index = _v15_index(report)
     index["date"] = report["date"]
@@ -1033,6 +1212,7 @@ def test_v15_flat_importance_uses_source_rank_as_non_blocking_tie_breaker():
     }
     section = next(section for section in report["sections"] if section["briefs"])
     base_brief = section["briefs"][0]
+    base_brief["importance"] = 10
     base_item = index["items"][0]
     base_item["module"] = section["module"]
     base_item["category"] = section["category"]
@@ -1052,7 +1232,7 @@ def test_v15_flat_importance_uses_source_rank_as_non_blocking_tie_breaker():
             {
                 "item_id": item["item_id"],
                 "title": f"来源标题 {position}",
-                "importance": base_brief["importance"],
+                "importance": 100 - position,
             }
         )
         brief.pop("featured_event_id", None)
@@ -1062,7 +1242,18 @@ def test_v15_flat_importance_uses_source_rank_as_non_blocking_tie_breaker():
     errors, warnings = validate_report_data(report, index)
 
     assert errors == []
-    assert any("source_rank is used" in warning for warning in warnings)
+    assert warnings == []
+    assert [brief["item_id"] for brief in section["briefs"]] == [
+        base_item["item_id"],
+        "example-news-2",
+        "example-news-3",
+    ]
+    rendered = render_report_markdown(report)
+    assert rendered.index("来源Top1") < rendered.index("来源Top2") < rendered.index("来源Top3")
+    html = render_report_html(report)
+    assert html.index("来源Top1") < html.index("来源Top2") < html.index("来源Top3")
+    notion = json.dumps(report_to_blocks(report), ensure_ascii=False)
+    assert notion.index("来源Top1") < notion.index("来源Top2") < notion.index("来源Top3")
 
 
 def test_v15_rejects_language_markers_and_fake_tldr_when_full_text_exists():

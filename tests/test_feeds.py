@@ -97,6 +97,35 @@ def test_atom_parser_drops_future_dated_entry_and_keeps_provider():
     assert items[0].metadata["original_provider_url"] == "https://lab.example/"
 
 
+def test_feed_parser_can_choose_publication_order_without_losing_top_rank():
+    rss = b"""<rss><channel>
+      <item>
+        <title>Older article is the original first feed result</title>
+        <link>https://news.example/original-first</link>
+        <pubDate>Tue, 12 Sep 2023 01:00:00 GMT</pubDate>
+      </item>
+      <item>
+        <title>Newer article is the original second feed result</title>
+        <link>https://news.example/newer-second</link>
+        <pubDate>Fri, 24 Jul 2026 01:00:00 GMT</pubDate>
+      </item>
+    </channel></rss>"""
+    source = _source()
+    source.item_order = "published_at"
+
+    items = parse_feed_document(
+        rss,
+        source,
+        "https://news.example/feed.xml",
+        "2026-07-24T10:00:00+08:00",
+        "Asia/Shanghai",
+        max_items=1,
+    )
+
+    assert [item.url for item in items] == ["https://news.example/newer-second"]
+    assert items[0].metadata["source_rank"] == 2
+
+
 def test_feed_sniffing_and_html_discovery():
     html = """
     <html><head>

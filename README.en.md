@@ -39,8 +39,17 @@ SignalTrail turns a large daily reading queue into a consistent decision artifac
   and optional Notion delivery.
 
 The bundled configuration separates 32 core reporting sources from 51 discovery
-sources. Core coverage controls the formal brief; discovery broadens the signal
-surface without silently expanding the editorial or model budget.
+sources. Every formal source has `report_target: 15` and `report_max: 15`: when at
+least fifteen candidates exist, the report uses the first fifteen in the current
+index order; otherwise it uses the candidates actually available. Discovery sources
+keep both values at zero, broadening the signal surface without silently expanding
+the editorial or model budget.
+
+A full run can require up to 480 ordinary briefs. SignalTrail limits authoring to
+the planned Top-15 gaps, splits them into at most 12 bounded packets, and processes
+those packets in waves of three under Hermes' default concurrency. The default full
+run budget is therefore 60 minutes; start earlier when delivery must land exactly at
+06:00 or 18:00.
 
 ## Report gallery
 
@@ -172,7 +181,10 @@ flowchart LR
 
 Collection failures do not stop healthy sources. A failed, rate-limited, or
 verification-pending source keeps that status and its recovery path; it is never
-silently converted to `no_items`.
+silently converted to `no_items`. If the index contains candidates but brief
+authoring or validation did not finish, the report names every affected source and
+its validated/planned count even when sibling sources in that section succeeded; it
+must not describe those candidates as uncollected or let the source vanish silently.
 
 ## Local intelligence desk
 
@@ -197,6 +209,15 @@ Edit the source portfolio directly:
 
 - Core report sources: [configs/sources.yaml](configs/sources.yaml)
 - Discovery sources: [configs/discovery-sources.yaml](configs/discovery-sources.yaml)
+
+All sources share `collection.item_order`. The default `source` mode gives a formal
+source its original page, ranking, or feed Top1–15. In `published_at` mode, the
+formal report takes the first fifteen from the current index after valid publication
+times are sorted newest first; missing and tied times retain stable input order. A
+source-level `item_order` can override the global value. Both modes preserve the
+original `source_rank`, and ordinary briefs are not reordered by `importance`.
+Hugging Face Papers uses the Trending list, so `source` mode follows its current Top
+ranking even when it contains papers published in earlier years.
 
 ## Output contract
 

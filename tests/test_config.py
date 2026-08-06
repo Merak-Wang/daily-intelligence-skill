@@ -33,6 +33,9 @@ def test_windows_defaults_to_edge_without_overrides(monkeypatch):
 def test_local_html_and_pdf_are_default_reading_outputs():
     config = load_config()
 
+    assert config.collection.item_order == "source"
+    assert all(source.item_order == "source" for source in config.all_monitor_sources)
+    assert config.budget.max_runtime_seconds == 3600
     assert config.output.language == "zh-CN"
     assert config.output.formats == ["html", "pdf"]
     assert config.output.pdf_engine == "edge"
@@ -57,10 +60,47 @@ def test_existing_config_without_desktop_key_inherits_desktop_delivery(tmp_path)
     assert load_config(config_path).output.copy_html_to_desktop is True
 
 
+def test_collection_item_order_supports_global_default_and_source_override(tmp_path):
+    config_path = tmp_path / "sources.yaml"
+    config_path.write_text(
+        "timezone: Asia/Shanghai\n"
+        "collection:\n  item_order: published_at\n"
+        "sources:\n"
+        "- id: inherited\n"
+        "  name: Inherited\n"
+        "  url: https://example.com/news\n"
+        "- id: overridden\n"
+        "  name: Overridden\n"
+        "  url: https://example.org/news\n"
+        "  item_order: source\n",
+        encoding="utf-8",
+    )
+
+    config = load_config(config_path)
+
+    assert config.source_by_id("inherited").item_order == "published_at"
+    assert config.source_by_id("overridden").item_order == "source"
+
+
+def test_collection_item_order_rejects_unknown_values(tmp_path):
+    config_path = tmp_path / "sources.yaml"
+    config_path.write_text(
+        "timezone: Asia/Shanghai\n"
+        "collection:\n  item_order: popularity\n"
+        "sources: []\n",
+        encoding="utf-8",
+    )
+
+    with pytest.raises(ValueError, match="collection.item_order"):
+        load_config(config_path)
+
+
 def test_monitor_expands_sources_without_changing_newspaper_quotas():
     config = load_config()
 
     assert len(config.sources) == 32
+    assert all(source.report_target == 15 for source in config.sources)
+    assert all(source.report_max == 15 for source in config.sources)
     assert len(config.monitor_sources) == 51
     assert len(config.all_monitor_sources) == 83
     assert all(source.report_target == 0 for source in config.monitor_sources)
@@ -280,13 +320,14 @@ def test_guardian_and_bbc_use_relevant_multi_page_sources():
         config.source_by_id("guardian_ng")
 
 
-def test_hugging_face_uses_stable_papers_page_and_rewrites_legacy_queue_url():
+def test_hugging_face_uses_top_page_and_rewrites_legacy_queue_urls():
     config = load_config()
 
-    assert config.source_by_id("huggingface_papers").url == "https://huggingface.co/papers"
-    assert (
-        canonical_source_page_url(
-            "huggingface_papers", "https://huggingface.co/papers/month"
-        )
-        == "https://huggingface.co/papers"
-    )
+    expected = "https://huggingface.co/papers/trending"
+    assert config.source_by_id("huggingface_papers").url == expected
+    assert canonical_source_page_url(
+        "huggingface_papers", "https://huggingface.co/papers/month"
+    ) == expected
+    assert canonical_source_page_url(
+        "huggingface_papers", "https://huggingface.co/papers"
+    ) == expected

@@ -1,21 +1,23 @@
 # 日报运行手册
 
 **状态：** 已验证运行参考
-**最后对照代码：** 2026-08-02
+**最后对照代码：** 2026-08-05
 **上级地图：** [`ARCHITECTURE.md`](../ARCHITECTURE.md)
 
 ## 调度与预算
 
 ```text
-05:50 候选就绪 -> brief 批次/图片预取并行 -> 紧凑研判 -> 事实校验 -> 06:00 本地 HTML
+最迟 05:00 启动满载候选/brief 分波与图片预取 -> 紧凑研判 -> 事实校验 -> 06:00 本地 HTML
 HTML 交付后 -> 后台 PDF/可选 Notion -> 每 2 分钟、最多 3 次独立评估 -> 刷新 HTML/PDF
-17:50 候选就绪 -> brief 批次/图片预取并行 -> 紧凑研判 -> 事实校验 -> 18:00 本地 HTML
+最迟 17:00 启动满载候选/brief 分波与图片预取 -> 紧凑研判 -> 事实校验 -> 18:00 本地 HTML
 HTML 交付后 -> 后台 PDF/可选 Notion -> 每 2 分钟、最多 3 次独立评估 -> 刷新 HTML/PDF
 ```
 
-每次正常运行最多 600 秒，Agent 输入加输出最多 10,000,000 token。采集脚本继续处理单源错误；Agent 优先处理高分候选和影响研判的正文。开发/调试不受该预算限制。
+每次正常运行最多 3600 秒，Agent 输入加输出最多 10,000,000 token。32 个正式来源满载时最多有 480 条普通 brief；需要准点交付时必须提前启动。采集脚本继续处理单源错误；Agent 优先处理高分候选和影响研判的正文。开发/调试不受该预算限制。
 
 监控层独立于 Agent 预算。按需运行 `daily-intel refresh-monitor`，或用 `daily-intel serve --open --refresh-minutes 30` 在本地情报台后台刷新；RSS/Atom、静态 HTML、时间解析、图片元数据、聚类和来源健康均不调用模型。51 个发现来源的 `report_target` 和 `report_max` 均为 0，只扩展发现面，不扩大日报篇幅、正文读取上限或研判任务。`run-edition` 优先复用默认 90 分钟内的新鲜零-token 快照；仅在快照缺失或过期时刷新，刷新失败则保留旧快照并继续原采集流程。可用 `monitor.snapshot_max_age_minutes` 和 `monitor.reuse_fresh_snapshot_before_edition` 调整这一策略。
+
+32 个正式来源的 `report_target` 和 `report_max` 均为 15。默认 `collection.item_order: source`，每来源候选充足时交付网页、榜单或 Feed 的原 Top1–15；切换为 `published_at` 时，采集层把有效发布时间从新到旧写入当前 index，缺失发布时间和时间并列的条目保持稳定输入顺序，日报再取前 15 条。单源覆盖使用同名 `item_order`。两种模式都保留原始 `source_rank`；context、普通 brief、Markdown、HTML、PDF 与 Notion 必须维持当前 index/`brief_plan` 顺序，不能按 `importance` 重排。Hugging Face Papers 的 `source` 模式以 Trending Top 为准，较早发表的论文仍可能出现在当前 Top15。
 
 生成与评估保持角色隔离。`finalize-edition --defer-tail` 在不可变 JSON/Markdown 和 HTML 就绪后返回；主任务立即交付 `artifacts.html_path`，再把 run 中的 `tail.command` 放进启用完成通知的后台 terminal。`complete-edition-tail` 生成 PDF、按请求发布 Notion，并由 Python 创建最多执行 3 次的 Hermes Cron，以容忍临时模型/API 连接失败；首次成功后后续执行检查到 completed 即退出。评估任务只读已保存报告/索引和契约，禁止修改报告，并调用 `finalize-evaluation`。目标日报显式使用了 `--publish` 时，调度提示才给评估命令追加 `--publish`。Gateway 必须运行并在 Windows 登录时自启动；tail 或调度失败只写入 run，不撤回本地日报。晚间生成读取当天晨报和已存在的晨报评估；晨报评估尚未完成时按未评估历史处理。
 
@@ -35,13 +37,14 @@ HTML 交付后 -> 后台 PDF/可选 Notion -> 每 2 分钟、最多 3 次独立�
 
 所有命令必须使用同一个 `DATA_DIR`。`data-root status` 显示当前绑定；只有确认迁移时才执行 `data-root adopt`。run 内的 `data_root` 与 artifact 路径必须一致，跨根引用在读取前失败。run 的 `artifacts.collection_metrics` 记录来源、候选、状态分布以及监控刷新/复用；`artifacts.enrichment.pipeline` 记录正文缓存、HTTP 提取、Edge 回退及各阶段耗时；报告保存结果的 `save_metrics` 区分编译校验、媒体、持久化、本地投影和状态更新。
 
-`artifacts.authoring.metrics` 记录每个 brief 批次的 duration、API、输入/输出 token、模型、退出原因，以及 brief 合并、图片预取、紧凑研判与总写作时间；Hermes 当前未提供的 queue/首 token/prefill/decode 字段保持空值，不能估算。`milestones.local_html_ready_at`、`pdf_ready_at`、`notion_ready_at` 分开记录读者可见时间；`metrics.tail_seconds` 不混入 HTML 关键路径。`metrics.phase_durations_seconds` 汇总采集、context、正文、Agent 写作等待和验证/定稿，用这些机器计时定位慢点，不再用人工估算或一个总耗时混合后台工作。
+`artifacts.authoring.metrics` 记录每个 brief 批次的 duration、API、输入/输出 token、模型、退出原因，以及 brief 合并、图片预取、紧凑研判与总写作时间；`artifacts.authoring.recovered_batches` 记录在分析准备时从合法 draft 恢复的批次，`missing_batches` 与 `coverage_targets` 记录恢复之后仍然缺失的批次及逐来源降级结果。Hermes 当前未提供的 queue/首 token/prefill/decode 字段保持空值，不能估算。`milestones.local_html_ready_at`、`pdf_ready_at`、`notion_ready_at` 分开记录读者可见时间；`metrics.tail_seconds` 不混入 HTML 关键路径。`metrics.phase_durations_seconds` 汇总采集、context、正文、Agent 写作等待和验证/定稿，用这些机器计时定位慢点，不再用人工估算或一个总耗时混合后台工作。
 
 ## 恢复
 
 - `awaiting_selection`：选择 ID，运行 `enrich-edition`。
-- `awaiting_authoring` 且没有 session：运行 `begin-authoring`，一次后台 `delegate_task` 分发所有 packet，同时运行 `prefetch-media`。
-- authoring 批次已返回：把 delegation JSON 写入 session 指定路径并运行 `record-authoring-metrics`；`authoring-status` 全部完成后运行 `prepare-analysis`。只有输出 `deadline_exceeded: true` 时才能用 `prepare-analysis --allow-degraded`。
+- `awaiting_authoring` 且没有 session：运行 `begin-authoring`，只把计划内未复用缺口形成的 packet 按清单顺序分波；每波用一次后台 `delegate_task` 并发最多 3 个 packet，等待该波完成后再分发下一波，同时运行 `prefetch-media`。不得把超过 Hermes `max_concurrent_children` 的任务塞进一次调用，也不得跳过后续波次。
+- authoring 批次已返回：把 delegation JSON 写入 session 指定路径并运行 `record-authoring-metrics`；`authoring-status` 全部完成后运行 `prepare-analysis`。即使短回执或提交命令丢失，也不要先删 draft：`prepare-analysis` 会对每个缺 receipt 的授权 `draft_result_path` 执行原 packet 校验，合法草稿会被原子接收并列入 `recovered_batches`。检查恢复后的 `missing_batches`，只有输出 `deadline_exceeded: true` 时才能用 `prepare-analysis --allow-degraded`。
+- authoring 降级：只把对应 missing batch 所负责来源的 `coverage_targets` 降到该批实际接收数；其他已完成 batch 的来源仍保持原计划目标（候选不少于 15 时为 15）。semantic cache 和草稿都只能使用各来源 `brief_plan.default_item_ids`，不得用 Top15 之外的旧缓存补位。索引已有候选但 brief 缺失时，即使同栏目其他来源正常，也要列出缺失来源及“已验证摘要/计划”计数，不能写成未采集、`no_items`、来源失败或让该来源无提示消失。
 - `analysis_pending`：主 Agent 只读 `analysis_packet_path`，写 `analysis_result_path`，运行 `assemble-authoring`、`validate-report --run` 和 `finalize-edition --defer-tail`。
 - `finalizing` 在事实源持久化前失败：状态自动退回 `awaiting_authoring` 并记录错误；HTML/PDF 投影失败时 JSON/Markdown 仍有效，结果会记录 `local_output_error`，修复环境后重建投影即可，不要重新生成 revision。
 - `tail.pending`：HTML 已有效；在后台执行 manifest 的精确 `tail.command`。
@@ -57,7 +60,7 @@ run manifest 固定在 `DATA_DIR/runs/YYYY-MM-DD/<edition>.json`。不要手改�
 
 ## 验收
 
-前台交付检查：run/index/report 一致、schema 2.0、七个 section、每源目标/上限、brief/精选事件关系、发布时间（缺失时显示采集时间）与 NEW、URL/标题身份、正文访问等级、三个视角使用同一事件档案、跨视角综合、JSON/Markdown/HTML、`reports/index.html`、`local_html_ready_at` 和待验证链接。浏览器验收还要确认每条 brief 的标题先于配图、版本化 HTML 的相对图片存在，以及桌面 HTML 单独移入无媒体目录后所有内嵌图片均可加载。
+前台交付检查：run/index/report 一致、schema 2.0、七个 section、所有正式来源目标/上限均为 15、有足够候选时正好使用本轮 `brief_plan` 的前 15 条、semantic cache 未越界、普通 brief 在 JSON/Markdown/HTML/PDF/Notion 中保持当前 index 顺序且未按 `importance` 重排、brief/精选事件关系、发布时间（缺失时显示采集时间）与 NEW、URL/标题身份、正文访问等级、三个视角使用同一事件档案、跨视角综合、JSON/Markdown/HTML、`reports/index.html`、`local_html_ready_at` 和待验证链接。若有 authoring 降级，还要核对 `recovered_batches`、`missing_batches` 与逐来源 `coverage_targets`，并确认已采集候选没有被描述为未采集。浏览器验收还要确认每条 brief 的标题先于配图、版本化 HTML 的相对图片存在，以及桌面 HTML 单独移入无媒体目录后所有内嵌图片均可加载。
 
 后台收尾检查：tail 为 `completed` 或有可操作的 `partial` 错误；PDF、`pdf_ready_at`、可选 Notion page ID/`notion_ready_at` 和独立评估调度彼此可重试，不影响前台 HTML 有效性。PDF 必须在断开本地媒体目录与网络后仍能显示全部已物化图片；用渲染抽查和 PDF image XObject 计数确认图片已写入文件，而不是保留外链。
 

@@ -1,4 +1,5 @@
 import asyncio
+import base64
 import json
 from collections import defaultdict
 from dataclasses import replace
@@ -18,7 +19,12 @@ from daily_intelligence.cli import (
     wait_for_visible_verification,
     write_verification_queue,
 )
-from daily_intelligence.collector import collect_source, detect_challenge, merge_verified_results
+from daily_intelligence.collector import (
+    collect_source,
+    detect_challenge,
+    merge_resume_index,
+    merge_verified_results,
+)
 from daily_intelligence.config import OutputConfig, load_config
 from daily_intelligence.content import (
     _ordered_targets,
@@ -129,7 +135,8 @@ def test_source_taxonomy_is_loaded():
     assert config.source_by_id("twz").adapter_name == "twz_index"
     assert config.source_by_id("defence_blog_aviation").adapter_name == "browser_index"
     assert config.source_by_id("hacker_news").report_target == 15
-    assert config.source_by_id("bbc_world").report_target == 10
+    assert config.source_by_id("bbc_world").report_target == 15
+    assert all(source.report_target == 15 for source in config.sources)
     assert config.source_by_id("twz").report_max == 15
 
 
@@ -1012,6 +1019,151 @@ def test_verified_page_merge_preserves_other_failed_page_links(tmp_path: Path):
     assert any(page.get("error") == "HTTP 403" for page in source["page_results"])
 
 
+def test_verified_merge_rebuilds_source_order_before_context_selects_top15(
+    tmp_path: Path,
+):
+    data_dir = tmp_path / "data"
+    existing_items = [
+        {
+            "item_id": f"bbc-old-{rank}",
+            "source_id": "bbc_world",
+            "source_name": "BBC",
+            "title": f"Existing BBC source item number {rank}",
+            "url": f"https://www.bbc.com/news/articles/old-{rank}",
+            "canonical_url": f"https://bbc.com/news/articles/old-{rank}",
+            "discovered_at": "2026-07-14T05:50:00+08:00",
+            "module": "information",
+            "category": "international",
+            "content_status": "not_fetched",
+            "metadata": {"source_rank": rank},
+        }
+        for rank in range(1, 17)
+    ]
+    original_path = write_json(
+        data_dir / "indexes" / "2026-07-14" / "morning-r1.json",
+        {
+            "date": "2026-07-14",
+            "edition": "morning",
+            "revision": 1,
+            "timezone": "Asia/Shanghai",
+            "source_policies": {
+                "bbc_world": {
+                    "report_target": 15,
+                    "report_max": 15,
+                    "item_order": "source",
+                }
+            },
+            "sources": [
+                {
+                    "source_id": "bbc_world",
+                    "source_name": "BBC",
+                    "source_url": "https://www.bbc.com/news",
+                    "status": "partial",
+                    "items": existing_items,
+                    "page_results": [
+                        {"url": "https://www.bbc.com/news", "status": "success"},
+                        {
+                            "url": "https://www.bbc.com/news/world",
+                            "status": "verification_required",
+                        },
+                    ],
+                }
+            ],
+            "items": existing_items,
+        },
+    )
+    verified = ArticleItem(
+        item_id="bbc-verified-top",
+        source_id="bbc_world",
+        source_name="BBC",
+        title="Newly verified BBC headline at the top of its page",
+        url="https://www.bbc.com/news/articles/verified-top",
+        canonical_url="https://bbc.com/news/articles/verified-top",
+        discovered_at="2026-07-14T05:55:00+08:00",
+        module="information",
+        category="international",
+    )
+    captured = SourceResult(
+        source_id="bbc_world",
+        source_name="BBC",
+        source_url="https://www.bbc.com/news/world",
+        status="success",
+        collected_at="2026-07-14T05:55:00+08:00",
+        module="information",
+        category="international",
+        items=[verified],
+    )
+
+    merged_path = merge_verified_results(original_path, [captured], data_dir)
+    merged = read_json(merged_path)
+    context = read_json(build_context(merged_path, load_config(), data_dir, "morning"))
+
+    expected = ["bbc-verified-top", *[f"bbc-old-{rank}" for rank in range(1, 15)]]
+    assert [item["item_id"] for item in merged["items"][:15]] == expected
+    assert [item["item_id"] for item in merged["sources"][0]["items"][:15]] == expected
+    assert context["brief_plan"][0]["default_item_ids"] == expected
+
+
+def test_resume_merge_replaces_a_source_without_moving_its_group(tmp_path: Path):
+    data_dir = tmp_path / "data"
+
+    def item(source_id: str, suffix: str) -> dict:
+        return {
+            "item_id": f"{source_id}-{suffix}",
+            "source_id": source_id,
+            "title": f"{source_id} story {suffix}",
+            "url": f"https://{source_id}.example/{suffix}",
+        }
+
+    original_path = write_json(
+        data_dir / "indexes" / "2026-07-14" / "morning-r1.json",
+        {
+            "date": "2026-07-14",
+            "edition": "morning",
+            "revision": 1,
+            "timezone": "Asia/Shanghai",
+            "sources": [
+                {"source_id": "source_a", "items": [item("source_a", "old")]},
+                {"source_id": "source_b", "items": [item("source_b", "old")]},
+                {"source_id": "source_c", "items": [item("source_c", "old")]},
+            ],
+            "items": [
+                item("source_a", "old"),
+                item("source_b", "old"),
+                item("source_c", "old"),
+            ],
+        },
+    )
+    retry_path = write_json(
+        tmp_path / "retry.json",
+        {
+            "date": "2026-07-14",
+            "edition": "morning",
+            "generated_at": "2026-07-14T06:30:00+08:00",
+            "sources": [
+                {"source_id": "source_b", "items": [item("source_b", "new")]}
+            ],
+            "items": [item("source_b", "new")],
+        },
+    )
+
+    merged = read_json(merge_resume_index(original_path, retry_path, data_dir))
+
+    assert [row["source_id"] for row in merged["sources"]] == [
+        "source_a",
+        "source_b",
+        "source_c",
+    ]
+    assert [row["item_id"] for row in merged["items"]] == [
+        "source_a-old",
+        "source_b-new",
+        "source_c-old",
+    ]
+    assert [
+        row["items"][0]["item_id"] for row in merged["sources"]
+    ] == ["source_a-old", "source_b-new", "source_c-old"]
+
+
 def test_verification_queue_includes_failed_and_challenged_links(tmp_path: Path):
     index = {
         "date": "2026-07-15",
@@ -1078,7 +1230,7 @@ def test_verification_queue_includes_failed_and_challenged_links(tmp_path: Path)
     assert "daily_intel_verify__bbc_world--0" in html
     assert "逐个点击链接" in html
     assert "sec.gov/cgi-bin/browse-edgar" in html
-    assert "https://huggingface.co/papers\"" in html
+    assert "https://huggingface.co/papers/trending\"" in html
     assert "https://huggingface.co/papers/month" not in html
     assert "未连接采集器" in html
     assert "window.verificationPortal" in html
@@ -1226,6 +1378,55 @@ def test_multi_page_source_merge_is_balanced(monkeypatch, tmp_path: Path):
     assert [item.metadata["source_rank"] for item in result.items] == [1, 2, 3]
 
 
+def test_multi_page_source_can_sort_by_publication_without_losing_top_rank(
+    monkeypatch, tmp_path: Path
+):
+    config = load_config()
+    source = replace(
+        config.source_by_id("bbc_world"),
+        url="https://www.bbc.com/news",
+        explore_urls=["https://www.bbc.com/news/world"],
+        max_items=3,
+        item_order="published_at",
+    )
+
+    def fake_collect_one(_context, page_source, _config, _data_dir):
+        slug = page_source.url.rsplit("/", 1)[-1]
+        year = 2024 if slug == "news" else 2026
+        items = [
+            ArticleItem(
+                item_id=f"{slug}-{position}",
+                source_id=source.id,
+                source_name=source.name,
+                title=f"A sufficiently long headline {slug} {position}",
+                url=f"https://www.bbc.com/news/articles/{slug}-{position}",
+                canonical_url=f"https://bbc.com/news/articles/{slug}-{position}",
+                discovered_at="2026-07-14T06:00:00+08:00",
+                published_at=f"{year}-07-{10 + position:02d}",
+            )
+            for position in range(2)
+        ]
+        return SourceResult(
+            source_id=source.id,
+            source_name=source.name,
+            source_url=page_source.url,
+            status="success",
+            collected_at="2026-07-14T06:00:00+08:00",
+            items=items,
+        )
+
+    monkeypatch.setattr("daily_intelligence.collector.collect_one", fake_collect_one)
+
+    result = collect_source(None, source, config, tmp_path)
+
+    assert [item.item_id for item in result.items] == [
+        "world-1",
+        "world-0",
+        "news-1",
+    ]
+    assert [item.metadata["source_rank"] for item in result.items] == [4, 2, 3]
+
+
 def test_post_publication_evaluation_uses_bounded_retries(monkeypatch, tmp_path: Path):
     calls = []
 
@@ -1253,6 +1454,16 @@ def test_post_publication_evaluation_uses_bounded_retries(monkeypatch, tmp_path:
     assert command[:4] == ["hermes", "cron", "create", "2m"]
     assert command[command.index("--repeat") + 1] == "3"
     assert "不得要求用户点击" in command[4]
+    assert "runpy.run_module('daily_intelligence.cli', run_name='__main__')" in command[4]
+    encoded_source = base64.urlsafe_b64encode(
+        str(tmp_path / "src").encode("utf-8")
+    ).decode("ascii")
+    assert encoded_source in command[4]
+    assert str(tmp_path / "templates" / "report-contract.md") in command[4]
+    assert "不得要求普通 brief 按 importance 二次重排" in command[4]
+    assert "$env:PYTHONPATH" not in command[4]
+    assert "PYTHONPATH=" not in command[4]
+    assert "daily-intel --data-dir" not in command[4]
     assert "--publish" not in command[4]
     assert result["job_id"] == "eval-1"
     assert result["attempts"] == 3
@@ -1719,24 +1930,24 @@ def test_context_caps_candidates_and_rejects_contaminated_history(tmp_path: Path
 
     context = read_json(build_context(index_path, load_config(), data_dir, "morning"))
 
-    assert len(context["candidate_items"]) == 20
+    assert len(context["candidate_items"]) == 25
     batch = context["brief_authoring_batches"][0]
     assert batch["batch_id"] == "brief-batch-1"
     assert batch["source_ids"] == ["bbc_world"]
-    assert batch["candidate_count"] == 20
-    assert batch["author_item_count"] == 10
+    assert batch["candidate_count"] == 15
+    assert batch["author_item_count"] == 15
     assert Path(batch["packet_path"]).is_file()
     assert context["brief_plan"] == [
         {
             "source_id": "bbc_world",
             "section_id": "information.international",
             "batch_id": "brief-batch-1",
-            "target_count": 10,
-                "default_item_ids": [f"item-{position}" for position in range(10)],
-                "reuse_item_ids": [],
-                "author_item_ids": [f"item-{position}" for position in range(10)],
-            }
-        ]
+            "target_count": 15,
+            "default_item_ids": [f"item-{position}" for position in range(15)],
+            "reuse_item_ids": [],
+            "author_item_ids": [f"item-{position}" for position in range(15)],
+        }
+    ]
     prior = context["continuity_reports"][0]
     assert prior["reuse_status"] == "reject"
     assert prior["events"] == []
@@ -1778,7 +1989,7 @@ def test_context_overrides_a_low_score_accept_decision(tmp_path: Path):
     assert "reject all content" in entry["continuity_override"]
 
 
-def test_context_keeps_enriched_items_ahead_of_later_undated_discoveries(tmp_path: Path):
+def test_context_keeps_index_top_order_even_when_a_lower_item_is_enriched(tmp_path: Path):
     data_dir = tmp_path / "data"
     items = [
         {
@@ -1793,10 +2004,10 @@ def test_context_keeps_enriched_items_ahead_of_later_undated_discoveries(tmp_pat
         }
         for position in range(30)
     ]
-    items[0].update(
+    items[19].update(
         {
             "content_status": "full_text",
-            "content_path": "content/bbc-0.md",
+            "content_path": "content/bbc-19.md",
             "published_at": None,
         }
     )
@@ -1814,9 +2025,12 @@ def test_context_keeps_enriched_items_ahead_of_later_undated_discoveries(tmp_pat
     context = read_json(build_context(index_path, load_config(), data_dir, "morning"))
 
     assert context["candidate_items"][0]["item_id"] == "bbc-0"
-    assert context["candidate_items"][0]["content_status"] == "full_text"
+    assert context["candidate_items"][19]["item_id"] == "bbc-19"
+    assert context["candidate_items"][19]["content_status"] == "full_text"
     assert context["brief_plan"][0]["default_item_ids"][0] == "bbc-0"
-    assert context["brief_plan"][0]["target_count"] == 10
+    assert context["brief_plan"][0]["default_item_ids"][-1] == "bbc-14"
+    assert "bbc-19" not in context["brief_plan"][0]["default_item_ids"]
+    assert context["brief_plan"][0]["target_count"] == 15
     assert "title_zh" in context["brief_authoring_rule"]
     assert "delegate_task" in context["brief_authoring_rule"]
     assert "packet is the complete data boundary" in context["brief_authoring_rule"]
@@ -1827,6 +2041,115 @@ def test_context_keeps_enriched_items_ahead_of_later_undated_discoveries(tmp_pat
     assert "Do not browse the web" in packet["tool_policy"]
     assert "at most one repair" in packet["repair_policy"]
     assert "_source_rank" not in read_json(index_path)["items"][0]
+
+
+def test_context_splits_all_formal_top15_work_into_bounded_authoring_waves(
+    tmp_path: Path,
+):
+    data_dir = tmp_path / "data"
+    config = load_config()
+    items = [
+        {
+            "item_id": f"{source.id}-{rank}",
+            "source_id": source.id,
+            "source_name": source.name,
+            "title": f"A sufficiently descriptive source headline {source.id} {rank}",
+            "url": f"https://example.com/{source.id}/{rank}",
+            "canonical_url": f"https://example.com/{source.id}/{rank}",
+            "discovered_at": "2026-07-16T05:50:00+08:00",
+            "module": source.module,
+            "category": source.category,
+            "content_status": "not_fetched",
+            "metadata": {"source_rank": rank},
+        }
+        for source in config.sources
+        for rank in range(1, 16)
+    ]
+    index_path = write_json(
+        data_dir / "indexes" / "2026-07-16" / "morning-r1.json",
+        {
+            "date": "2026-07-16",
+            "edition": "morning",
+            "timezone": "Asia/Shanghai",
+            "sources": [
+                {
+                    "source_id": source.id,
+                    "source_name": source.name,
+                    "source_url": source.url,
+                    "status": "success",
+                }
+                for source in config.sources
+            ],
+            "items": items,
+            "source_policies": {
+                source.id: {
+                    "report_target": 15,
+                    "report_max": 15,
+                    "item_order": "source",
+                }
+                for source in config.sources
+            },
+        },
+    )
+
+    context = read_json(build_context(index_path, config, data_dir, "morning"))
+    batches = context["brief_authoring_batches"]
+
+    assert len(context["brief_plan"]) == 32
+    assert all(len(plan["default_item_ids"]) == 15 for plan in context["brief_plan"])
+    assert len(batches) == 11
+    assert sum(batch["author_item_count"] for batch in batches) == 480
+    assert max(batch["author_item_count"] for batch in batches) == 45
+
+
+def test_context_preserves_published_at_order_already_written_to_index(tmp_path: Path):
+    data_dir = tmp_path / "data"
+    items = [
+        {
+            "item_id": "bbc-newer",
+            "source_id": "bbc_world",
+            "source_name": "BBC",
+            "title": "Newer item ranked second on the source page",
+            "url": "https://www.bbc.com/news/articles/newer",
+            "published_at": "2026-07-16T09:00:00+08:00",
+            "content_status": "not_fetched",
+            "metadata": {"source_rank": 2},
+        },
+        {
+            "item_id": "bbc-older",
+            "source_id": "bbc_world",
+            "source_name": "BBC",
+            "title": "Older item ranked first on the source page",
+            "url": "https://www.bbc.com/news/articles/older",
+            "published_at": "2026-07-15T09:00:00+08:00",
+            "content_status": "not_fetched",
+            "metadata": {"source_rank": 1},
+        },
+    ]
+    index_path = write_json(
+        data_dir / "indexes" / "2026-07-16" / "evening-r1.json",
+        {
+            "date": "2026-07-16",
+            "edition": "evening",
+            "items": items,
+            "sources": [],
+            "source_policies": {
+                "bbc_world": {
+                    "report_target": 15,
+                    "report_max": 15,
+                    "item_order": "published_at",
+                }
+            },
+        },
+    )
+
+    context = read_json(build_context(index_path, load_config(), data_dir, "evening"))
+
+    assert context["brief_plan"][0]["default_item_ids"] == [
+        "bbc-newer",
+        "bbc-older",
+    ]
+    assert [item["source_rank"] for item in context["candidate_items"]] == [2, 1]
 
 
 def test_enriched_root_items_are_mirrored_to_legacy_nested_items():

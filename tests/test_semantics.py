@@ -103,7 +103,12 @@ def test_evaluated_semantics_are_reused_in_context_and_compiler(tmp_path: Path):
     assert context["brief_authoring_batches"] == []
 
     draft = {"sections": [], "analyses": []}
-    warnings = compile_report_data(draft, index, load_semantic_cache(data_dir))
+    warnings = compile_report_data(
+        draft,
+        index,
+        load_semantic_cache(data_dir),
+        brief_plan_item_ids={"bbc_world": [item["item_id"]]},
+    )
     compiled = next(
         brief
         for section in draft["sections"]
@@ -115,6 +120,69 @@ def test_evaluated_semantics_are_reused_in_context_and_compiler(tmp_path: Path):
     assert reusable_semantic_brief(
         item, load_semantic_cache(data_dir), "en"
     ) is None
+
+
+def test_compiler_cache_reuse_cannot_cross_the_current_brief_plan(tmp_path: Path):
+    data_dir = tmp_path / "data"
+    top_item = _item()
+    outside_item = _item()
+    outside_item.update(
+        {
+            "item_id": "bbc_world-outside-top15",
+            "title": "An older cached headline outside the selected Top fifteen",
+            "url": "https://www.bbc.com/news/articles/outside-top15",
+            "canonical_url": "https://bbc.com/news/articles/outside-top15",
+        }
+    )
+    outside_item["metadata"] = {"source_rank": 18, "role": "evidence"}
+    outside_brief = _brief()
+    outside_brief.update(
+        {
+            "item_id": outside_item["item_id"],
+            "title": outside_item["title"],
+            "title_zh": "一条位于本次前十五名之外的旧缓存新闻",
+        }
+    )
+    report_id = "daily-2026-07-17-morning-r1"
+    index = {
+        "date": "2026-07-17",
+        "edition": "evening",
+        "timezone": "Asia/Shanghai",
+        "source_policies": {"bbc_world": {"report_target": 15, "report_max": 15}},
+        "sources": [
+            {
+                "source_id": "bbc_world",
+                "source_name": "BBC",
+                "source_url": "https://www.bbc.com/news",
+                "status": "success",
+            }
+        ],
+        "items": [top_item, outside_item],
+    }
+    update_semantic_cache_from_report(
+        {
+            "report_id": report_id,
+            "generated_at": "2026-07-17T06:00:00+08:00",
+            "sections": [{"briefs": [_brief(), outside_brief]}],
+        },
+        index,
+        data_dir,
+    )
+    _approve(report_id, data_dir)
+
+    draft = {"sections": [], "analyses": []}
+    compile_report_data(
+        draft,
+        index,
+        load_semantic_cache(data_dir),
+        brief_plan_item_ids={"bbc_world": [top_item["item_id"]]},
+    )
+
+    assert [
+        brief["item_id"]
+        for section in draft["sections"]
+        for brief in section["briefs"]
+    ] == [top_item["item_id"]]
 
 
 def test_low_reliability_evaluation_rejects_semantic_cache(tmp_path: Path):

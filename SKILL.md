@@ -88,6 +88,15 @@ daily-intel --data-dir DATA_DIR --timezone Asia/Shanghai run-edition --edition e
 Read the returned run manifest and `artifacts.context_path`. Keep each access failure
 explicit; never convert it to `no_items`.
 
+All formal sources use `report_target: 15` and `report_max: 15`. Collection defaults
+to each page, ranking, or feed's original Top order, so `source` selects Top1–15.
+Use `collection.item_order: published_at` in `configs/sources.yaml` only when the
+user chooses the current index's newest-publication order; valid publication times
+sort newest first, while missing and tied times remain stable. A source-level
+`item_order` may override the global value. Preserve `source_rank` in either mode and
+do not reorder ordinary briefs by `importance`. Hugging Face Papers intentionally
+uses its Trending Top list, which can include older publications.
+
 Only when the user is ready for an interactive browser window:
 
 ```text
@@ -115,8 +124,12 @@ daily-intel --data-dir DATA_DIR prefetch-media --run RUN.json
 ```
 
 Author every `brief_authoring_batches` packet at its assigned `draft_result_path`.
+Process packets in their listed order in waves of at most three concurrent Hermes
+workers; wait for one wave to finish before dispatching the next. This keeps each
+packet bounded while respecting Hermes' default `max_concurrent_children: 3`.
 Use only packet evidence; do not browse, search, or read another batch. Run its
-`submission_command` once and make at most one validation-only repair.
+`submission_command`; if it reports validation errors, make at most one
+validation-only repair and run the same command once more.
 
 Record bounded metrics, inspect status, then prepare analysis:
 
@@ -126,8 +139,18 @@ daily-intel --data-dir DATA_DIR authoring-status --run RUN.json
 daily-intel --data-dir DATA_DIR prepare-analysis --run RUN.json
 ```
 
+`prepare-analysis` revalidates an assigned draft when its immutable receipt is
+missing and accepts it only if the original packet contract passes unchanged. Check
+`recovered_batches` before treating a batch as missing. Semantic-cache reuse and
+accepted drafts must stay inside each source's ordered `brief_plan.default_item_ids`;
+they may never substitute an older item outside the current Top1–15.
+
 Use `--allow-degraded` only when the manifest says `deadline_exceeded: true` and a
-batch is still missing.
+batch is still missing. Lower coverage only for sources assigned to that missing
+batch; completed batches keep their planned target (15 when at least fifteen
+candidates exist). If candidates exist in the index, show the affected source and
+its validated/planned count even when other sources in that section succeeded;
+never describe an authoring or validation failure as not collected.
 
 ### 4. Analyze and assemble
 
@@ -179,7 +202,11 @@ The monitor uses local collection, caching, clustering, and state handling.
 - Run status is `completed` or `completed_partial`; both HTML copies open.
 - Schema 2.0, source identity, time, status, citations, counts, and language validate.
 - Seven sections, three analysis lenses, and cross-perspective synthesis are present.
+- Formal sources with enough candidates contain their ordered Top1–15; ordinary
+  briefs preserve current index order and cache reuse stays within `brief_plan`.
 - Access failures, rate limits, and pending verification retain their real status.
+- `recovered_batches`, `missing_batches`, and degraded per-source targets agree; an
+  authoring failure is not reported as a collection failure.
 - Desktop HTML and both PDF paths embed validated images.
 - Tail work and independent evaluation remain separately retryable.
 

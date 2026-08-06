@@ -421,18 +421,7 @@ def _group_items(
         key = str(source.get("id") or source.get("name") or "unknown")
         groups.setdefault(key, (source, []))[1].append(item)
     ordered = list(groups.values())
-    for _source, items in ordered:
-        items.sort(
-            key=lambda value: (
-                int(value.get("importance", 0)),
-                -int(value.get("source_rank", 1_000_000)),
-            ),
-            reverse=True,
-        )
-    ordered.sort(
-        key=lambda group: int(group[1][0].get("importance", 0)) if group[1] else 0,
-        reverse=True,
-    )
+    # HTML/PDF 保留报告 JSON 的 canonical 顺序，避免投影层再次按重要性重排。
     return ordered
 
 
@@ -878,15 +867,15 @@ def render_report_html(
                 )
                 for source, items in _group_items(section, language)
             )
-            empty_note = ""
-            if not source_groups:
-                empty_note = (
+            coverage_note = ""
+            if section.get("coverage_note") or not source_groups:
+                coverage_note = (
                     '<div class="empty-note">'
                     f'{_escape(section.get("coverage_note") or labels["empty"])}</div>'
                 )
             section_blocks.append(
                 f'<section class="content-section" id="{_escape(section.get("id"))}">'
-                f'<h2>{_escape(section.get("title"))}</h2>{source_groups}{empty_note}</section>'
+                f'<h2>{_escape(section.get("title"))}</h2>{coverage_note}{source_groups}</section>'
             )
         module_blocks.append(
             f'<section class="module" id="module-{module}"><div class="module-label">'
@@ -1187,7 +1176,7 @@ def _reportlab_pdf(
         for section in _ordered_sections(report, module):
             story.append(paragraph(section.get("title"), h2))
             groups = _group_items(section, language)
-            if not groups:
+            if section.get("coverage_note") or not groups:
                 story.append(paragraph(section.get("coverage_note") or labels["empty"], small))
             for source, items in groups:
                 story.append(

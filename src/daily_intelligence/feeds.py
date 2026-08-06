@@ -20,7 +20,7 @@ from .access import classify_access_text
 from .adapters import is_eligible
 from .config import SourceConfig
 from .image_policy import normalize_image_candidates, srcset_candidates
-from .models import ArticleItem, SourceStatus
+from .models import ArticleItem, SourceStatus, order_source_items
 from .utils import canonicalize_url, clean_title, item_id, read_json, write_json
 
 _ARTICLE_FIELDS = {field.name for field in fields(ArticleItem)}
@@ -394,9 +394,11 @@ def parse_feed_document(
         )
         seen.add(canonical)
         items.append(article)
-        if len(items) >= max_items:
+        if source.item_order != "published_at" and len(items) >= max_items:
             break
-    return items
+    for source_rank, item in enumerate(items, start=1):
+        item.metadata["source_rank"] = source_rank
+    return order_source_items(items, source.item_order)[:max_items]
 
 
 def discover_feed_urls(html: str, base_url: str) -> list[str]:

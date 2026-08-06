@@ -849,7 +849,9 @@ def report_to_blocks(
                     or localized(language, "未命名栏目", "Untitled section"),
                 )
             )
-            if not section.get("items") and not section.get("briefs"):
+            if section.get("coverage_note") or (
+                not section.get("items") and not section.get("briefs")
+            ):
                 blocks.append(
                     _block(
                         "paragraph",

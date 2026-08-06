@@ -4,7 +4,7 @@ from zoneinfo import ZoneInfo
 
 import pytest
 
-from daily_intelligence.authoring import validate_authoring_batch
+from daily_intelligence.authoring import _merge_briefs, validate_authoring_batch
 from daily_intelligence.config import load_config
 from daily_intelligence.context import build_context
 from daily_intelligence.utils import read_json, write_json
@@ -211,6 +211,71 @@ def test_authoring_batches_are_validated_and_python_assembled(tmp_path: Path):
     assert sum(len(section["briefs"]) for section in report["sections"]) == 2
     assert report["sections"][0]["items"][0]["source_item_ids"] == ["bbc-0"]
     assert run["artifacts"]["authoring"]["metrics"]["brief_assembly_seconds"] >= 0
+
+
+def test_prepare_analysis_recovers_a_valid_assigned_draft_without_a_receipt(
+    tmp_path: Path,
+):
+    data_dir, run_path = _authoring_run(tmp_path)
+    begin_authoring(run_path, data_dir)
+    run = read_json(run_path)
+    context = read_json(Path(run["artifacts"]["context_path"]))
+    batch = context["brief_authoring_batches"][0]
+    packet = read_json(Path(batch["packet_path"]))
+    write_json(Path(packet["draft_result_path"]), _valid_batch_payload(packet))
+
+    prepare_authoring_analysis(run_path, data_dir)
+
+    recovered_run = read_json(run_path)
+    authoring = recovered_run["artifacts"]["authoring"]
+    assert Path(packet["accepted_result_path"]).is_file()
+    assert authoring["recovered_batches"] == [batch["batch_id"]]
+    assert authoring["missing_batches"] == []
+    assert authoring["brief_count"] == len(packet["author_item_ids"])
+
+
+def test_degraded_coverage_only_lowers_sources_from_the_missing_batch(tmp_path: Path):
+    completed_path = write_json(
+        tmp_path / "completed.json",
+        {"briefs": [{"item_id": "complete-1"}]},
+    )
+    context = {
+        "reusable_briefs": [],
+        "brief_plan": [
+            {
+                "source_id": "complete_source",
+                "section_id": "information.international",
+                "batch_id": "batch-complete",
+                "target_count": 2,
+                "default_item_ids": ["complete-1"],
+            },
+            {
+                "source_id": "missing_source",
+                "section_id": "information.domestic",
+                "batch_id": "batch-missing",
+                "target_count": 2,
+                "default_item_ids": ["missing-1", "missing-2"],
+            },
+        ],
+    }
+    session = {
+        "batches": [
+            {"batch_id": "batch-complete", "result_path": str(completed_path)},
+            {
+                "batch_id": "batch-missing",
+                "result_path": str(tmp_path / "missing.json"),
+            },
+        ]
+    }
+
+    _sections, missing_batches, coverage_targets = _merge_briefs(
+        context,
+        session,
+        allow_degraded=True,
+    )
+
+    assert missing_batches == ["batch-missing"]
+    assert coverage_targets == {"complete_source": 2, "missing_source": 0}
 
 
 def test_authoring_batch_rejects_missing_assigned_items(tmp_path: Path):

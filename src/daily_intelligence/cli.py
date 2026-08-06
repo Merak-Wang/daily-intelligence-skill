@@ -45,6 +45,7 @@ from .workflow import (
     adopt_index_for_run,
     assemble_authoring,
     begin_authoring,
+    brief_plan_item_ids_for_run,
     complete_edition_tail,
     enrich_edition,
     finalize_edition,
@@ -562,6 +563,7 @@ def main(argv: list[str] | None = None) -> int:
 
     if args.command == "validate-report":
         coverage_targets = None
+        brief_plan_item_ids = None
         index_value = args.index
         if args.run:
             validation_run_path = require_data_root_path(
@@ -582,6 +584,10 @@ def main(argv: list[str] | None = None) -> int:
                 coverage_targets = {
                     str(key): value for key, value in values.items()
                 }
+            brief_plan_item_ids = brief_plan_item_ids_for_run(
+                validation_run,
+                data_dir,
+            )
         if index_value is None:
             parser.error("validate-report requires --index or --run")
         index_path = require_data_root_path(
@@ -594,6 +600,7 @@ def main(argv: list[str] | None = None) -> int:
             index_path,
             data_dir / "state" / "events.json",
             coverage_targets=coverage_targets,
+            brief_plan_item_ids=brief_plan_item_ids,
         )
         for warning in warnings:
             print(f"WARNING: {warning}")

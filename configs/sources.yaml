@@ -10,8 +10,10 @@ browser:
   http_prefetch_timeout_ms: 15000
   navigation_timeout_ms: 45000
   default_wait_ms: 3500
+collection:
+  item_order: source
 budget:
-  max_runtime_seconds: 600
+  max_runtime_seconds: 3600
   max_agent_tokens: 10000000
   context_items_per_source: 25
   report_items_per_source: 15
@@ -75,7 +77,7 @@ sources:
   include_domains:
   - yicai.com
   max_items: 80
-  report_target: 8
+  report_target: 15
   report_max: 15
   role: evidence
   article_patterns:
@@ -206,7 +208,7 @@ sources:
   feed_urls:
   - https://lobste.rs/rss
   max_items: 60
-  report_target: 8
+  report_target: 15
   report_max: 15
   role: discovery
   article_patterns:
@@ -230,7 +232,7 @@ sources:
   include_domains:
   - infoq.com
   max_items: 60
-  report_target: 8
+  report_target: 15
   report_max: 15
   role: evidence
   article_patterns:
@@ -248,7 +250,7 @@ sources:
   region: global
 - id: anthropic_research
   name: Anthropic Research
-  report_target: 4
+  report_target: 15
   report_max: 15
   enabled: true
   mode: browser_index
@@ -287,7 +289,7 @@ sources:
   region: global
 - id: openai_publications
   name: OpenAI Publications
-  report_target: 4
+  report_target: 15
   report_max: 15
   enabled: true
   mode: browser_index
@@ -315,7 +317,7 @@ sources:
   region: global
 - id: deepmind_publications
   name: Google DeepMind Publications
-  report_target: 4
+  report_target: 15
   report_max: 15
   enabled: true
   mode: browser_index
@@ -338,11 +340,11 @@ sources:
   region: global
 - id: huggingface_papers
   name: Hugging Face Papers
-  report_target: 5
+  report_target: 15
   report_max: 15
   enabled: true
   mode: browser_index
-  url: https://huggingface.co/papers
+  url: https://huggingface.co/papers/trending
   include_domains:
   - huggingface.co
   max_items: 60
@@ -447,7 +449,7 @@ sources:
   region: global
 - id: arxiv_ai
   name: arXiv AI Recent
-  report_target: 5
+  report_target: 15
   report_max: 15
   enabled: true
   mode: arxiv_index
@@ -472,7 +474,7 @@ sources:
   region: global
 - id: github_trending
   name: GitHub Trending
-  report_target: 8
+  report_target: 15
   report_max: 15
   enabled: true
   mode: browser_index
@@ -568,7 +570,7 @@ sources:
   region: us
 - id: guardian_uk
   name: The Guardian UK
-  report_target: 8
+  report_target: 15
   report_max: 15
   enabled: true
   mode: browser_index
@@ -583,8 +585,6 @@ sources:
   include_domains:
   - theguardian.com
   max_items: 80
-  report_target: 8
-  report_max: 15
   article_patterns:
   - ^https://www\.theguardian\.com/[^/]+/20\d{2}/[a-z]{3}/\d{2}/.+
   exclude_patterns:
@@ -601,7 +601,7 @@ sources:
   region: uk
 - id: bbc_world
   name: BBC
-  report_target: 10
+  report_target: 15
   report_max: 15
   enabled: true
   mode: browser_index
@@ -659,7 +659,7 @@ sources:
   region: global
 - id: twz
   name: TWZ
-  report_target: 4
+  report_target: 15
   report_max: 15
   enabled: true
   mode: twz_index
@@ -685,7 +685,7 @@ sources:
   region: global
 - id: defence_blog_aviation
   name: Defence Blog Aviation
-  report_target: 4
+  report_target: 15
   report_max: 15
   enabled: true
   mode: browser_index
@@ -715,7 +715,7 @@ sources:
   region: global
 - id: the_aviationist
   name: The Aviationist
-  report_target: 4
+  report_target: 15
   report_max: 15
   enabled: true
   mode: browser_index

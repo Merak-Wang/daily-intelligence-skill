@@ -375,6 +375,55 @@ def submit_authoring_batch(
     return write_immutable_json(result_path, accepted)
 
 
+def recover_valid_authoring_drafts(
+    run: dict[str, Any],
+    session: dict[str, Any],
+    data_dir: Path,
+) -> list[str]:
+    """处理：在收尾前复验并接收已写好但缺少回执的授权批次草稿。
+    输入：
+    - ``run``：当前运行清单；提供已绑定的 authoring session 与时区。
+    - ``session``：当前写作会话；逐批声明 packet、draft 和 immutable result 路径。
+    - ``data_dir``：唯一运行数据根；所有候选路径都必须继续受该根目录约束。
+    输出：本次通过原批次校验并创建不可变接收回执的 batch_id 列表；非法或不完整草稿
+      仍保持缺失状态，由后续降级逻辑显式记录，绝不绕过授权 ID 与语义校验。
+    """
+    recovered: list[str] = []
+    for batch in session.get("batches", []):
+        if not isinstance(batch, dict) or not batch.get("batch_id"):
+            continue
+        result_path = require_data_root_path(
+            Path(str(batch.get("result_path") or "")),
+            data_dir,
+            "Recovered authoring batch result",
+        )
+        if result_path.is_file():
+            continue
+        draft_path = require_data_root_path(
+            Path(str(batch.get("draft_result_path") or "")),
+            data_dir,
+            "Recovered authoring batch draft",
+        )
+        packet_path = require_data_root_path(
+            Path(str(batch.get("packet_path") or "")),
+            data_dir,
+            "Recovered authoring packet",
+        )
+        if not draft_path.is_file() or not packet_path.is_file():
+            continue
+        try:
+            packet = read_json(packet_path)
+            payload = read_json(draft_path)
+        except (OSError, ValueError):
+            continue
+        if not isinstance(packet, dict) or validate_authoring_batch(packet, payload):
+            continue
+        batch_id = str(batch["batch_id"])
+        submit_authoring_batch(run, batch_id, draft_path, data_dir)
+        recovered.append(batch_id)
+    return recovered
+
+
 def _non_negative_number(
     value: object,
     label: str,
@@ -736,6 +785,7 @@ def _merge_briefs(
 
     section_rows = {section_id: [] for section_id in SECTION_ORDER_V13}
     coverage_targets: dict[str, int] = {}
+    missing_batch_ids = set(missing_batches)
     for plan in context.get("brief_plan", []):
         if not isinstance(plan, dict):
             continue
@@ -750,7 +800,9 @@ def _merge_briefs(
         ]
         section_rows[section_id].extend(selected)
         coverage_targets[source_id] = (
-            len(selected) if missing_batches else int(plan.get("target_count", len(selected)))
+            len(selected)
+            if str(plan.get("batch_id") or "") in missing_batch_ids
+            else int(plan.get("target_count", len(selected)))
         )
     sections = [
         {"id": section_id, "briefs": section_rows[section_id], "items": []}
@@ -864,6 +916,7 @@ def prepare_analysis_packet(
     context = read_json(context_path)
     if not isinstance(context, dict):
         raise ValueError("Authoring context must be a JSON object")
+    recovered_batches = recover_valid_authoring_drafts(run, session, data_dir)
     status = authoring_status(run, data_dir)
     if allow_degraded and not status["deadline_exceeded"]:
         # 降级交付只在预留截止时间之后开放，正常时段必须等待完整批次。
@@ -994,6 +1047,7 @@ def prepare_analysis_packet(
             "batch_metrics": batch_metrics,
             "delegation_metrics": session.get("delegation_metrics"),
             "missing_batches": missing_batches,
+            "recovered_batches": recovered_batches,
             "coverage_targets": coverage_targets,
             "brief_assembly_seconds": round(time.perf_counter() - assembly_started, 3),
             "brief_count": sum(
@@ -1009,6 +1063,7 @@ def prepare_analysis_packet(
         "skeleton_path": str(paths["skeleton"]),
         "brief_count": session["brief_count"],
         "missing_batches": missing_batches,
+        "recovered_batches": recovered_batches,
         "coverage_targets": coverage_targets,
         "batch_metrics": batch_metrics,
     }

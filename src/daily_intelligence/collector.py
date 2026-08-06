@@ -16,13 +16,29 @@ from .config import (
     resolve_profile_dir,
     source_urls,
 )
-from .models import SourceResult, SourceStatus
+from .models import SourceResult, SourceStatus, order_source_items
 from .monitor import load_monitor_results
 from .prefetch import page_needs_browser, prefetch_browser_pages
 from .storage import next_revision, write_immutable_json
 from .utils import now_iso, read_json, timestamp_slug, today_str, write_json
 
 __all__ = ["CHALLENGE_TEXTS", "is_eligible"]
+
+
+def _current_monitor_items(items: list[Any]) -> list[Any]:
+    """处理：从监控缓存中排除仅为历史连续性保留、但本轮未再次观测到的条目。
+    输入：
+    - ``items``：监控快照转换出的文章对象；metadata 可能带历史保留标记。
+    输出：仅包含当前监控刷新实际观测到的条目；历史项不能虚增正式采集的目标覆盖数。
+    """
+    return [
+        item
+        for item in items
+        if not bool(
+            getattr(item, "metadata", {}).get("retained_from_previous_snapshot")
+        )
+    ]
+
 
 def detect_challenge(page: Page, http_status: int | None) -> dict[str, Any]:
     """处理：从页面标题、正文和 iframe 迹象识别登录、验证码或限流挑战。
@@ -184,6 +200,12 @@ def collect_source(
     """
     prefetch_supplied = prefetched_pages is not None
     prefetched_pages = prefetched_pages or {}
+    if monitor_result is not None:
+        # 监控快照会为仪表盘保留历史项；日报只能复用本轮刷新仍实际可见的候选。
+        monitor_result = replace(
+            monitor_result,
+            items=_current_monitor_items(monitor_result.items),
+        )
     target = max(1, min(source.report_target, source.max_items))
     monitor_sufficient = bool(
         monitor_result and len(monitor_result.items) >= target
@@ -209,13 +231,23 @@ def collect_source(
         ):
             # 修复旧适配器可能产生的矛盾状态，访问失败不能伪装成正常无条目。
             result.status = SourceStatus.FAILED
-    # 按页面轮询合并，避免第一个宽泛页面在达到上限前挤掉后续专题页面。
+    # 实时页面成功返回候选时，以实时页面为本轮排名权威；Monitor 仅在所有实时
+    # 候选之后补充去重后的尾部项。否则旧快照会把刚升到 Top1 的实时条目压到后面。
+    live_results = [
+        result
+        for result in page_results
+        if result is not monitor_result and result.items
+    ]
+    ranked_results = live_results or page_results
+    cache_fallback = monitor_result if live_results and monitor_result else None
+    # 多个实时页面仍按页轮询，避免第一个宽泛页面在达到上限前挤掉后续专题页面。
     seen: set[str] = set()
     items = []
     position = 0
-    while len(items) < source.max_items:
+    collect_all_ranked_candidates = source.item_order == "published_at"
+    while collect_all_ranked_candidates or len(items) < source.max_items:
         added = False
-        for result in page_results:
+        for result in ranked_results:
             if position >= len(result.items):
                 continue
             item = result.items[position]
@@ -224,13 +256,22 @@ def collect_source(
             seen.add(item.canonical_url)
             items.append(item)
             added = True
-            if len(items) >= source.max_items:
+            if not collect_all_ranked_candidates and len(items) >= source.max_items:
                 break
         position += 1
-        if not added and all(position >= len(result.items) for result in page_results):
+        if not added and all(position >= len(result.items) for result in ranked_results):
             break
+    if cache_fallback is not None:
+        for item in cache_fallback.items:
+            if item.canonical_url in seen:
+                continue
+            seen.add(item.canonical_url)
+            items.append(item)
+            if not collect_all_ranked_candidates and len(items) >= source.max_items:
+                break
     for source_rank, item in enumerate(items, start=1):
         item.metadata["source_rank"] = source_rank
+    items = order_source_items(items, source.item_order)[: source.max_items]
     statuses = {result.status for result in page_results}
     if items and statuses <= {SourceStatus.SUCCESS, SourceStatus.NO_ITEMS}:
         status = SourceStatus.SUCCESS
@@ -334,7 +375,7 @@ def collect_sources(
         source
         for source in selected
         if (
-            len(monitor_results[source.id].items)
+            len(_current_monitor_items(monitor_results[source.id].items))
             if source.id in monitor_results
             else 0
         )
@@ -400,6 +441,7 @@ def collect_sources(
                 "role": source.role,
                 "tier": source.tier,
                 "bundle": source.bundle,
+                "item_order": source.item_order,
             }
             for source in selected
         },
@@ -414,7 +456,7 @@ def write_results_index(
     edition: str,
     timezone: str,
     profile: Path,
-    source_policies: dict[str, dict[str, int]] | None = None,
+    source_policies: dict[str, dict[str, Any]] | None = None,
     revision: int | None = None,
     temporary: bool = False,
 ) -> Path:
@@ -484,13 +526,40 @@ def merge_resume_index(original_path: Path, retry_path: Path, data_dir: Path) ->
     retry = read_json(retry_path)
     if not isinstance(original, dict) or not isinstance(retry, dict):
         raise ValueError("Both original and retry indexes must be JSON objects")
-    retried_ids = {row["source_id"] for row in retry.get("sources", [])}
-    merged_sources = [
-        row for row in original.get("sources", []) if row.get("source_id") not in retried_ids
-    ] + retry.get("sources", [])
-    merged_items = [
-        item for item in original.get("items", []) if item.get("source_id") not in retried_ids
-    ] + retry.get("items", [])
+    retry_sources = {
+        str(row["source_id"]): row
+        for row in retry.get("sources", [])
+        if isinstance(row, dict) and row.get("source_id")
+    }
+    merged_sources: list[dict[str, Any]] = []
+    emitted_sources: set[str] = set()
+    for row in original.get("sources", []):
+        source_id = str(row.get("source_id") or "")
+        replacement = retry_sources.get(source_id)
+        merged_sources.append(replacement if replacement is not None else row)
+        if replacement is not None:
+            emitted_sources.add(source_id)
+    for source_id, row in retry_sources.items():
+        if source_id not in emitted_sources:
+            merged_sources.append(row)
+
+    retry_items: dict[str, list[dict[str, Any]]] = {}
+    for item in retry.get("items", []):
+        if isinstance(item, dict) and item.get("source_id"):
+            retry_items.setdefault(str(item["source_id"]), []).append(item)
+    merged_items: list[dict[str, Any]] = []
+    emitted_item_sources: set[str] = set()
+    for item in original.get("items", []):
+        source_id = str(item.get("source_id") or "")
+        replacement = retry_items.get(source_id)
+        if source_id not in retry_sources:
+            merged_items.append(item)
+        elif source_id not in emitted_item_sources:
+            merged_items.extend(replacement or [])
+            emitted_item_sources.add(source_id)
+    for source_id in retry_sources:
+        if source_id not in emitted_item_sources:
+            merged_items.extend(retry_items.get(source_id, []))
 
     date = str(original.get("date"))
     edition = str(original.get("edition"))
@@ -534,20 +603,75 @@ def merge_verified_results(
     captured_by_source: dict[str, list[SourceResult]] = {}
     for result in captured:
         captured_by_source.setdefault(result.source_id, []).append(result)
+    policies = (
+        original.get("source_policies", {})
+        if isinstance(original.get("source_policies"), dict)
+        else {}
+    )
+    root_items_by_source: dict[str, list[dict[str, Any]]] = {}
+    for item in original.get("items", []):
+        if isinstance(item, dict) and item.get("source_id"):
+            root_items_by_source.setdefault(str(item["source_id"]), []).append(item)
+
+    def merged_source_items(
+        source_id: str,
+        existing: list[dict[str, Any]],
+        results: list[SourceResult],
+    ) -> list[dict[str, Any]]:
+        """处理：把验证页候选置于当前来源序列并按来源策略重建规范顺序。
+        输入：
+        - ``source_id``：正在修订的来源身份；用于读取原索引的 item_order 策略。
+        - ``existing``：原根级规范条目；其 metadata.source_rank 保留旧来源顺序。
+        - ``results``：本轮人工验证成功读取的一个或多个页面结果。
+        输出：去重、重编号后按 source 或 published_at 排列的来源条目；根级与 legacy
+          嵌套视图复用同一列表，避免验证新增 Top 条目被简单追加到末尾。
+        """
+        captured_rows: list[dict[str, Any]] = []
+        position = 0
+        while any(position < len(result.items) for result in results):
+            for result in results:
+                if position < len(result.items):
+                    captured_rows.append(result.items[position].to_dict())
+            position += 1
+        source_order_existing = order_source_items(list(existing), "source")
+        combined: list[dict[str, Any]] = []
+        seen_ids: set[str] = set()
+        seen_urls: set[str] = set()
+        for row in [*captured_rows, *source_order_existing]:
+            item_id = str(row.get("item_id") or "")
+            canonical_url = str(row.get("canonical_url") or row.get("url") or "")
+            if not item_id or item_id in seen_ids or (
+                canonical_url and canonical_url in seen_urls
+            ):
+                continue
+            payload = dict(row)
+            metadata = dict(payload.get("metadata") or {})
+            metadata.pop("retained_from_previous_snapshot", None)
+            payload["metadata"] = metadata
+            combined.append(payload)
+            seen_ids.add(item_id)
+            if canonical_url:
+                seen_urls.add(canonical_url)
+        for rank, row in enumerate(combined, start=1):
+            row["metadata"]["source_rank"] = rank
+        policy = policies.get(source_id, {})
+        item_order = (
+            str(policy.get("item_order") or "source")
+            if isinstance(policy, dict)
+            else "source"
+        )
+        return order_source_items(combined, item_order)
 
     merged_sources: list[dict[str, Any]] = []
+    merged_items_by_source: dict[str, list[dict[str, Any]]] = {}
     for row in original.get("sources", []):
-        source_results = captured_by_source.get(row.get("source_id"), [])
+        source_id = str(row.get("source_id") or "")
+        source_results = captured_by_source.get(source_id, [])
         if not source_results:
             merged_sources.append(row)
             continue
         updated = dict(row)
         page_results = list(updated.get("page_results", []))
-        nested_items = {
-            item.get("item_id"): item
-            for item in updated.get("items", [])
-            if isinstance(item, dict) and item.get("item_id")
-        }
         for result in source_results:
             page_results = [page for page in page_results if page.get("url") != result.source_url]
             page_results.append(
@@ -561,9 +685,16 @@ def merge_verified_results(
                     "items_count": len(result.items),
                 }
             )
-            nested_items.update({item.item_id: item.to_dict() for item in result.items})
+        existing_items = root_items_by_source.get(source_id) or [
+            item for item in updated.get("items", []) if isinstance(item, dict)
+        ]
+        ordered_items = merged_source_items(source_id, existing_items, source_results)
+        nested_items = {
+            str(item["item_id"]): item for item in ordered_items if item.get("item_id")
+        }
+        merged_items_by_source[source_id] = ordered_items
         updated["page_results"] = page_results
-        updated["items"] = list(nested_items.values())
+        updated["items"] = ordered_items
         updated["items_count"] = len(nested_items)
         for page in page_results:
             if page.get("status") == "no_items" and (
@@ -593,14 +724,21 @@ def merge_verified_results(
             updated["status"] = SourceStatus.NO_ITEMS
         merged_sources.append(updated)
 
-    root_items = {
-        item.get("item_id"): item
-        for item in original.get("items", [])
-        if isinstance(item, dict) and item.get("item_id")
-    }
-    for results in captured_by_source.values():
-        for result in results:
-            root_items.update({item.item_id: item.to_dict() for item in result.items})
+    root_items: list[dict[str, Any]] = []
+    emitted_sources: set[str] = set()
+    for item in original.get("items", []):
+        if not isinstance(item, dict):
+            continue
+        source_id = str(item.get("source_id") or "")
+        replacement = merged_items_by_source.get(source_id)
+        if replacement is None:
+            root_items.append(item)
+        elif source_id not in emitted_sources:
+            root_items.extend(replacement)
+            emitted_sources.add(source_id)
+    for source_id, replacement in merged_items_by_source.items():
+        if source_id not in emitted_sources:
+            root_items.extend(replacement)
 
     date = str(original["date"])
     edition = str(original["edition"])
@@ -613,7 +751,7 @@ def merge_verified_results(
             "generated_at": now_iso(str(original.get("timezone", "Asia/Shanghai"))),
             "verified_from": str(original_path.resolve()),
             "sources": merged_sources,
-            "items": list(root_items.values()),
+            "items": root_items,
         }
     )
     output = data_dir / "indexes" / date / f"{edition}-r{revision}.json"
